@@ -173,6 +173,9 @@ func buildContracts(routes []route, index sourceIndex) map[string]endpointSchema
 			binding = genericSkeletonBinding(identity, index)
 		}
 		if binding.Protocol == "" && binding.Reason == "" {
+			binding = directGenericBinder(identity, index)
+		}
+		if binding.Protocol == "" && binding.Reason == "" {
 			binding = delegateBinding(identity, index)
 		}
 		if binding.Protocol == "" && binding.Reason == "" {
@@ -269,14 +272,15 @@ func scanSources(root, prefix string) (sourceIndex, error) {
 					}
 				}
 				index.funcs[name] = src
-				if binding := nativeBinding(node.Body, pkg, imports); binding.DTO != "" || binding.Reason != "" {
-					// 泛型函数体的请求类型是类型参数而不是具体 DTO：即使 binder 能识别出协议，
-					// 这里也登记成「只有协议、没有 DTO」，由调用方实参补齐 DTO。
-					if len(src.generics) > 0 && binding.Protocol != "unknown" && binding.DTO != "" {
-						binding.DTO = ""
-					}
-					if binding.Protocol == "unknown" && len(src.generics) > 0 {
-						binding = bodyBinding{}
+				if binding := nativeBinding(node.Body, pkg, imports, src.generics); binding.Protocol != "" || binding.Reason != "" {
+					// 泛型函数体的请求类型是类型参数而不是具体 DTO：这里只登记协议，
+					// DTO 留空，由调用方的实参补齐；DTO 写死了类型参数的绑定不能当契约用。
+					if len(src.generics) > 0 {
+						if binding.Protocol == "unknown" {
+							binding = bodyBinding{}
+						} else {
+							binding.DTO = ""
+						}
 					}
 					index.Bindings[name] = binding
 				}
@@ -341,7 +345,8 @@ func declaredType(expr ast.Expr, seen map[*ast.Object]bool) ast.Expr {
 }
 
 // nativeBinding 只识别 Gin Context 的确定 body binder；自动绑定与多种形状不猜协议。
-func nativeBinding(body *ast.BlockStmt, pkg string, imports map[string]string) bodyBinding {
+func nativeBinding(body *ast.BlockStmt, pkg string, imports map[string]string,
+	generics map[string]bool) bodyBinding {
 	var bindings []bodyBinding
 	ast.Inspect(body, func(n ast.Node) bool {
 		switch node := n.(type) {
@@ -398,8 +403,24 @@ func nativeBinding(body *ast.BlockStmt, pkg string, imports map[string]string) b
 				break
 			}
 			expr := declaredType(node.Args[0], map[*ast.Object]bool{})
-			binding := bodyBinding{DTO: typeName(expr, pkg, imports), Protocol: protocol}
-			if protocol == "unknown" || binding.DTO == "" {
+			dto := typeName(expr, pkg, imports)
+			// 泛型骨架里请求是 *T：协议能确定，DTO 由调用方实参补齐，不算「无法确定契约」。
+			genericReq := false
+			switch node := expr.(type) {
+			case *ast.StarExpr:
+				if ident, okIdent := node.X.(*ast.Ident); okIdent && generics[ident.Name] {
+					genericReq = true
+				}
+			case *ast.Ident:
+				// `var in T; c.ShouldBindJSON(&in)` 解析出来是裸类型参数 T。
+				if generics[node.Name] {
+					genericReq = true
+				}
+			}
+			binding := bodyBinding{DTO: dto, Protocol: protocol}
+			if protocol == "unknown" {
+				binding.Protocol, binding.Reason = "unknown", "自动、未知 binder 或非具名请求类型，无法确定输入契约"
+			} else if binding.DTO == "" && !genericReq {
 				binding.Protocol, binding.Reason = "unknown", "自动、未知 binder 或非具名请求类型，无法确定输入契约"
 			}
 			bindings = append(bindings, binding)
@@ -713,20 +734,18 @@ func genericSkeletonBinding(name string, index sourceIndex) bodyBinding {
 	if skeleton == "" || dto == "" {
 		return bodyBinding{}
 	}
-	binding, ok := index.Bindings[skeleton]
-	if !ok || binding.Protocol == "" || binding.Protocol == "unknown" {
-		binding = skeletonHelperBinding(index.funcs[skeleton], index)
+	// 骨架自己的登记只有「协议」（泛型体里的 DTO 被清空），DTO 必须来自调用方；
+	// 沿委托链只用来兜底补协议。
+	binding, okBinding := index.Bindings[skeleton]
+	if !okBinding || binding.Protocol == "" || binding.Protocol == "unknown" {
+		binding = chainedBinderProtocol(index.funcs[skeleton], index, 4)
 	}
 	if binding.Protocol == "" || binding.Protocol == "unknown" {
 		if protocol := skeletonJSONProtocol(index.funcs[skeleton]); protocol != "" {
 			binding = bodyBinding{Protocol: protocol}
-		} else if helper := index.funcs[skeleton]; helper != nil {
-			// helper 自己的泛型体里可能直接调 pkg/binding.ParseJSON —— 再问它一次。
-			if protocol := skeletonJSONProtocol(helper); protocol != "" {
-				binding = bodyBinding{Protocol: protocol}
-			}
 		}
 	}
+	binding.DTO = ""
 	// 多个字段由骨架内的同一个 binder 绑定：helper 只说明协议，DTO 由调用方给。
 	if binding.Protocol == "" || binding.Protocol == "unknown" {
 		return bodyBinding{Protocol: "unknown", Reason: "泛型写骨架没有可确定的 binder：" + skeleton}
@@ -753,6 +772,10 @@ func explicitTypeArgDTO(call *ast.CallExpr, calleeName string, target *funcSourc
 	if len(argList) != 1 {
 		return bodyBinding{}
 	}
+	// 类型实参是**类型参数本身**（f[T](...)）时不是具体 DTO，交给实参推断。
+	if ident, okIdent := argList[0].(*ast.Ident); okIdent && target.generics[ident.Name] {
+		return bodyBinding{}
+	}
 	dto := typeName(argList[0], src.pkg, src.imports)
 	if dto == "" {
 		return bodyBinding{}
@@ -770,11 +793,16 @@ func explicitTypeArgDTO(call *ast.CallExpr, calleeName string, target *funcSourc
 	return binding
 }
 
-// skeletonHelperBinding 在骨架体里找它委托的另一个具名函数（通常是 bindXForm[T]），
-// 用那个函数的 binder 协议作骨架的输入协议。只跟一层，找不到就如实返回空。
-func skeletonHelperBinding(src *funcSource, index sourceIndex) bodyBinding {
-	if src == nil {
+// chainedBinderProtocol 沿骨架体里的委托链找 binder 协议（有界深度）。
+//
+// 泛型写骨架常见两层：runX(c, ...) → bindX(c) → bindXInto(c, req)。
+// 只跟一层会把第二层误报成「没有可确定的 binder」；深度上限避免把无关调用链并进来。
+func chainedBinderProtocol(src *funcSource, index sourceIndex, depth int) bodyBinding {
+	if src == nil || depth <= 0 {
 		return bodyBinding{}
+	}
+	if protocol := skeletonJSONProtocol(src); protocol != "" {
+		return bodyBinding{Protocol: protocol}
 	}
 	var out bodyBinding
 	ast.Inspect(src.body, func(n ast.Node) bool {
@@ -800,22 +828,30 @@ func skeletonHelperBinding(src *funcSource, index sourceIndex) bodyBinding {
 		default:
 			return true
 		}
-		binding, ok := index.Bindings[src.pkg+"."+name]
-		if ok && binding.Protocol != "" && binding.Protocol != "unknown" {
-			// 泛型 helper 的 DTO 是 T，骨架体里看到的是类型参数：这里只要协议。
-			if len(index.funcs[src.pkg+"."+name].generics) > 0 {
+		if name == "" {
+			return true
+		}
+		target, okTarget := index.funcs[src.pkg+"."+name]
+		if !okTarget {
+			return true
+		}
+		if binding, okBinding := index.Bindings[target.name]; okBinding &&
+			binding.Protocol != "" && binding.Protocol != "unknown" {
+			if len(target.generics) > 0 {
 				binding.DTO = ""
 			}
 			out = binding
+			return false
+		}
+		if protocol := chainedBinderProtocol(target, index, depth-1); protocol.Protocol != "" &&
+			protocol.Protocol != "unknown" {
+			out = bodyBinding{Protocol: protocol.Protocol}
 			return false
 		}
 		return true
 	})
 	return out
 }
-
-// indexImport 返回导入别名的完整路径；未导入返回空。
-func indexImport(imports map[string]string, alias string) string { return imports[alias] }
 
 // skeletonJSONProtocol 识别骨架体里的 `binding.ParseJSON[T](c)` 调用。
 //
@@ -851,6 +887,114 @@ func skeletonJSONProtocol(src *funcSource) string {
 		if ident, okIdent := sel.X.(*ast.Ident); okIdent && src.imports[ident.Name] == "go_wp/pkg/binding" {
 			out = "json"
 			return false
+		}
+		return true
+	})
+	return out
+}
+
+// indexImport 返回导入别名的完整路径；未导入返回空。
+func indexImport(imports map[string]string, alias string) string { return imports[alias] }
+
+// directGenericBinder 识别「处理器直接调用泛型 binder」的写法：
+//
+//	req := bindX[SomeReq](c)          —— 类型实参就是 DTO
+//	req := runX(c, func(..., r *SomeReq) ...) —— 由回调形参推断
+//
+// 协议与 DTO 都来自 binder 与被推断出的类型；识别不出就返回空，交给后续兜底。
+func directGenericBinder(name string, index sourceIndex) bodyBinding {
+	src, ok := index.funcs[name]
+	if !ok {
+		return bodyBinding{}
+	}
+	var out bodyBinding
+	ast.Inspect(src.body, func(n ast.Node) bool {
+		if out.Protocol != "" {
+			return false
+		}
+		call, okCall := n.(*ast.CallExpr)
+		if !okCall {
+			return true
+		}
+		// 泛型 binder 的调用可能出现在赋值右侧、也可能包在别的表达式里；
+		// 这里对每个调用都尝试一次，不依赖外层语句形状。
+		var name string
+		var typeArg ast.Expr
+		switch fun := call.Fun.(type) {
+		case *ast.Ident:
+			name = fun.Name
+		case *ast.IndexExpr:
+			if ident, okIdent := fun.X.(*ast.Ident); okIdent {
+				name = ident.Name
+			}
+			typeArg = fun.Index
+		case *ast.IndexListExpr:
+			if ident, okIdent := fun.X.(*ast.Ident); okIdent {
+				name = ident.Name
+			}
+			if len(fun.Indices) == 1 {
+				typeArg = fun.Indices[0]
+			}
+		default:
+			return true
+		}
+		if name == "" {
+			return true
+		}
+		target, okTarget := index.funcs[src.pkg+"."+name]
+		if !okTarget || len(target.generics) == 0 {
+			return true
+		}
+		protocol := chainedBinderProtocol(target, index, 4)
+		if protocol.Protocol == "" || protocol.Protocol == "unknown" {
+			return true
+		}
+		// 显式类型实参（bindX[SomeReq](c)）：实参就是 DTO。
+		if typeArg != nil {
+			if ident, okIdent := typeArg.(*ast.Ident); !okIdent || !target.generics[ident.Name] {
+				if dto := typeName(typeArg, src.pkg, src.imports); dto != "" {
+					out = bodyBinding{Protocol: protocol.Protocol, DTO: dto}
+					return false
+				}
+			}
+		}
+		// 显式转换函数作为实参（(*TierFormReq).CreateReq）：括号里的接收者类型就是被绑定的表单类型。
+		for _, arg := range call.Args {
+			sel, okSel := arg.(*ast.SelectorExpr)
+			if !okSel {
+				continue
+			}
+			paren, okParen := sel.X.(*ast.ParenExpr)
+			if !okParen {
+				continue
+			}
+			star, okStar := paren.X.(*ast.StarExpr)
+			if !okStar {
+				continue
+			}
+			if dto := typeName(star.X, src.pkg, src.imports); dto != "" {
+				out = bodyBinding{Protocol: protocol.Protocol, DTO: dto}
+				return false
+			}
+		}
+		// 靠回调形参推断的形状。
+		for _, arg := range call.Args {
+			lit, okLit := arg.(*ast.FuncLit)
+			if !okLit || lit.Type == nil || lit.Type.Params == nil {
+				continue
+			}
+			for _, field := range lit.Type.Params.List {
+				star, okStar := field.Type.(*ast.StarExpr)
+				if !okStar {
+					continue
+				}
+				dto := typeName(star.X, src.pkg, src.imports)
+				if dto == "" || dto == "github.com/gin-gonic/gin.Context" {
+					continue
+				}
+				out = bodyBinding{Protocol: protocol.Protocol, DTO: dto}
+				return false
+			}
 		}
 		return true
 	})
