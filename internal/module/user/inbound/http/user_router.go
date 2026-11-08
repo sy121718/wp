@@ -20,6 +20,7 @@ const (
 )
 
 func SetupUserRoutes(
+	reg *mw.Registry,
 	router *gin.Engine,
 	db *gorm.DB,
 	mail usercontract.MailSender,
@@ -38,7 +39,7 @@ func SetupUserRoutes(
 		siteName,
 	)
 	h := NewHandle(svc)
-	setupSiteUserRoutes(router, h)
+	setupSiteUserRoutes(reg, router, h)
 
 	return svc
 }

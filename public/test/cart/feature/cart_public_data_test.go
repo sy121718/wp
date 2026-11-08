@@ -1,6 +1,7 @@
 package feature
 
 import (
+	mw "go_wp/pkg/middleware"
 	"bytes"
 	"context"
 	"mime/multipart"
@@ -35,8 +36,8 @@ func TestCartPublicDataProtocol(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = auth.Close() })
 	router := gin.New()
-	users := userhttp.SetupUserRoutes(router, f.db, f.mail, "测试站")
-	carthttp.SetupCartPublicRoutes(router, f.cart, userhttp.VisitorIdentityMiddleware(users), userhttp.VisitorCSRFMiddleware())
+	users := userhttp.SetupUserRoutes(mw.NewRegistry(), router, f.db, f.mail, "测试站")
+	carthttp.SetupCartPublicRoutes(mw.NewRegistry(), router, f.cart, userhttp.VisitorIdentityMiddleware(users), userhttp.VisitorCSRFMiddleware())
 	_, variant := f.addProduct(t, "纯数据商品", 12.34, 10)
 	cookies := map[string]*http.Cookie{}
 	csrf := ""

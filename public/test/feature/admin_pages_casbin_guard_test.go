@@ -127,7 +127,7 @@ func newAdminPagesTestEnv(t *testing.T) *adminPagesTestEnv {
 			engine.HTMLRender = templates.NewJetHTMLRender("../../../internal/templates", true)
 
 			api := engine.Group("/api")
-			captcharouter.SetupCaptchaRoutes(api)
+			captcharouter.SetupCaptchaRoutes(mw.NewRegistry(), api)
 
 			adminAuthzSvc := adminhttp.SetupAdminRoutes(mw.NewRouteGroup(api, mw.RouteProtected), db)
 			adminCRUD, ok := adminAuthzSvc.(interface {
@@ -146,7 +146,7 @@ func newAdminPagesTestEnv(t *testing.T) *adminPagesTestEnv {
 				builtin.SessionAuthMiddleware(), builtin.CSRFMiddleware(),
 				adminctx.PermContextMiddleware(adminAuthzSvc))
 
-			adminhttp.SetupAdminPages(adminPages, adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminCRUD, nil, nil)
+			adminhttp.SetupAdminPages(mw.NewRegistry(), adminPages, adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminCRUD, nil, nil)
 		},
 	})
 	if err != nil {

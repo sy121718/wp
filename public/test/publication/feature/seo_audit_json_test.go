@@ -104,7 +104,7 @@ func newSEOAuditChain(t *testing.T) *seoAuditChain {
 			engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 
 			api := engine.Group("/api")
-			captcharouter.SetupCaptchaRoutes(api)
+			captcharouter.SetupCaptchaRoutes(mw.NewRegistry(), api)
 			adminAuthz := adminhttp.SetupAdminRoutes(mw.NewRouteGroup(api, mw.RouteProtected), db)
 
 			_ = engine.Group("/admin",

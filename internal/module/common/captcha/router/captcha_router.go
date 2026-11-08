@@ -15,12 +15,12 @@ const (
 	captchaRateWindow = time.Minute
 )
 
-func SetupCaptchaRoutes(rg *gin.RouterGroup) {
+func SetupCaptchaRoutes(reg *mw.Registry, rg *gin.RouterGroup) {
 	if rg == nil {
 		return
 	}
 
-	mw.NewRouteGroup(rg, mw.RouteExempt).GET("/captcha", "",
+	mw.NewRouteGroupIn(reg, rg, mw.RouteExempt).GET("/captcha", "",
 		builtin.RequestRateLimitMiddleware(captchaRateLimit, captchaRateWindow),
 		captcha.HTTPServe)
 }

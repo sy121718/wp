@@ -1,6 +1,7 @@
 package feature
 
 import (
+	mw "go_wp/pkg/middleware"
 	"context"
 	json "go_wp/pkg/jsonx"
 	"io/fs"
@@ -51,7 +52,7 @@ func i18nPageRenderEnv(t *testing.T) (*gin.Engine, *gorm.DB, string) {
 				c.Set("button_set", map[string]bool{"i18n.manage": true})
 				c.Next()
 			})
-			adminhttp.SetupAdminPages(pages, nil, nil, nil, nil, nil, nil, nil, nil)
+			adminhttp.SetupAdminPages(mw.NewRegistry(), pages, nil, nil, nil, nil, nil, nil, nil, nil)
 		},
 	})
 	if err != nil {

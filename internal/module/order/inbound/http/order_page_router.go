@@ -45,7 +45,7 @@ const OrderListPageTemplate = "admin/order/orders.html"
 
 const OrderSalesPageTemplate = "admin/order/sales_overview.html"
 
-func SetupOrderPages(pages *gin.RouterGroup, svc ordercontract.OrderService,
+func SetupOrderPages(reg *mw.Registry, pages *gin.RouterGroup, svc ordercontract.OrderService,
 	projects projectcontract.ProjectService, product productcontract.ProductService,
 	warehouses ordercontract.ReturnWarehouseSource, dict sysconfigcontract.DictReader) {
 	if pages == nil {
@@ -71,7 +71,7 @@ func SetupOrderPages(pages *gin.RouterGroup, svc ordercontract.OrderService,
 		pageview.UseRenderer(pageview.RenderPage),
 		salesPages.SalesOverviewPage)
 
-	mw.DeclareRoute(mw.RouteSpec{
+	reg.DeclareRoute(mw.RouteSpec{
 		Method: http.MethodGet, Path: "/admin/orders/overview",
 		Perm: orderenums.OrderOverview, Kind: mw.RoutePage,
 		AuthObject: "/admin/orders/overview", AuthMethod: http.MethodGet,
@@ -103,12 +103,12 @@ func SetupOrderPages(pages *gin.RouterGroup, svc ordercontract.OrderService,
 	pages.GET("/order-carriers", mw.PageAuthz("/api/order/carrier/list"),
 		pageview.UseRenderer(pageview.RenderPage), shipPages.OrderCarriersPage)
 
-	mw.DeclareRoute(mw.RouteSpec{
+	reg.DeclareRoute(mw.RouteSpec{
 		Method: http.MethodGet, Path: "/admin/orders/pending-ship",
 		Perm: orderenums.OrderPendingShip, Kind: mw.RoutePage,
 		AuthObject: "/api/order/shipment/pending", AuthMethod: http.MethodGet,
 	})
-	mw.DeclareRoute(mw.RouteSpec{
+	reg.DeclareRoute(mw.RouteSpec{
 		Method: http.MethodGet, Path: "/admin/order-carriers",
 		Perm: orderenums.OrderCarrierList, Kind: mw.RoutePage,
 		AuthObject: "/api/order/carrier/list", AuthMethod: http.MethodGet,

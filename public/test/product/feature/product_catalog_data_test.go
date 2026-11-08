@@ -1,6 +1,7 @@
 package feature
 
 import (
+	mw "go_wp/pkg/middleware"
 	"context"
 	"net/http"
 	"net/http/httptest"
@@ -53,7 +54,7 @@ func TestPublicCatalogFactsAndPaging(t *testing.T) {
 	}
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
-	producthttp.SetupProductCatalogRoutes(engine, f.products)
+	producthttp.SetupProductCatalogRoutes(mw.NewRegistry(), engine, f.products)
 	read := func(q url.Values, status int) productdto.PublicCatalogResp {
 		t.Helper()
 		rec := httptest.NewRecorder()

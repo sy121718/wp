@@ -16,6 +16,7 @@ import (
 	adminenums "go_wp/internal/module/admin/enums"
 	"go_wp/internal/templates"
 	"go_wp/pkg/jsonx"
+	mw "go_wp/pkg/middleware"
 	"go_wp/pkg/view"
 	text "go_wp/pkg/view/jet"
 )
@@ -341,7 +342,7 @@ func TestDrawerListOpenersRenderHTMLProtocol(t *testing.T) {
 
 func TestDrawerRoutesDeclareHTMLBeforeAuthorization(t *testing.T) {
 	r := drawerEngine()
-	SetupAdminPages(r.Group("/admin"), nil, nil, &drawerPermService{}, &drawerMenuService{}, nil, nil, nil, nil)
+	SetupAdminPages(mw.NewRegistry(), r.Group("/admin"), nil, nil, &drawerPermService{}, &drawerMenuService{}, nil, nil, nil, nil)
 	for _, path := range []string{"/admin/menus/edit", "/admin/menus/update", "/admin/permissions/edit", "/admin/permissions/update", "/admin/administrators/roles/drawer", "/admin/administrators/menus/drawer", "/admin/roles/permissions/drawer"} {
 		method := http.MethodGet
 		if strings.HasSuffix(path, "/update") {

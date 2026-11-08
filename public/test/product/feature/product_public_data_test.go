@@ -1,6 +1,7 @@
 package feature
 
 import (
+	mw "go_wp/pkg/middleware"
 	"context"
 	"net/http"
 	"net/http/httptest"
@@ -57,7 +58,7 @@ func TestPublicVariantData(t *testing.T) {
 	f.products.SetAvailabilityPort(stock)
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
-	producthttp.SetupProductPublicRoutes(engine, f.products)
+	producthttp.SetupProductPublicRoutes(mw.NewRegistry(), engine, f.products)
 	read := func(project, ids string, status int) []productdto.PublicVariantResp {
 		t.Helper()
 		rec := httptest.NewRecorder()

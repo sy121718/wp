@@ -37,7 +37,7 @@ func SetupPublicationRoutes(rg *mw.RouteGroup, db *gorm.DB) pubcontract.Publicat
 
 	g.GET("/receipts/pending", pubenums.PublicationReceiptsPending, PublicationPendingReceipts(svc))
 
-	mw.DeclareRoute(mw.RouteSpec{
+	rg.Registry().DeclareRoute(mw.RouteSpec{
 		Method: http.MethodPost, Path: "/api/seo/audit",
 		Perm: adminenums.SEOAudit, Kind: mw.RoutePage,
 		AuthObject: "/api/seo/audit", AuthMethod: http.MethodPost,

@@ -39,24 +39,33 @@ type RouteSpec struct {
 
 const exemptPerm = ""
 
-var (
-	regMu        sync.Mutex
+// Registry 是一次装配实例的路由权限登记索引。
+//
+// 为什么是实例而不是包级全局：登记只在启动期完成、完成后冻结，但同一进程里的
+// 测试装配与生产装配会各自建立索引。全局态会让「测试 Reset」清掉正在服务实例的
+// 索引，也无法证明多 router 实例互不污染。这里只持有本次装配的事实，
+// 查询返回副本，调用方不能改内部状态。
+type Registry struct {
+	mu           sync.Mutex
 	declared     []RouteSpec
 	declaredKeys map[string]RouteSpec
 	exemptRoutes []string
 	apiPermPaths map[string]string
 	frozen       bool
-)
+}
+
+// NewRegistry 建立一个空登记索引；每次路由装配建一个，不共享。
+func NewRegistry() *Registry { return &Registry{} }
 
 // Declare 登记一条路由绑定；同一路由重复声明不同权限会显式 panic。
-func Declare(method, path, perm string, kind RouteKind) {
-	regMu.Lock()
-	defer regMu.Unlock()
-	declareLocked(method, path, perm, kind)
+func (r *Registry) Declare(method, path, perm string, kind RouteKind) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.declareLocked(RouteSpec{Method: method, Path: path, Perm: perm, Kind: kind, AuthObject: path, AuthMethod: method})
 }
 
 // DeclareRoute 登记完整绑定（含复用的鉴权对象/方法）。
-func DeclareRoute(spec RouteSpec) {
+func (r *Registry) DeclareRoute(spec RouteSpec) {
 	if spec.AuthObject == "" {
 		spec.AuthObject = spec.Path
 	}
@@ -70,19 +79,27 @@ func DeclareRoute(spec RouteSpec) {
 			spec.Kind = RouteProtected
 		}
 	}
-	regMu.Lock()
-	defer regMu.Unlock()
-	final, added := declaredOrPanicLocked(spec)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	final, added := r.declaredOrPanicLocked(spec)
 	if added {
-		declared = append(declared, final)
+		r.declared = append(r.declared, final)
+	}
+}
+
+// declareLocked 是 Declare 的内部实现；调用方已持锁。
+func (r *Registry) declareLocked(spec RouteSpec) {
+	final, added := r.declaredOrPanicLocked(spec)
+	if added {
+		r.declared = append(r.declared, final)
 	}
 }
 
 // declaredOrPanicLocked 登记一条绑定；返回 (最终生效的绑定, 是否为新增)。
 //
 // 同一路由以相同权限重复声明是幂等操作（装配可能被测试重复调用），不重复追加。
-func declaredOrPanicLocked(spec RouteSpec) (RouteSpec, bool) {
-	if frozen {
+func (r *Registry) declaredOrPanicLocked(spec RouteSpec) (RouteSpec, bool) {
+	if r.frozen {
 		panic("路由登记已冻结：启动后不得再注册（" + spec.Method + " " + spec.Path + "）")
 	}
 	// 空权限只允许用于明确豁免；非豁免声明必须带权限码，否则等于静默公开。
@@ -92,11 +109,11 @@ func declaredOrPanicLocked(spec RouteSpec) (RouteSpec, bool) {
 	if spec.Perm != exemptPerm && spec.Kind == RouteExempt {
 		panic("豁免声明不得携带权限点：" + spec.Method + " " + spec.Path)
 	}
-	if declaredKeys == nil {
-		declaredKeys = map[string]RouteSpec{}
+	if r.declaredKeys == nil {
+		r.declaredKeys = map[string]RouteSpec{}
 	}
 	key := spec.Method + " " + spec.Path
-	if prev, dup := declaredKeys[key]; dup {
+	if prev, dup := r.declaredKeys[key]; dup {
 		if prev.Perm == spec.Perm {
 			return prev, false
 		}
@@ -106,40 +123,32 @@ func declaredOrPanicLocked(spec RouteSpec) (RouteSpec, bool) {
 		panic("同一路由被声明了两种权限点：" + key + " → " + prev.Perm + " / " + spec.Perm)
 	}
 	if spec.Perm == exemptPerm {
-		declaredKeys[key] = spec
-		exemptRoutes = append(exemptRoutes, key)
+		r.declaredKeys[key] = spec
+		r.exemptRoutes = append(r.exemptRoutes, key)
 		return spec, true
 	}
 	if strings.HasPrefix(spec.Path, "/api/") {
 		// API 路由必须各自一个权限点：策略表按权限码唯一映射一条路径。
-		if apiPermPaths == nil {
-			apiPermPaths = map[string]string{}
+		if r.apiPermPaths == nil {
+			r.apiPermPaths = map[string]string{}
 		}
-		if prev, used := apiPermPaths[spec.Perm]; used && prev != key {
+		if prev, used := r.apiPermPaths[spec.Perm]; used && prev != key {
 			panic("同一权限点绑定到多条 API 路由：" + spec.Perm + " → " + prev + " / " + key)
 		}
-		apiPermPaths[spec.Perm] = key
+		r.apiPermPaths[spec.Perm] = key
 	}
-	declaredKeys[key] = spec
+	r.declaredKeys[key] = spec
 	return spec, true
 }
 
-func declareLocked(method, path, perm string, kind RouteKind) {
-	spec := RouteSpec{Method: method, Path: path, Perm: perm, Kind: kind, AuthObject: path, AuthMethod: method}
-	final, added := declaredOrPanicLocked(spec)
-	if added {
-		declared = append(declared, final)
-	}
-}
-
 // RoutesOf 返回某权限点绑定的全部路由。
-func RoutesOf(perm string) []RouteSpec {
-	regMu.Lock()
-	defer regMu.Unlock()
+func (r *Registry) RoutesOf(perm string) []RouteSpec {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	out := make([]RouteSpec, 0, 2)
-	for _, r := range declared {
-		if r.Perm == perm {
-			out = append(out, r)
+	for _, spec := range r.declared {
+		if spec.Perm == perm {
+			out = append(out, spec)
 		}
 	}
 	slices.SortFunc(out, func(a, b RouteSpec) int {
@@ -149,11 +158,11 @@ func RoutesOf(perm string) []RouteSpec {
 }
 
 // Snapshot 返回已登记绑定的副本（只读视图）。
-func Snapshot() []RouteSpec {
-	regMu.Lock()
-	defer regMu.Unlock()
-	out := make([]RouteSpec, len(declared))
-	copy(out, declared)
+func (r *Registry) Snapshot() []RouteSpec {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]RouteSpec, len(r.declared))
+	copy(out, r.declared)
 	slices.SortFunc(out, func(a, b RouteSpec) int {
 		return cmp.Or(cmp.Compare(a.Path, b.Path), cmp.Compare(a.Method, b.Method))
 	})
@@ -161,57 +170,101 @@ func Snapshot() []RouteSpec {
 }
 
 // Exempts 返回明确豁免的路由键。
-func Exempts() []string {
-	regMu.Lock()
-	defer regMu.Unlock()
-	out := make([]string, len(exemptRoutes))
-	copy(out, exemptRoutes)
+func (r *Registry) Exempts() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]string, len(r.exemptRoutes))
+	copy(out, r.exemptRoutes)
 	slices.Sort(out)
 	return out
 }
 
-// Reset 清空登记并解冻；只允许装配与测试使用，不能在服务期间清授权。
-func Reset() {
-	regMu.Lock()
-	defer regMu.Unlock()
-	declared = nil
-	declaredKeys = nil
-	exemptRoutes = nil
-	apiPermPaths = nil
-	frozen = false
+// Reset 清空**本实例**的登记并解冻。
+//
+// 它只给「重新装配的测试实例与脚手架」用：应用装配持有自己的 Registry，
+// 对默认实例或另一个实例调用 Reset，不会清掉正在服务实例的索引。
+func (r *Registry) Reset() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.declared = nil
+	r.declaredKeys = nil
+	r.exemptRoutes = nil
+	r.apiPermPaths = nil
+	r.frozen = false
 }
 
 // Freeze 在全部路由登记完成后冻结索引：迟到的登记明确 panic，
 // 不实现热加载或运行中重建。Reset 只给装配与测试重新开始用。
-func Freeze() {
-	regMu.Lock()
-	defer regMu.Unlock()
-	frozen = true
+func (r *Registry) Freeze() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.frozen = true
 }
 
 // Frozen 报告登记是否已冻结。
-func Frozen() bool {
-	regMu.Lock()
-	defer regMu.Unlock()
-	return frozen
+func (r *Registry) Frozen() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.frozen
 }
 
+// defaultRegistry 是「没有装配索引的模块单测与脚手架」使用的默认实例。
+//
+// 应用装配不走向它：每次 SetupRoutes 建一个 Registry 并随 RouteGroup 下发，
+// 因此默认实例上的 Reset 不会影响正在服务的实例。
+var defaultRegistry = NewRegistry()
+
+// 包级入口转发到默认实例，保留模块单测与脚手架的既有调用形状。
+func Declare(method, path, perm string, kind RouteKind) {
+	defaultRegistry.Declare(method, path, perm, kind)
+}
+
+func DeclareRoute(spec RouteSpec) { defaultRegistry.DeclareRoute(spec) }
+
+func RoutesOf(perm string) []RouteSpec { return defaultRegistry.RoutesOf(perm) }
+
+func Snapshot() []RouteSpec { return defaultRegistry.Snapshot() }
+
+func Exempts() []string { return defaultRegistry.Exempts() }
+
+func Reset() { defaultRegistry.Reset() }
+
+func Freeze() { defaultRegistry.Freeze() }
+
+func Frozen() bool { return defaultRegistry.Frozen() }
+
 // RouteGroup 是一个受保护操作组：注册即登记 METHOD + 实际路径 + 权限标识。
+//
+// 组持有本次装配的 Registry；子组继承同一个索引，不产生第二个权限服务。
 type RouteGroup struct {
 	*gin.RouterGroup
 	Kind RouteKind
+	reg  *Registry
 }
 
 // NewRouteGroup 由应用装配方指定本组用途；子组继承。
+//
+// 没有装配索引时（模块单测、脚手架）用默认实例；应用装配请用 NewRouteGroupIn。
 func NewRouteGroup(rg *gin.RouterGroup, kind RouteKind) *RouteGroup {
+	return NewRouteGroupIn(defaultRegistry, rg, kind)
+}
+
+// NewRouteGroupIn 用本次装配持有的索引建立路由组。
+func NewRouteGroupIn(reg *Registry, rg *gin.RouterGroup, kind RouteKind) *RouteGroup {
 	if rg == nil {
 		panic("mw.NewRouteGroup 收到 nil 路由组（装配缺陷）")
 	}
-	return &RouteGroup{RouterGroup: rg, Kind: kind}
+	if reg == nil {
+		panic("mw.NewRouteGroupIn 收到 nil 登记索引（装配缺陷）")
+	}
+	return &RouteGroup{RouterGroup: rg, Kind: kind, reg: reg}
 }
 
+// Registry 返回本组登记的索引；装配层用它取快照、冻结与核对。
+func (g *RouteGroup) Registry() *Registry { return g.reg }
+
 func (g *RouteGroup) Group(relativePath string, handlers ...gin.HandlerFunc) *RouteGroup {
-	return &RouteGroup{RouterGroup: g.RouterGroup.Group(relativePath, handlers...), Kind: g.Kind}
+	return &RouteGroup{RouterGroup: g.RouterGroup.Group(relativePath, handlers...), Kind: g.Kind, reg: g.reg}
 }
 
 func (g *RouteGroup) Use(middleware ...gin.HandlerFunc) *RouteGroup {
@@ -241,7 +294,7 @@ func (g *RouteGroup) DeclareRouteIn(method, relativePath string, spec RouteSpec)
 	if spec.Kind == "" {
 		spec.Kind = g.Kind
 	}
-	DeclareRoute(spec)
+	g.reg.DeclareRoute(spec)
 }
 
 // ExemptGET / ExemptPOST 在受保护组内声明明确豁免的入口：
@@ -255,7 +308,7 @@ func (g *RouteGroup) ExemptPOST(relativePath string, handlers ...gin.HandlerFunc
 }
 
 func (g *RouteGroup) declareExemptAndRegister(method, relativePath string, handlers ...gin.HandlerFunc) gin.IRoutes {
-	Declare(method, joinRoutePaths(g.BasePath(), relativePath), "", RouteExempt)
+	g.reg.Declare(method, joinRoutePaths(g.BasePath(), relativePath), "", RouteExempt)
 	if method == http.MethodGet {
 		return g.RouterGroup.GET(relativePath, handlers...)
 	}
@@ -263,7 +316,7 @@ func (g *RouteGroup) declareExemptAndRegister(method, relativePath string, handl
 }
 
 func (g *RouteGroup) declareAndRegister(method, relativePath, perm string, handlers ...gin.HandlerFunc) gin.IRoutes {
-	Declare(method, joinRoutePaths(g.BasePath(), relativePath), perm, g.Kind)
+	g.reg.Declare(method, joinRoutePaths(g.BasePath(), relativePath), perm, g.Kind)
 	if method == http.MethodGet {
 		return g.RouterGroup.GET(relativePath, handlers...)
 	}

@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,12 +10,17 @@ import (
 	"sync"
 	"testing"
 
+	mw "go_wp/pkg/middleware"
 	"go_wp/config"
 
 	"github.com/gin-gonic/gin"
 )
 
 const routeSnapshotEnv = "WP_DUMP_ROUTES"
+
+// auditRegistry 是 assembleRouteDump 那次装配的登记索引；
+// 审计输出读它，不读包级默认实例。
+var auditRegistry *mw.Registry
 
 func bootstrapRouter(t *testing.T) []string {
 	t.Helper()
@@ -54,7 +60,7 @@ func assembleRouteDump() ([]string, error) {
 	}
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	SetupRoutes(router, func() error { return nil })
+	auditRegistry = SetupRoutesWithRegistry(context.Background(), router, func() error { return nil })
 
 	lines := make([]string, 0, 512)
 	for _, r := range router.Routes() {

@@ -115,16 +115,16 @@ func SetupOrderRoutes(rg *mw.RouteGroup,
 	rgp.POST("/reject", orderenums.OrderReturnReject, pageview.HTMLFragment, h.RejectReturn)
 	rgp.POST("/receive", orderenums.OrderReturnReceive, pageview.HTMLFragment, h.ReceiveReturn)
 
-	SetupOrderPages(pages, svc, projects, product, warehouses, dict)
+	SetupOrderPages(rg.Registry(), pages, svc, projects, product, warehouses, dict)
 
 	return svc
 }
 
-func SetupOrderPublicRoutes(router *gin.Engine, svc ordercontract.VisitorOrderPort, middleware ...gin.HandlerFunc) {
+func SetupOrderPublicRoutes(reg *mw.Registry, router *gin.Engine, svc ordercontract.VisitorOrderPort, middleware ...gin.HandlerFunc) {
 	if router == nil || svc == nil {
 		return
 	}
-	publicAPI := mw.NewRouteGroup(router.Group("/api/site/orders", middleware...), mw.RouteExempt)
+	publicAPI := mw.NewRouteGroupIn(reg, router.Group("/api/site/orders", middleware...), mw.RouteExempt)
 	publicAPI.Use(builtin.RequestRateLimitMiddleware(90, time.Minute), requireVisitorOrderUser())
 	h := &PublicHandle{svc: svc}
 	publicAPI.GET("", "", h.VisitorList)

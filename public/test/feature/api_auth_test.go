@@ -86,7 +86,7 @@ func newAuthFeatureEngine(t *testing.T) (*gin.Engine, *support.AdminSession) {
 			}
 
 			api := engine.Group("/api")
-			captcharouter.SetupCaptchaRoutes(api)
+			captcharouter.SetupCaptchaRoutes(mw.NewRegistry(), api)
 			adminhttp.SetupAdminRoutes(mw.NewRouteGroup(api, mw.RouteProtected), db)
 
 			authorizedGroup := api.Group("", builtin.SessionAuthMiddleware(), builtin.CSRFMiddleware(), builtin.CasbinMiddleware())

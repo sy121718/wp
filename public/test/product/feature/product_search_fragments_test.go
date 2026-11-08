@@ -1,6 +1,7 @@
 package feature
 
 import (
+	mw "go_wp/pkg/middleware"
 	"context"
 	json "go_wp/pkg/jsonx"
 	"net/http"
@@ -44,7 +45,7 @@ func searchJSON(t *testing.T, f *detailFixture, q string) contentcontract.Public
 	reader := contentservice.NewPublicSearchService(contents, f.products, f.pres)
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
-	contenthttp.SetupContentPublicRoutes(engine, reader)
+	contenthttp.SetupContentPublicRoutes(mw.NewRegistry(), engine, reader)
 	rec := httptest.NewRecorder()
 	params := url.Values{"projectId": {f.projectID}, "q": {q}}
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/site/search?"+params.Encode(), nil))

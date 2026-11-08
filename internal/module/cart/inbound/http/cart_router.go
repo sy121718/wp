@@ -84,11 +84,11 @@ func SetupCartRoutes(router *gin.Engine, svc cartcontract.CartService) {
 	router.POST("/payment/callback", h.PaymentCallback)
 }
 
-func SetupCartPublicRoutes(router *gin.Engine, svc cartcontract.CartService, middleware ...gin.HandlerFunc) {
+func SetupCartPublicRoutes(reg *mw.Registry, router *gin.Engine, svc cartcontract.CartService, middleware ...gin.HandlerFunc) {
 	if router == nil || svc == nil {
 		return
 	}
-	g := mw.NewRouteGroup(router.Group("/api/site/cart", middleware...), mw.RouteExempt)
+	g := mw.NewRouteGroupIn(reg, router.Group("/api/site/cart", middleware...), mw.RouteExempt)
 	g.Use(builtin.RequestRateLimitMiddleware(90, time.Minute))
 	h := NewCartPublicHandle(svc)
 	g.GET("", "", h.View)

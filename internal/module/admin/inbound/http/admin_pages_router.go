@@ -25,7 +25,7 @@ const (
 	LoginPageTemplate          = "admin/login"
 )
 
-func SetupAdminPages(adminPages *gin.RouterGroup,
+func SetupAdminPages(reg *mw.Registry, adminPages *gin.RouterGroup,
 	admins admincontract.AdminService, roles admincontract.RoleService,
 	perms admincontract.PermService, menus admincontract.MenuService,
 	depts admincontract.DeptService, rules admincontract.RuleService,
@@ -110,7 +110,7 @@ func SetupAdminPages(adminPages *gin.RouterGroup,
 
 	i18nPages.SetPageMarker(pages)
 
-	mw.DeclareRoute(mw.RouteSpec{
+	reg.DeclareRoute(mw.RouteSpec{
 		Method: http.MethodGet, Path: "/api/i18n/list",
 		Perm: adminenums.I18nView, Kind: mw.RoutePage,
 		AuthObject: "/api/i18n/list", AuthMethod: http.MethodGet,

@@ -61,12 +61,12 @@ func SetupProductRoutes(rg *mw.RouteGroup, db *gorm.DB, project projectcontract.
 	return svc, svc, handle
 }
 
-func SetupProductPublicRoutes(router *gin.Engine, svc productcontract.PublicVariantReader) {
-	mw.NewRouteGroup(router.Group(""), mw.RouteExempt).GET("/api/site/product/variants", "", builtin.RequestRateLimitMiddleware(90, time.Minute), NewProductPublicHandle(svc).Variants)
+func SetupProductPublicRoutes(reg *mw.Registry, router *gin.Engine, svc productcontract.PublicVariantReader) {
+	mw.NewRouteGroupIn(reg, router.Group(""), mw.RouteExempt).GET("/api/site/product/variants", "", builtin.RequestRateLimitMiddleware(90, time.Minute), NewProductPublicHandle(svc).Variants)
 }
 
-func SetupProductCatalogRoutes(router *gin.Engine, svc productcontract.PublicCatalogReader) {
-	mw.NewRouteGroup(router.Group(""), mw.RouteExempt).GET("/api/site/product/catalog", "", builtin.RequestRateLimitMiddleware(90, time.Minute), NewProductCatalogHandle(svc).List)
+func SetupProductCatalogRoutes(reg *mw.Registry, router *gin.Engine, svc productcontract.PublicCatalogReader) {
+	mw.NewRouteGroupIn(reg, router.Group(""), mw.RouteExempt).GET("/api/site/product/catalog", "", builtin.RequestRateLimitMiddleware(90, time.Minute), NewProductCatalogHandle(svc).List)
 }
 
 func registerProductPublishHistoryAPI(g *mw.RouteGroup, handle *PublishAttemptHandle) {
@@ -316,6 +316,6 @@ func NewProductHandle(svc productcontract.ProductService) *ProductHandle {
 	return &ProductHandle{svc: svc}
 }
 
-func SetupProductOptionsRoutes(router *gin.Engine, svc productcontract.PublicProductOptionsReader) {
-	mw.NewRouteGroup(router.Group(""), mw.RouteExempt).GET("/api/site/product/options", "", builtin.RequestRateLimitMiddleware(90, time.Minute), (&ProductOptionsHandle{svc: svc}).Get)
+func SetupProductOptionsRoutes(reg *mw.Registry, router *gin.Engine, svc productcontract.PublicProductOptionsReader) {
+	mw.NewRouteGroupIn(reg, router.Group(""), mw.RouteExempt).GET("/api/site/product/options", "", builtin.RequestRateLimitMiddleware(90, time.Minute), (&ProductOptionsHandle{svc: svc}).Get)
 }

@@ -33,6 +33,6 @@ func SetupContentRoutes(rg *mw.RouteGroup, db *gorm.DB, collections core.Collect
 	return svc
 }
 
-func SetupContentPublicRoutes(router *gin.Engine, reader contentcontract.PublicSearchReader) {
-	mw.NewRouteGroup(router.Group(""), mw.RouteExempt).GET("/api/site/search", "", builtin.RequestRateLimitMiddleware(90, time.Minute), NewContentPublicHandle(reader).Search)
+func SetupContentPublicRoutes(reg *mw.Registry, router *gin.Engine, reader contentcontract.PublicSearchReader) {
+	mw.NewRouteGroupIn(reg, router.Group(""), mw.RouteExempt).GET("/api/site/search", "", builtin.RequestRateLimitMiddleware(90, time.Minute), NewContentPublicHandle(reader).Search)
 }

@@ -262,7 +262,7 @@ const moduleRouterTpl = `package __NAME__http
 
 // __NAME___router.go — __NAME__ 模块路由自装配。
 //
-// 挂载点：应用装配层在 middleware.Freeze 之前调用 Setup__PASCAL__Routes(rg, db)。
+// 挂载点：应用装配层在登记索引 Freeze 之前调用 Setup__PASCAL__Routes(rg, db)。
 // rg 的用途（受保护 / 页面）由应用提供；认证与 Casbin 必须已由应用挂好，
 // 骨架不重复装配认证器。
 
@@ -340,10 +340,10 @@ const moduleReadmeTpl = "# __NAME__ 模块骨架\n" + `
 
 ## 装配触点（骨架不自动接线，需人工正式接入）
 
-1. 路由挂载：应用装配层在 ` + "`middleware.Freeze()`" + ` 之前调用
+1. 路由挂载：应用装配层在登记索引 ` + "`Registry.Freeze()`" + ` 之前调用
    ` + "`http.Setup__PASCAL__Routes(rg, db)`" + `；` + "`rg`" + ` 是应用提供的 ` + "`*middleware.RouteGroup`" + `，
    调用方必须已经挂好认证与 Casbin，骨架不重复装配认证器。
 2. 权限目录：` + "`__NAME__:demo_read`" + ` 需按项目权限迁移流程正式登记（人工接入）。
 3. 迁移注册：建表 SQL 加入项目迁移目录并顺延编号（人工接入）。
-4. 路由与权限登记完成后由应用调用 ` + "`middleware.Freeze()`" + `；冻结后注册会明确失败。
+4. 路由与权限登记完成后由装配层冻结本次索引（` + "`Registry.Freeze()`" + `）；冻结后注册会明确失败。
 `

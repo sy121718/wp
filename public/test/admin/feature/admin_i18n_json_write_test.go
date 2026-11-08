@@ -54,7 +54,7 @@ func newI18nWriteFixture(t *testing.T) *i18nWriteFixture {
 			}
 			fix.db = db
 			api := e.Group("/api")
-			captcharouter.SetupCaptchaRoutes(api)
+			captcharouter.SetupCaptchaRoutes(mw.NewRegistry(), api)
 
 			adminhttp.SetupAdminRoutes(mw.NewRouteGroup(api, mw.RouteProtected), db)
 		},

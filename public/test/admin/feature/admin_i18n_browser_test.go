@@ -1,6 +1,7 @@
 package feature
 
 import (
+	mw "go_wp/pkg/middleware"
 	"context"
 	"net/http"
 	"net/http/httptest"
@@ -34,7 +35,7 @@ func TestAdminI18nRealBrowser(t *testing.T) {
 		c.Next()
 	})
 	dict := sysconfigservice.NewService(sysconfigmodel.NewSysConfigModel(fix.db), nil)
-	adminhttp.SetupAdminPages(pages, nil, nil, nil, nil, nil, nil, nil, dict)
+	adminhttp.SetupAdminPages(mw.NewRegistry(), pages, nil, nil, nil, nil, nil, nil, nil, dict)
 	fix.engine.Static("/static", "../../../../internal/templates/static")
 	for _, width := range []string{"1440", "768", "375"} {
 		key := "browser.i18n." + width + ".<&\"'+?/#"

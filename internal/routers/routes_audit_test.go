@@ -2,7 +2,6 @@ package routers
 
 import (
 	"fmt"
-	mw "go_wp/pkg/middleware"
 	"os"
 	"testing"
 )
@@ -19,10 +18,11 @@ func TestDumpRoutesForAudit(t *testing.T) {
 	for _, handler := range routeDumpHandlers {
 		fmt.Println(handler)
 	}
-	for _, spec := range mw.Snapshot() {
+	// 读本次装配自己的索引：包级默认实例不在生产装配链上。
+	for _, spec := range auditRegistry.Snapshot() {
 		fmt.Printf("DECLARED %s %s %s\n", spec.Method, spec.Path, spec.Perm)
 	}
-	for _, e := range mw.Exempts() {
+	for _, e := range auditRegistry.Exempts() {
 		fmt.Printf("EXEMPT %s\n", e)
 	}
 }

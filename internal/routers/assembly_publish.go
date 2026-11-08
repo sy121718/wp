@@ -4,7 +4,6 @@ import (
 	"context"
 	"go_wp/config"
 	"go_wp/internal/builder/extensions/presets"
-	mw "go_wp/pkg/middleware"
 	publish "go_wp/pkg/publish"
 	"strings"
 	"time"
@@ -120,7 +119,7 @@ func (a *assembly) buildPublishingModules() {
 	if !ok {
 		panic("自动发布模块未实现公开实体索引")
 	}
-	contenthttp.SetupContentPublicRoutes(a.router, contentservice.NewPublicSearchService(contentSearch, productSearch, publicIndex))
+	contenthttp.SetupContentPublicRoutes(a.registry, a.router, contentservice.NewPublicSearchService(contentSearch, productSearch, publicIndex))
 
 	if setter, ok := productSvc.(interface {
 		SetArchiveInstanceEnsurer(presentationcontract.ArchiveInstanceEnsurer)
@@ -575,7 +574,7 @@ func (a *assembly) mountAdminPages() {
 		admincontract.RuleService
 	})
 
-	adminhttp.SetupAdminPages(a.adminPages, adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminCRUD, a.pageService, a.sysConfigDict)
+	adminhttp.SetupAdminPages(a.registry, a.adminPages, adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminCRUD, a.pageService, a.sysConfigDict)
 	adminhttp.SetupAdminShellPages(a.router)
 
 	blockhttp.SetupBlockPages(a.adminPages, a.blockSvc, a.projectService, a.pageService)
@@ -643,9 +642,9 @@ func (a *assembly) runSelfCheck() {
 // 也不留「先启动再补库」的窗口。
 func (a *assembly) verifyPermissionDirectory() {
 	dir := newAdminPermDirectory(a.adminAuthzSvc)
-	problems := verifyDeclaredPermissions(a.bgCtx, dir)
+	problems := verifyDeclaredPermissions(a.bgCtx, a.registry, dir)
 	if len(problems) == 0 {
-		if ex := mw.Exempts(); len(ex) > 0 {
+		if ex := a.registry.Exempts(); len(ex) > 0 {
 			logger.Scene("init").With("count", len(ex)).
 				Info("以下路由显式豁免权限点（check-permission-gaps.sh 的 EXEMPT 名单应对应）：" + strings.Join(ex, "; "))
 		}
@@ -657,9 +656,9 @@ func (a *assembly) verifyPermissionDirectory() {
 }
 
 func (a *assembly) mountPublicFace() {
-	producthttp.SetupProductPublicRoutes(a.router, a.productSvc)
-	producthttp.SetupProductCatalogRoutes(a.router, a.productSvc)
-	producthttp.SetupProductOptionsRoutes(a.router, a.productSvc)
+	producthttp.SetupProductPublicRoutes(a.registry, a.router, a.productSvc)
+	producthttp.SetupProductCatalogRoutes(a.registry, a.router, a.productSvc)
+	producthttp.SetupProductOptionsRoutes(a.registry, a.router, a.productSvc)
 
 }
 

@@ -116,7 +116,7 @@ func newNavTranslationAuthzEnv(t *testing.T) *navTranslationAuthzEnv {
 			engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 
 			api := engine.Group("/api")
-			captcharouter.SetupCaptchaRoutes(api)
+			captcharouter.SetupCaptchaRoutes(mw.NewRegistry(), api)
 			adminAuthz := adminhttp.SetupAdminRoutes(mw.NewRouteGroup(api, mw.RouteProtected), db)
 
 			adminPages := engine.Group("/admin",

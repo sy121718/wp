@@ -1,6 +1,7 @@
 package feature
 
 import (
+	mw "go_wp/pkg/middleware"
 	"context"
 	"net/http"
 	"net/http/httptest"
@@ -38,7 +39,7 @@ func TestPublicProductOptionsOnlyExposesEnabledFacts(t *testing.T) {
 	}
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
-	producthttp.SetupProductOptionsRoutes(engine, f.products)
+	producthttp.SetupProductOptionsRoutes(mw.NewRegistry(), engine, f.products)
 	read := func(project, productID string, status int) *productdto.PublicProductOptionsResp {
 		t.Helper()
 		rec := httptest.NewRecorder()

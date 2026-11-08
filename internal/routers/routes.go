@@ -26,16 +26,25 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 // 不会出现「库已经关了，worker 还在领任务」。
 // 不传 ctx 的 SetupRoutes 保留给测试与历史调用点，它等价于一个永不过期的 ctx。
 func SetupRoutesWithContext(ctx context.Context, router *gin.Engine, ready func() error) {
+	SetupRoutesWithRegistry(ctx, router, ready)
+}
+
+// SetupRoutesWithRegistry 与 SetupRoutesWithContext 相同，但把本次装配的登记索引交回调用方。
+//
+// 审计/契约工具要读「这一实例真正登记的绑定」，不能读包级默认实例：
+// 默认实例只服务于没有装配索引的模块单测。
+func SetupRoutesWithRegistry(ctx context.Context, router *gin.Engine, ready func() error) *mw.Registry {
 	if router == nil {
-		return
+		return nil
 	}
 	if ctx == nil {
 		ctx = context.Background()
 	}
 
-	mw.Reset()
-
-	a := &assembly{router: router, marks: newWiringMarks(), bgCtx: ctx}
+	// 每次装配建一个登记索引：它随本次的 RouteGroup / 模块装配下发，冻结后只读。
+	// 包级 mw.Snapshot()/Reset() 只服务于没有装配索引的模块单测，
+	// 因此测试里的 Reset 不会清掉正在服务实例的索引。
+	a := &assembly{router: router, marks: newWiringMarks(), bgCtx: ctx, registry: mw.NewRegistry()}
 
 	// 页面渲染的请求事实来源（CSRF / 授权菜单树）由应用注入 pkg/view。
 	wireAdminViewPort()
@@ -45,7 +54,7 @@ func SetupRoutesWithContext(ctx context.Context, router *gin.Engine, ready func(
 	a.buildFoundation(ready)
 	if a.db == nil {
 
-		return
+		return a.registry
 	}
 
 	a.buildAPIAndCoreCRUD()
@@ -66,10 +75,11 @@ func SetupRoutesWithContext(ctx context.Context, router *gin.Engine, ready func(
 
 	// 全部路由与工具登记完成后才冻结：之后任何迟到注册都会明确 panic/报错，
 	// 不会出现「启动后目录还在悄悄长」的运行时重建。
-	mw.Freeze()
+	a.registry.Freeze()
 	a.tools().Freeze()
 
 	a.runSelfCheck()
+	return a.registry
 }
 
 func setupStaticFace(router *gin.Engine) {

@@ -1,6 +1,7 @@
 package feature
 
 import (
+	mw "go_wp/pkg/middleware"
 	json "go_wp/pkg/jsonx"
 	"net/http"
 	"net/http/httptest"
@@ -35,7 +36,7 @@ func newUserHTTPEnv(t *testing.T) *userHTTPEnv {
 	router := gin.New()
 
 	mail := &fakeMail{}
-	userhttp.SetupUserRoutes(router, db, mail, "测试站")
+	userhttp.SetupUserRoutes(mw.NewRegistry(), router, db, mail, "测试站")
 	return &userHTTPEnv{router: router, db: db, mail: mail}
 }
 

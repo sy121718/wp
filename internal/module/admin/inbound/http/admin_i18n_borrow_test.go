@@ -56,19 +56,24 @@ func adminPageBorrows(t *testing.T) []adminPageBorrow {
 	return out
 }
 
+// adminI18nTestRegistry 是两个装配调用的共同索引：页面与 API 都登记在同一实例，
+// 测试因此能证明「页面借用的对象在声明表里确实有权限点」。
+var adminI18nTestRegistry = mw.NewRegistry()
+
 func setupAdminI18nBothSides(t *testing.T) *gin.Engine {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
-	SetupAdminPages(gin.New().Group("/admin"), nil, nil, nil, nil, nil, nil, nil, nil)
+	adminI18nTestRegistry.Reset()
+	SetupAdminPages(adminI18nTestRegistry, gin.New().Group("/admin"), nil, nil, nil, nil, nil, nil, nil, nil)
 	engine := gin.New()
 
-	SetupAdminRoutes(mw.NewRouteGroup(engine.Group("/api"), mw.RouteProtected), nil)
+	SetupAdminRoutes(mw.NewRouteGroupIn(adminI18nTestRegistry, engine.Group("/api"), mw.RouteProtected), nil)
 	return engine
 }
 
-func adminI18nPermsOf(method, path string) []string {
+func adminI18nPermsOf(reg *mw.Registry, method, path string) []string {
 	var matched []string
-	for _, spec := range mw.Snapshot() {
+	for _, spec := range reg.Snapshot() {
 		if spec.Path == path && spec.Method == method {
 			matched = append(matched, spec.Perm)
 		}
@@ -87,7 +92,7 @@ func TestAdminI18nBorrowObjectsAreDeclaredAndResolvable(t *testing.T) {
 		key := b.Act + " " + b.Obj
 		seen[b.PageMethod+" "+b.PagePath+" → "+key] = true
 
-		matched := adminI18nPermsOf(b.Act, b.Obj)
+		matched := adminI18nPermsOf(adminI18nTestRegistry, b.Act, b.Obj)
 		switch len(matched) {
 		case 0:
 			t.Errorf("页面 %s %s enforce 的 %s 在声明表里查不到权限点 —— mw.RoutesOf 查空，ai_handle.go 的 casbinAuthorizer 会 fail closed，用到它的 AI 工具一律 forbidden", b.PageMethod, b.PagePath, key)
@@ -125,7 +130,7 @@ func TestAdminI18nWriteEndpointIsRealRoute(t *testing.T) {
 		t.Fatalf("POST /api/i18n/save 没有注册成真实路由（现有 /api 路由：%v）—— 页面写动作与 AI 工具侧的写权限点都会失去宿主", apiRoutesOf(engine))
 	}
 
-	owners := adminI18nPermsOf(http.MethodPost, "/api/i18n/save")
+	owners := adminI18nPermsOf(adminI18nTestRegistry, http.MethodPost, "/api/i18n/save")
 	if len(owners) != 1 || owners[0] != adminenums.I18nManage {
 		t.Fatalf("POST /api/i18n/save 的权限点应为唯一的 i18n:manage，实际 %v —— 迁移 178/294 的 code/obj 必须逐字不变（改它等于让既有超管与角色策略失配）", owners)
 	}
@@ -134,7 +139,7 @@ func TestAdminI18nWriteEndpointIsRealRoute(t *testing.T) {
 func TestAdminPageBorrowRoutesAreRegistered(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	SetupAdminPages(r.Group("/admin"), nil, nil, nil, nil, nil, nil, nil, nil)
+	SetupAdminPages(mw.NewRegistry(), r.Group("/admin"), nil, nil, nil, nil, nil, nil, nil, nil)
 
 	registered := map[string]bool{}
 	for _, route := range r.Routes() {

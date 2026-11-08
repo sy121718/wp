@@ -113,8 +113,11 @@ import (
 // 且路径/方法与登记事实一致。不一致只报告并让就绪检查失败，不再启动反写。
 //
 // 这样既没有「先启动再写回」的窗口，也不会在冲突时自动挑一条覆盖用户定义。
-func verifyDeclaredPermissions(ctx context.Context, dir aicontract.PermDirectory) []string {
-	specs := mw.Snapshot()
+func verifyDeclaredPermissions(ctx context.Context, reg *mw.Registry, dir aicontract.PermDirectory) []string {
+	if reg == nil {
+		return []string{"路由登记索引未注入：装配缺陷"}
+	}
+	specs := reg.Snapshot()
 	if len(specs) == 0 {
 		return []string{"没有任何已声明的路由绑定：装配缺陷"}
 	}
@@ -185,6 +188,10 @@ type assembly struct {
 	api *gin.RouterGroup
 
 	authorizedAPI *mw.RouteGroup
+
+	// registry 是本次装配的路由权限登记索引：RouteGroup 与核对/冻结都读它，
+	// 不读包级默认实例（测试重置不能清掉正在服务实例的索引）。
+	registry *mw.Registry
 
 	sysConfigSvc sysconfigcontract.Service
 
@@ -392,9 +399,9 @@ func (a *assembly) buildAPIAndCoreCRUD() {
 	db := a.db
 
 	api := router.Group("/api")
-	captcharouter.SetupCaptchaRoutes(api)
+	captcharouter.SetupCaptchaRoutes(a.registry, api)
 
-	adminAuthzSvc := adminhttp.SetupAdminRoutes(mw.NewRouteGroup(api, mw.RouteProtected), db)
+	adminAuthzSvc := adminhttp.SetupAdminRoutes(mw.NewRouteGroupIn(a.registry, api, mw.RouteProtected), db)
 	a.adminAuthzSvc = adminAuthzSvc
 
 	// 管理员副作用任务的重放循环：策略重载与会话吊销跨库/跨进程，PG 回滚不了它们，
@@ -427,7 +434,7 @@ func (a *assembly) buildAPIAndCoreCRUD() {
 		router.GET("/admin/dev-login", adminhttp.DevLoginHandler(db))
 	}
 
-	authorizedAPI := mw.NewRouteGroup(
+	authorizedAPI := mw.NewRouteGroupIn(a.registry,
 		api.Group("", builtin.SessionAuthMiddleware(), builtin.ActorContextMiddleware(),
 			builtin.CSRFMiddleware(), builtin.CasbinMiddleware()), mw.RouteProtected)
 	a.api = api
@@ -435,7 +442,7 @@ func (a *assembly) buildAPIAndCoreCRUD() {
 
 	sysconfighttp.SetupSysConfigRoutes(authorizedAPI, a.adminPages, a.sysConfigSvc)
 
-	aihttp.SetupAIRoutes(authorizedAPI, a.adminPages, db, a.tools(), router, a.sysConfigSvc, newAdminPermDirectory(adminAuthzSvc), mw.Snapshot())
+	aihttp.SetupAIRoutes(authorizedAPI, a.adminPages, db, a.tools(), router, a.sysConfigSvc, newAdminPermDirectory(adminAuthzSvc), a.registry.Snapshot())
 
 	mediaSvc := mediahttp.SetupMediaRoutes(authorizedAPI, db)
 	projectService := projecthttp.SetupProjectRoutes(authorizedAPI, db, a.sysConfigDict)
@@ -562,7 +569,7 @@ func (a *assembly) buildIdentityAndCommerce() {
 		panic("邮箱模块未实现 TransactionalSender（事务发送契约），装配缺陷")
 	}
 
-	userSvc := userhttp.SetupUserRoutes(router, db, mailSender, "go_wp")
+	userSvc := userhttp.SetupUserRoutes(a.registry, router, db, mailSender, "go_wp")
 
 	userAdminSvc, userAdminOK := userSvc.(usercontract.CustomerAdminPort)
 	if !userAdminOK {
@@ -1078,8 +1085,8 @@ func (a *assembly) wireRuntimeAccessFace() {
 	}
 
 	carthttp.SetupCartRoutes(router, cartSvc)
-	carthttp.SetupCartPublicRoutes(router, cartSvc, userhttp.VisitorIdentityMiddleware(a.userSvc), userhttp.VisitorCSRFMiddleware())
-	orderhttp.SetupOrderPublicRoutes(router, a.orderSvc, userhttp.VisitorIdentityMiddleware(a.userSvc), userhttp.VisitorCSRFMiddleware())
+	carthttp.SetupCartPublicRoutes(a.registry, router, cartSvc, userhttp.VisitorIdentityMiddleware(a.userSvc), userhttp.VisitorCSRFMiddleware())
+	orderhttp.SetupOrderPublicRoutes(a.registry, router, a.orderSvc, userhttp.VisitorIdentityMiddleware(a.userSvc), userhttp.VisitorCSRFMiddleware())
 
 	analyticsSvc := analyticshttp.SetupAnalyticsRoutes(authorizedAPI, router, db, sessionSecret, a.adminPages, a.projectService)
 	a.analyticsSvc = analyticsSvc

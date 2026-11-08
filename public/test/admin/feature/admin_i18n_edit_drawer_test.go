@@ -1,6 +1,7 @@
 package feature
 
 import (
+	mw "go_wp/pkg/middleware"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -32,7 +33,7 @@ func TestAdminI18nEditDrawerExactPairAndFragment(t *testing.T) {
 				c.Set("button_set", map[string]bool{"i18n.manage": true})
 				c.Next()
 			})
-			adminhttp.SetupAdminPages(pages, nil, nil, nil, nil, nil, nil, nil, nil)
+			adminhttp.SetupAdminPages(mw.NewRegistry(), pages, nil, nil, nil, nil, nil, nil, nil, nil)
 		},
 	})
 	if err != nil {

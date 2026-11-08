@@ -1,6 +1,7 @@
 package feature
 
 import (
+	mw "go_wp/pkg/middleware"
 	"context"
 	"errors"
 	"net/http"
@@ -35,8 +36,8 @@ func TestAdminI18nMarksStaleOnlyAfterCommittedWrites(t *testing.T) {
 	fix := newI18nWriteFixture(t)
 	fix.allow(t)
 	probe := &i18nStaleProbe{}
-	adminhttp.SetupAdminPages(fix.engine.Group("/admin"), nil, nil, nil, nil, nil, nil, probe, nil)
-	t.Cleanup(func() { adminhttp.SetupAdminPages(gin.New().Group("/admin"), nil, nil, nil, nil, nil, nil, nil, nil) })
+	adminhttp.SetupAdminPages(mw.NewRegistry(), fix.engine.Group("/admin"), nil, nil, nil, nil, nil, nil, probe, nil)
+	t.Cleanup(func() { adminhttp.SetupAdminPages(mw.NewRegistry(), gin.New().Group("/admin"), nil, nil, nil, nil, nil, nil, nil, nil) })
 	const key = "stale.write.timing"
 	for _, lang := range []string{"zh-CN", "ja-JP"} {
 		if err := i18n.SaveEntry(context.Background(), i18n.Entry{Key: key, Lang: lang, Value: "保留"}); err != nil {

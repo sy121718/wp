@@ -1,6 +1,7 @@
 package feature
 
 import (
+	mw "go_wp/pkg/middleware"
 	"bytes"
 	"context"
 	"fmt"
@@ -30,8 +31,8 @@ func TestOrderPublicDataProtocol(t *testing.T) {
 		t.Skipf("Redis 不可用，跳过真实访客会话: %v", err)
 	}
 	router := gin.New()
-	users := userhttp.SetupUserRoutes(router, f.db, f.mail, "测试站")
-	orderhttp.SetupOrderPublicRoutes(router, f.orders, userhttp.VisitorIdentityMiddleware(users), userhttp.VisitorCSRFMiddleware())
+	users := userhttp.SetupUserRoutes(mw.NewRegistry(), router, f.db, f.mail, "测试站")
+	orderhttp.SetupOrderPublicRoutes(mw.NewRegistry(), router, f.orders, userhttp.VisitorIdentityMiddleware(users), userhttp.VisitorCSRFMiddleware())
 	_, variant := f.addProduct(t, "订单JSON商品", 23.45, 10)
 	orderID, _, itemID := f.paidOrder(t, "order-json-owner@example.com", variant, 3)
 	otherOrder, _, _ := f.paidOrder(t, "order-json-other@example.com", variant, 1)
