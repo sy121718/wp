@@ -104,8 +104,8 @@
         <td class="text-sm">{{tr("admin.mail.marketing.progress.sent", "成功 ")}}{{cp.SentCount}}{{tr("admin.mail.marketing.progress.failed", " / 失败 ")}}{{cp.FailedCount}}{{tr("admin.mail.marketing.progress.target", " / 目标 ")}}{{cp.TotalCount}}</td>
         <td class="col-actions">
           <a class="btn btn-sm btn-ghost" href="/admin/mail/campaign?id={{cp.ID}}">{{tr("admin.mail.marketing.campaigns.report", "报表")}}</a>
-          <button type="submit" form="campaign-start-{{cp.ID}}" class="btn btn-sm">{{tr("admin.mail.marketing.campaigns.start", "启动群发")}}</button>
-          <button type="submit" form="campaign-del-{{cp.ID}}" class="btn btn-sm btn-danger">{{tr("admin.mail.action.delete", "删除")}}</button>
+          <button data-requires-js hidden type="submit" form="campaign-start-{{cp.ID}}" class="btn btn-sm">{{tr("admin.mail.marketing.campaigns.start", "启动群发")}}</button>
+          <button data-requires-js hidden type="submit" form="campaign-del-{{cp.ID}}" class="btn btn-sm btn-danger">{{tr("admin.mail.action.delete", "删除")}}</button>
         </td>
       </tr>
       {{end}}
@@ -170,7 +170,7 @@
       <p class="form-hint" data-write-status role="status" hidden></p>
       <div class="action-row">
         <button type="button" class="btn btn-ghost" data-drawer-close>{{tr("admin.common.action.cancel", "取消")}}</button>
-        <button type="submit" class="btn btn-primary">{{tr("admin.mail.marketing.campaign_form.save", "保存活动")}}</button>
+        <button data-requires-js hidden type="submit" class="btn btn-primary">{{tr("admin.mail.marketing.campaign_form.save", "保存活动")}}</button>
       </div>
     </form>
   </template>

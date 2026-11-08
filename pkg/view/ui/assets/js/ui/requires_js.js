@@ -23,10 +23,14 @@
         var nodes = (root || document).querySelectorAll('[data-requires-js]');
         for (var i = 0; i < nodes.length; i++) {
             var el = nodes[i];
-            if (el.getAttribute('data-requires-js') === '0') { continue; }
+            var mode = el.getAttribute('data-requires-js');
+            if (mode === '0') { continue; }
             el.removeAttribute('data-requires-js');
             el.removeAttribute('hidden');
-            el.removeAttribute('disabled');
+            // hidden 是为了「没有 JS 时别露出来」，而 disabled 可能来自模板的真实业务状态
+            // （条件不满足时不许点）。只对显式声明 keep-disabled 的按钮保留它；
+            // 其余保持历史行为（release 时一并解除）。
+            if (mode !== 'keep-disabled') { el.removeAttribute('disabled'); }
         }
     }
 

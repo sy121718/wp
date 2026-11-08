@@ -66,7 +66,7 @@
                 {{yield richEditor(field="body", key="article-new", value=form.Body)}}
 
                 <div class="action-row">
-                    <button type="submit" class="btn btn-primary">{{ .["t"]("admin.article.new.submit", "保存并继续编辑") }}</button>
+                    <button data-requires-js hidden type="submit" class="btn btn-primary">{{ .["t"]("admin.article.new.submit", "保存并继续编辑") }}</button>
                     <span class="help">
                         <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.common.help.label", "查看说明") }}" aria-expanded="false">?</button>
                         <span class="help-pop" role="tooltip">{{ .["t"]("admin.article.new.submitHint", "保存后自动进入编辑页：摘要、封面、SEO 字段与发布都在那边。") }}</span>

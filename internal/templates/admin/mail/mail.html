@@ -106,9 +106,9 @@
           {{end}}
           <button type="button" class="btn btn-sm btn-ghost" data-drawer-open="#tpl-account-test-{{a.ID}}" data-drawer-title="{{tr("admin.mail.accounts.action.test", "测试发送")}} · {{a.Name}}">{{tr("admin.mail.accounts.action.test", "测试发送")}}</button>
           {{if not a.IsDefault}}
-          <button type="submit" form="account-default-{{a.ID}}" class="btn btn-sm">{{tr("admin.mail.accounts.action.set_default", "设为默认")}}</button>
+          <button data-requires-js hidden type="submit" form="account-default-{{a.ID}}" class="btn btn-sm">{{tr("admin.mail.accounts.action.set_default", "设为默认")}}</button>
           {{end}}
-          <button type="submit" form="account-del-{{a.ID}}" class="btn btn-sm btn-danger">{{tr("admin.mail.action.delete", "删除")}}</button>
+          <button data-requires-js hidden type="submit" form="account-del-{{a.ID}}" class="btn btn-sm btn-danger">{{tr("admin.mail.action.delete", "删除")}}</button>
         </td>
       </tr>
       {{end}}
@@ -202,7 +202,7 @@
       <p class="form-hint" data-write-status role="status" hidden></p>
       <div class="action-row">
         <button type="button" class="btn btn-ghost" data-drawer-close>{{tr("admin.common.action.cancel", "取消")}}</button>
-        <button type="submit" class="btn btn-primary">{{tr("admin.mail.account_form.save", "保存账号")}}</button>
+        <button data-requires-js hidden type="submit" class="btn btn-primary">{{tr("admin.mail.account_form.save", "保存账号")}}</button>
       </div>
     </form>
   </template>
@@ -220,7 +220,7 @@
       <p class="form-hint" data-write-status role="status" hidden></p>
       <div class="action-row">
         <button type="button" class="btn btn-ghost" data-drawer-close>{{tr("admin.common.action.cancel", "取消")}}</button>
-        <button type="submit" class="btn btn-primary">{{tr("admin.mail.accounts.action.test", "测试发送")}}</button>
+        <button data-requires-js hidden type="submit" class="btn btn-primary">{{tr("admin.mail.accounts.action.test", "测试发送")}}</button>
       </div>
     </form>
   </template>
@@ -290,7 +290,7 @@
       <p class="form-hint" data-write-status role="status" hidden></p>
       <div class="action-row">
         <button type="button" class="btn btn-ghost" data-drawer-close>{{tr("admin.common.action.cancel", "取消")}}</button>
-        <button type="submit" class="btn btn-primary">{{tr("admin.mail.account_form.save", "保存账号")}}</button>
+        <button data-requires-js hidden type="submit" class="btn btn-primary">{{tr("admin.mail.account_form.save", "保存账号")}}</button>
       </div>
     </form>
   </template>

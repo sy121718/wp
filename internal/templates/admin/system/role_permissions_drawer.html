@@ -10,6 +10,6 @@
     {{include "grant_menu_tree.html" map("Rows", .Rows, "ShowInherited", false)}}
     <div class="perm-actions">
         <button type="button" class="btn btn-ghost" data-drawer-close>{{t("admin.common.action.cancel", "取消")}}</button>
-        {{if len(.Rows) > 0}}<button type="submit" class="btn btn-primary">{{t("admin.roles.perm.action.save", "保存权限")}}</button>{{end}}
+        {{if len(.Rows) > 0}}<button data-requires-js hidden type="submit" class="btn btn-primary">{{t("admin.roles.perm.action.save", "保存权限")}}</button>{{end}}
     </div>
 </form>

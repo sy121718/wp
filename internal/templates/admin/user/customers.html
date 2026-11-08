@@ -176,11 +176,11 @@
             {{yield bulkBarOpen(count=tr("admin.common.bulk.selected", "已选 {n} 项"))}}
                 {* 目标状态靠按钮的 name/value 带（requestSubmit(submitter) 会保留它）；
                     解除锁定用 formaction 改投另一个端点，勾选状态与筛选字段照旧带上。 *}
-                <button type="submit" class="btn btn-sm" name="status" value="1"
+                <button data-requires-js hidden type="submit" class="btn btn-sm" name="status" value="1"
                         hx-confirm="{{tr("admin.customers.bulk.enableConfirm", "批量启用选中的客户？")}}">{{tr("admin.customers.bulk.enable", "批量启用")}}</button>
-                <button type="submit" class="btn btn-sm" name="status" value="0"
+                <button data-requires-js hidden type="submit" class="btn btn-sm" name="status" value="0"
                         hx-confirm="{{tr("admin.customers.bulk.disableConfirm", "批量停用选中的客户？")}}">{{tr("admin.customers.bulk.disable", "批量停用")}}</button>
-                <button type="submit" class="btn btn-sm"
+                <button data-requires-js hidden type="submit" class="btn btn-sm"
                         hx-post="/api/customer/bulk-unlock"
                         hx-confirm="{{tr("admin.customers.bulk.unlockConfirm", "批量解除锁定选中的客户？")}}">{{tr("admin.customers.bulk.unlock", "批量解除锁定")}}</button>
             {{yield bulkBarClose()}}
@@ -264,10 +264,10 @@
                 </td>
                 <td class="col-actions" data-label="{{tr("admin.customers.col.actions", "操作")}}">
                     {{if r.Actionable}}
-                    <button type="submit" form="customer-status-{{r.ID}}" class="btn btn-sm">{{tr(r.StatusActionKey, r.StatusActionLabel)}}</button>
+                    <button data-requires-js hidden type="submit" form="customer-status-{{r.ID}}" class="btn btn-sm">{{tr(r.StatusActionKey, r.StatusActionLabel)}}</button>
                     {{end}}
                     {{if r.Locked}}
-                    <button type="submit" form="customer-unlock-{{r.ID}}" class="btn btn-sm">{{tr("admin.customers.action.unlock", "解除锁定")}}</button>
+                    <button data-requires-js hidden type="submit" form="customer-unlock-{{r.ID}}" class="btn btn-sm">{{tr("admin.customers.action.unlock", "解除锁定")}}</button>
                     {{end}}
                 </td>
             </tr>

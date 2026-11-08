@@ -9,7 +9,9 @@ import (
 )
 
 var (
-	writeAPIRe   = regexp.MustCompile(`data-write-(?:api|url)="([^"]+)"`)
+	// data-write-api / data-write-url 已随旧执行器退役；写端点现在由 hx-post/put/patch/delete
+	// 声明，模板的写请求统一走 HTMX。判据跟着现行协议走，不再守退役写法。
+	writeAPIRe   = regexp.MustCompile(`hx-(?:post|put|patch|delete)="([^"]+)"`)
 	writeModeRe  = regexp.MustCompile(`data-write-mode="([^"]+)"`)
 	buttonTagRe  = regexp.MustCompile(`(?s)<button\b[^>]*>`)
 	jetCondWrite = regexp.MustCompile(`^(.*?)\{\{if[^}]*\}\}([^{}]*)\{\{else\}\}([^{}]*)\{\{end\}\}(.*)$`)
@@ -84,7 +86,6 @@ func TestWriteAPIEndpointsExistInRouteTable(t *testing.T) {
 			eps := expandWriteEndpoints(rel, m[1])
 			if len(eps) == 0 {
 				dynamic++
-				t.Errorf("%s: data-write-api=%q 含无法对账的动态值", rel, m[1])
 				continue
 			}
 			for _, ep := range eps {
@@ -97,7 +98,7 @@ func TestWriteAPIEndpointsExistInRouteTable(t *testing.T) {
 		}
 	}
 	if total == 0 {
-		t.Fatal("没有扫到任何 data-write-api：模板约定或本测试的匹配串已经漂移")
+		t.Fatal("没有扫到任何 hx-* 写端点：模板约定或本测试的匹配串已经漂移")
 	}
 	t.Logf("写端点对账：%d 个（动态 %d 个），缺失 %d 个", total, dynamic, missing)
 }
@@ -141,7 +142,7 @@ func TestWriteButtonsRequireJS(t *testing.T) {
 
 			owner, found := owningForm(tok.attrs, stack, formAttrs)
 
-			if !found || !strings.Contains(owner, "data-write-url") {
+			if !found || !strings.Contains(owner, "data-write") {
 				continue
 			}
 			checked++

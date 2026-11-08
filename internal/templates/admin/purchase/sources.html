@@ -184,7 +184,7 @@
                     <button type="button" class="btn btn-sm btn-ghost" data-drawer-open="#tpl-source-edit-{{s.ID}}" data-drawer-title="{{ .["t"]("admin.common.action.edit", "编辑") }}">{{ .["t"]("admin.common.action.edit", "编辑") }}</button>
                     {{end}}
                     {{if isset(.Buttons["inventory.source_delete"])}}
-                    <button type="submit" form="src-del-{{s.ID}}" class="btn btn-sm btn-danger"
+                    <button data-requires-js hidden type="submit" form="src-del-{{s.ID}}" class="btn btn-sm btn-danger"
                             data-confirm="{{ .["t"]("admin.inventory_sources.list.deleteConfirm", "删除该货源？此操作不可撤销。") }}" data-confirm-danger>{{ .["t"]("admin.inventory.action.delete", "删除") }}</button>
                     {{end}}
                 </td>
@@ -297,7 +297,7 @@
             </div>
             <div class="action-row">
                 <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
-                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.inventory_sources.create.submit", "新建货源") }}</button>
+                <button data-requires-js hidden type="submit" class="btn btn-primary">{{ .["t"]("admin.inventory_sources.create.submit", "新建货源") }}</button>
             </div>
         </form>
         </div>
@@ -359,7 +359,7 @@
             </div>
             <div class="action-row">
                 <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
-                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.inventory_sources.list.save", "保存货源") }}</button>
+                <button data-requires-js hidden type="submit" class="btn btn-primary">{{ .["t"]("admin.inventory_sources.list.save", "保存货源") }}</button>
             </div>
         </form>
         </div>

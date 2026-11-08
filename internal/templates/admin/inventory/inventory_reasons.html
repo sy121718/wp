@@ -61,8 +61,8 @@
         <input type="hidden" name="csrf_token" value="{{csrf}}"><input type="hidden" name="projectId" value="{{selectedProject}}">
         {{if isset(.Buttons["inventory.reason_update"])}}{{if len(.Reasons) > 0}}
         <div class="bulk-bar" data-bulk-bar hidden><span data-bulk-count data-bulk-template="{{ .["t"]("admin.common.bulk.selected", "已选 {n} 项") }}">{{ .["t"]("admin.common.bulk.selected", "已选 {n} 项") }}</span>
-            <button type="submit" class="btn btn-sm" name="status" value="active">{{ .["t"]("admin.inventory.reasons.enable", "启用") }}</button>
-            <button type="submit" class="btn btn-sm" name="status" value="disabled">{{ .["t"]("admin.inventory.reasons.disable", "停用") }}</button>
+            <button data-requires-js hidden type="submit" class="btn btn-sm" name="status" value="active">{{ .["t"]("admin.inventory.reasons.enable", "启用") }}</button>
+            <button data-requires-js hidden type="submit" class="btn btn-sm" name="status" value="disabled">{{ .["t"]("admin.inventory.reasons.disable", "停用") }}</button>
         </div>{{end}}{{end}}
         <div class="table-wrap table-scroll" tabindex="0">
         <table class="data-table data-table-wide">
@@ -94,9 +94,9 @@
                     {{if isset(.Buttons["inventory.reason_update"])}}
                     <button type="button" class="btn btn-sm" data-drawer-open="#tpl-reason-edit-{{r.ID}}" data-drawer-title="{{ .["t"]("admin.common.action.edit", "编辑") }}">{{ .["t"]("admin.common.action.edit", "编辑") }}</button>
                     {{if r.Status == "active"}}
-                    <button type="submit" form="reason-status-{{r.ID}}" class="btn btn-sm">{{ .["t"]("admin.inventory.reasons.disable", "停用") }}</button>
+                    <button data-requires-js hidden type="submit" form="reason-status-{{r.ID}}" class="btn btn-sm">{{ .["t"]("admin.inventory.reasons.disable", "停用") }}</button>
                     {{else}}
-                    <button type="submit" form="reason-status-{{r.ID}}" class="btn btn-sm">{{ .["t"]("admin.inventory.reasons.enable", "启用") }}</button>
+                    <button data-requires-js hidden type="submit" form="reason-status-{{r.ID}}" class="btn btn-sm">{{ .["t"]("admin.inventory.reasons.enable", "启用") }}</button>
                     {{end}}
                     {{end}}
                 </td>
@@ -121,7 +121,7 @@
                 <input type="hidden" name="csrf_token" value="{{csrf}}"><input type="hidden" name="projectId" value="{{selectedProject}}"><input type="hidden" name="id" value="{{r.ID}}"><input type="hidden" name="builtin" value="{{if r.IsBuiltin}}1{{else}}0{{end}}">
                 {{if !r.IsBuiltin}}<div class="form-group"><label class="form-label req">{{ .["t"]("admin.inventory.reasons.labelName", "原因名称") }}</label><input type="text" class="form-input" name="name" value="{{ .["t"](r.Name, "") }}" required></div>{{end}}
                 <div class="form-group"><label class="form-label">{{ .["t"]("admin.inventory.ph.sort", "排序") }}</label><input type="number" class="form-input" name="sort" value="{{r.Sort}}" step="1"></div>
-                <div class="action-row"><button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button><button type="submit" class="btn btn-primary">{{ .["t"]("admin.common.action.save", "保存") }}</button></div>
+                <div class="action-row"><button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button><button data-requires-js hidden type="submit" class="btn btn-primary">{{ .["t"]("admin.common.action.save", "保存") }}</button></div>
             </form>
         </div>
     </template>
@@ -156,7 +156,7 @@
             </div>
             <div class="action-row">
                 <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
-                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.inventory.reasons.create", "新建自定义原因") }}</button>
+                <button data-requires-js hidden type="submit" class="btn btn-primary">{{ .["t"]("admin.inventory.reasons.create", "新建自定义原因") }}</button>
             </div>
         </form>
         </div>

@@ -82,7 +82,7 @@
             </div>
             <div class="action-row">
                 <a class="btn btn-ghost" href="/admin/membership?project={{selectedProject}}">{{ .["t"]("admin.common.action.cancel", "取消") }}</a>
-                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.common.action.save", "保存") }}</button>
+                <button data-requires-js hidden type="submit" class="btn btn-primary">{{ .["t"]("admin.common.action.save", "保存") }}</button>
             </div>
         </form>
     </section>
@@ -112,7 +112,7 @@
                 </div>
             </div>
             <div class="action-row">
-                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.membership.entitlement.save", "保存权益") }}</button>
+                <button data-requires-js hidden type="submit" class="btn btn-primary">{{ .["t"]("admin.membership.entitlement.save", "保存权益") }}</button>
             </div>
         </form>
     </section>
@@ -130,7 +130,7 @@
                 <input type="hidden" name="isDefault" value="true">
                 <input type="hidden" name="projectId" value="{{selectedProject}}">
                 <input type="hidden" name="tierId" value="{{ .Edit.ID }}">
-                <button type="submit" class="btn btn-sm">{{ .["t"]("admin.membership.tier.setDefault", "设为默认等级") }}</button>
+                <button data-requires-js hidden type="submit" class="btn btn-sm">{{ .["t"]("admin.membership.tier.setDefault", "设为默认等级") }}</button>
             </form>
             {{end}}
             {{end}}
@@ -143,7 +143,7 @@
                 <p class="form-hint" data-write-status role="status" hidden></p>
                 <input type="hidden" name="projectId" value="{{selectedProject}}">
                 <input type="hidden" name="tierId" value="{{ .Edit.ID }}">
-                <button type="submit" class="btn btn-sm btn-danger">{{ .["t"]("admin.common.action.delete", "删除") }}</button>
+                <button data-requires-js hidden type="submit" class="btn btn-sm btn-danger">{{ .["t"]("admin.common.action.delete", "删除") }}</button>
             </form>
             {{end}}
         </div>
@@ -234,7 +234,7 @@
         </div>
         <div class="action-row">
             <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
-            <button type="submit" class="btn btn-primary">{{ .["t"]("admin.membership.tier.create", "新建等级") }}</button>
+            <button data-requires-js hidden type="submit" class="btn btn-primary">{{ .["t"]("admin.membership.tier.create", "新建等级") }}</button>
         </div>
     </form>
 </template>

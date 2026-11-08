@@ -170,7 +170,7 @@
                                value="{{if isset(r.ExternalSKU)}}{{r.ExternalSKU}}{{end}}"
                                placeholder="{{ .["t"]("admin.inventory.sku.externalSku.ph", "留空 = 该仓用我们的 SKU") }}"
                                aria-label="{{ .["t"]("admin.inventory.sku.col.externalSku", "外部编码") }}">
-                        <button type="submit" class="btn btn-sm"
+                        <button data-requires-js hidden type="submit" class="btn btn-sm"
                                 title="{{ .["t"]("admin.inventory.sku.externalSku.actionHint", "登记这条货在该仓的外部编码；留空保存即撤销映射（改用我们自己的 SKU）") }}">{{ .["t"]("admin.inventory.sku.externalSku.save", "保存") }}</button>
                     </form>
                 </td>
@@ -203,7 +203,7 @@
                                aria-label="{{ .["t"]("admin.inventory.stock.col.tracking", "跟踪与数量") }}"
                                value="{{if isset(r.TrackQuantity)}}{{if r.TrackQuantity}}{{r.Quantity}}{{end}}{{end}}"
                                {{if isset(r.TrackQuantity)}}{{if r.TrackQuantity}}{{else}}disabled{{end}}{{end}}>
-                        <button type="submit" class="btn btn-sm">{{ .["t"]("admin.inventory.stock.save", "保存") }}</button>
+                        <button data-requires-js hidden type="submit" class="btn btn-sm">{{ .["t"]("admin.inventory.stock.save", "保存") }}</button>
                     </form>
                     {{else}}
                     <span class="move-meta" title="{{ .["t"]("admin.inventory.stock.notStockedHint", "这个仓还没有这条 SKU 的库存行（未入库），先入库或调整才会出现") }}">{{ .["t"]("admin.inventory.stock.notStocked", "未入库") }}</span>
@@ -321,7 +321,7 @@
             </div>
             <div class="action-row">
                 <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
-                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.inventory.change.submit", "提交变动") }}</button>
+                <button data-requires-js hidden type="submit" class="btn btn-primary">{{ .["t"]("admin.inventory.change.submit", "提交变动") }}</button>
             </div>
         </form>
     </template>

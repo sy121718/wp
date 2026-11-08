@@ -52,7 +52,7 @@
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="project" value="{{selectedProject}}">
             <div class="action-row">
-                <button class="btn btn-primary" type="submit"{{if selectedProject == ""}} disabled{{end}}>{{ .["t"]("admin.seo.audit.run", "运行当前站点体检") }}</button>
+                <button class="btn btn-primary" data-requires-js="keep-disabled" hidden type="submit"{{if selectedProject == ""}} disabled{{end}}>{{ .["t"]("admin.seo.audit.run", "运行当前站点体检") }}</button>
             </div>
             <p data-write-status role="status" hidden></p>
         </form>

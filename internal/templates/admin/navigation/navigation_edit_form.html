@@ -22,7 +22,7 @@
         </select>
         <div class="action-row">
             <button type="button" class="btn btn-ghost" data-drawer-close>{{tr("admin.common.action.cancel", "取消")}}</button>
-            <button type="submit" class="btn btn-primary">{{tr("admin.navigations.save", "保存")}}</button>
+            <button data-requires-js hidden type="submit" class="btn btn-primary">{{tr("admin.navigations.save", "保存")}}</button>
         </div>
     </form>
     {{if .NavEditPanelAvail}}
@@ -47,7 +47,7 @@
             <option value="auto" {{if f.PanelWidth != "full"}}selected{{end}}>{{tr("admin.navigations.panel.widthAuto", "宽度：跟随内容")}}</option>
             <option value="full" {{if f.PanelWidth == "full"}}selected{{end}}>{{tr("admin.navigations.panel.widthFull", "宽度：通栏")}}</option>
         </select>
-        <div class="action-row"><button type="submit" class="btn btn-sm">{{tr("admin.navigations.panel.save", "保存面板")}}</button></div>
+        <div class="action-row"><button data-requires-js hidden type="submit" class="btn btn-sm">{{tr("admin.navigations.panel.save", "保存面板")}}</button></div>
     </form>
     <form data-write hx-post="/admin/navigations/panel/create?project={{f.ProjectID}}&amp;kind={{f.Kind}}&amp;menu={{f.ID}}"
           data-write-nav="[data-nav-next]"
@@ -57,7 +57,7 @@
         <input type="hidden" name="kind" value="{{f.Kind}}">
         <input type="hidden" name="title" value="{{f.Title}}">
         <input type="hidden" name="id" value="{{f.ID}}">
-        <button type="submit" class="btn btn-sm">{{tr("admin.navigations.panel.create", "新建面板块并编辑")}}</button>
+        <button data-requires-js hidden type="submit" class="btn btn-sm">{{tr("admin.navigations.panel.create", "新建面板块并编辑")}}</button>
     </form>
     {{if f.PanelBlockID != ""}}
     <a class="btn btn-sm" href="/workbench/block/preview?id={{f.PanelBlockID}}&amp;editor=1" target="_blank" rel="noopener">{{tr("admin.navigations.panel.preview", "预览面板")}}</a>

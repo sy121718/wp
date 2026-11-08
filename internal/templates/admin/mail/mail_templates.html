@@ -99,7 +99,7 @@
              复杂排版用可视化，要精修源码就进抽屉。 *}
           <a class="btn btn-sm btn-ghost" href="/admin/mail/templates/editor?templateKey={{tp.TemplateKey}}&amp;locale={{tp.Locale}}">{{tr("admin.mail.templates.action.visual", "可视化")}}</a>
           {{end}}
-          <button type="submit" form="template-del-{{tp.ID}}" class="btn btn-sm btn-danger">{{tr("admin.mail.action.delete", "删除")}}</button>
+          <button data-requires-js hidden type="submit" form="template-del-{{tp.ID}}" class="btn btn-sm btn-danger">{{tr("admin.mail.action.delete", "删除")}}</button>
         </td>
       </tr>
       {{end}}
@@ -163,7 +163,7 @@
       <p class="form-hint" data-write-status role="status" hidden></p>
       <div class="action-row">
         <button type="button" class="btn btn-ghost" data-drawer-close>{{tr("admin.common.action.cancel", "取消")}}</button>
-        <button type="submit" class="btn btn-primary">{{tr("admin.mail.template_form.save", "保存模板")}}</button>
+        <button data-requires-js hidden type="submit" class="btn btn-primary">{{tr("admin.mail.template_form.save", "保存模板")}}</button>
       </div>
     </form>
   </template>
@@ -209,7 +209,7 @@
       <p class="form-hint" data-write-status role="status" hidden></p>
       <div class="action-row">
         <button type="button" class="btn btn-ghost" data-drawer-close>{{tr("admin.common.action.cancel", "取消")}}</button>
-        <button type="submit" class="btn btn-primary">{{tr("admin.mail.template_form.save", "保存模板")}}</button>
+        <button data-requires-js hidden type="submit" class="btn btn-primary">{{tr("admin.mail.template_form.save", "保存模板")}}</button>
       </div>
     </form>
   </template>

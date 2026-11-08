@@ -134,7 +134,7 @@
             </div>
             <div class="action-row">
                 <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
-                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.blocks.create", "新建并编辑") }}</button>
+                <button data-requires-js hidden type="submit" class="btn btn-primary">{{ .["t"]("admin.blocks.create", "新建并编辑") }}</button>
             </div>
         </form>
     </template>
@@ -167,7 +167,7 @@
         </div>
         {{if canDelete}}
         {{yield bulkBarOpen(count=tr("admin.common.bulk.selected", "已选 {n} 项"))}}
-            <button type="submit" class="btn btn-sm btn-danger"
+            <button data-requires-js hidden type="submit" class="btn btn-sm btn-danger"
                     hx-confirm="{{tr("admin.blocks.bulk_delete_confirm", "删除选中的块？被页面引用的全局块需先解除引用，其余照常删除。")}}">{{tr("admin.common.bulk.delete", "批量删除")}}</button>
         {{yield bulkBarClose()}}
         {{end}}

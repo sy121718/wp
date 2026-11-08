@@ -246,7 +246,7 @@
       </div>
       <div class="action-row">
         <button type="button" class="btn btn-ghost" data-drawer-close>{{tr("admin.common.action.cancel", "取消")}}</button>
-        <button type="submit" class="btn btn-primary">{{tr("admin.mail.marketing.action.update", "更新")}}</button>
+        <button data-requires-js hidden type="submit" class="btn btn-primary">{{tr("admin.mail.marketing.action.update", "更新")}}</button>
       </div>
     </form>
   </template>
@@ -395,7 +395,7 @@
       <p class="form-hint" data-write-status role="status" hidden></p>
       <div class="action-row">
         <button type="button" class="btn btn-ghost" data-drawer-close>{{tr("admin.common.action.cancel", "取消")}}</button>
-        <button type="submit" class="btn btn-primary">{{ .["t"]("admin.mail.marketing.import.submit", "导入") }}</button>
+        <button data-requires-js hidden type="submit" class="btn btn-primary">{{ .["t"]("admin.mail.marketing.import.submit", "导入") }}</button>
       </div>
     </form>
   </template>

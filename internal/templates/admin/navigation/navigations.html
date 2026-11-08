@@ -140,7 +140,7 @@
                    同样需要 JS。改词条要动 public/migrations（另开卡），本卡只登记不改。 *}
                 <noscript><p class="form-hint">{{ .["t"]("admin.navigations.write.noJs", "本页的新建与删除需要 JavaScript：写操作由浏览器直接调用接口完成。请开启 JavaScript 后重试。") }}</p></noscript>
                 <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
-                <button type="submit" class="btn btn-primary" >{{ .["t"]("admin.navigations.add", "添加") }}</button>
+                <button data-requires-js hidden type="submit" class="btn btn-primary" >{{ .["t"]("admin.navigations.add", "添加") }}</button>
             </div>
         </form>
     </template>
@@ -207,7 +207,7 @@
                        而 33 个候选一个也勾不动时提交，用户收到的是「请至少勾选一项要加入菜单的内容」
                        —— 那句提示在这个场景里是误导（他一个都勾不了）。判据由页面数据给出
                        （navSourceGroup.Usable = 本组至少一个候选有公开路径）。 *}
-                    <button  type="submit" class="btn btn-primary"{{if !g.Usable}} disabled
+                    <button  data-requires-js hidden type="submit" class="btn btn-primary"{{if !g.Usable}} disabled
                             title="{{tr("admin.navigations.add_to_menu_disabled", "本组没有可加入的内容：都还没有公开路径，先发布后再添加。")}}"{{end}}>{{tr("admin.navigations.add_to_menu", "加入菜单")}}</button>
                 </div>
             </form>
@@ -296,8 +296,8 @@
                            disabled**（json_write.js 的 WBUI.register），而这里的 disabled 是「首项不可上移 /
                            末项不可下移」的边界语义 —— 挂在按钮上会在放行那一步被清掉，边界项随即变成
                            可点却点了没反应的空动作。 *}
-                        <span data-requires-js hidden><button type="submit" form="nav-up-{{r.ID}}" class="btn btn-sm btn-icon" {{if r.First}}disabled{{end}} title="{{tr("admin.navigations.title_up", "上移")}}" aria-label="{{tr("admin.navigations.title_up", "上移")}}">↑</button></span>
-                        <span data-requires-js hidden><button type="submit" form="nav-down-{{r.ID}}" class="btn btn-sm btn-icon" {{if r.Last}}disabled{{end}} title="{{tr("admin.navigations.title_down", "下移")}}" aria-label="{{tr("admin.navigations.title_down", "下移")}}">↓</button></span>
+                        <span data-requires-js hidden><button data-requires-js="keep-disabled" hidden type="submit" form="nav-up-{{r.ID}}" class="btn btn-sm btn-icon" {{if r.First}}disabled{{end}} title="{{tr("admin.navigations.title_up", "上移")}}" aria-label="{{tr("admin.navigations.title_up", "上移")}}">↑</button></span>
+                        <span data-requires-js hidden><button data-requires-js="keep-disabled" hidden type="submit" form="nav-down-{{r.ID}}" class="btn btn-sm btn-icon" {{if r.Last}}disabled{{end}} title="{{tr("admin.navigations.title_down", "下移")}}" aria-label="{{tr("admin.navigations.title_down", "下移")}}">↓</button></span>
                     </td>
                     <td class="col-actions">
                         {{if canUpdate}}

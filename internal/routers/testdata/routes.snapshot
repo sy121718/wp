@@ -269,8 +269,6 @@ POST /access/unlock
 POST /admin/administrators/bulk-delete
 POST /admin/administrators/create
 POST /admin/administrators/delete
-POST /admin/administrators/menus/save
-POST /admin/administrators/roles/save
 POST /admin/administrators/update
 POST /admin/ai/ask/stream
 POST /admin/articles/bulk-delete
@@ -287,7 +285,6 @@ POST /admin/articles/update
 POST /admin/articles/url
 POST /admin/blocks/save-content
 POST /admin/datarules/bulk-delete
-POST /admin/datarules/config-editor
 POST /admin/datarules/create
 POST /admin/datarules/delete
 POST /admin/datarules/update
@@ -386,6 +383,7 @@ POST /api/admin/role/save
 POST /api/ai/chat
 POST /api/ai/provider/delete
 POST /api/ai/provider/models/append
+POST /api/ai/provider/models/candidates
 POST /api/ai/provider/models/fetch
 POST /api/ai/provider/models/restore
 POST /api/ai/provider/models/save
@@ -396,6 +394,7 @@ POST /api/ai/session/archive
 POST /api/ai/session/fold
 POST /api/ai/session/fold/plan
 POST /api/ai/session/rename
+POST /api/ai/session/send
 POST /api/ai/token/create
 POST /api/ai/token/revoke
 POST /api/ai/token/toggle
@@ -491,6 +490,10 @@ POST /api/menu/delete
 POST /api/menu/update
 POST /api/navigation/create
 POST /api/navigation/delete
+POST /api/navigation/delete-bulk
+POST /api/navigation/move
+POST /api/navigation/sources
+POST /api/navigation/translations
 POST /api/navigation/update
 POST /api/order/cancel
 POST /api/order/carrier/create

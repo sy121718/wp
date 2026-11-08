@@ -70,7 +70,7 @@
                 </div>
             </div>
             <div class="action-row">
-                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.membership.assign.set", "指定等级") }}</button>
+                <button data-requires-js hidden type="submit" class="btn btn-primary">{{ .["t"]("admin.membership.assign.set", "指定等级") }}</button>
             </div>
         </form>
     </section>
@@ -137,7 +137,7 @@
             <p class="form-hint" data-write-status role="status" hidden></p>
                         <input type="hidden" name="projectId" value="{{selectedProject}}">
                         <input type="hidden" name="userId" value="{{r.UserID}}">
-                        <button type="submit" class="btn btn-sm">{{ .["t"]("admin.membership.assign.unlock", "解除锁定") }}</button>
+                        <button data-requires-js hidden type="submit" class="btn btn-sm">{{ .["t"]("admin.membership.assign.unlock", "解除锁定") }}</button>
                     </form>
                     {{end}}
                     {{else}}

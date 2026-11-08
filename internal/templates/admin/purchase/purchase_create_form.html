@@ -61,7 +61,7 @@
         {{end}}
         <div class="action-row">
             <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
-            <button type="submit" class="btn btn-primary">{{ .["t"]("admin.inventory_purchases.create.submit", "新建采购单") }}</button>
+            <button data-requires-js hidden type="submit" class="btn btn-primary">{{ .["t"]("admin.inventory_purchases.create.submit", "新建采购单") }}</button>
         </div>
     </form>
 </div>

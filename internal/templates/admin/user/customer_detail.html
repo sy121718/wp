@@ -178,7 +178,7 @@
             {* 动词与后缀两段都走词条：原先前半句是服务端硬编码中文（「停用」），
                英文界面上与 i18n 的 account_suffix 拼起来就是「Disable这个账号」式中英混排。
                现在中英各自成句（zh「停用」+「这个账号」/ en "Disable" + " this account"）。 *}
-            <button type="submit" class="btn btn-primary">{{ .["t"](.StatusActionKey, .StatusActionLabel) }}{{ .["t"]("admin.customer_detail.action.account_suffix", "这个账号") }}</button>
+            <button data-requires-js hidden type="submit" class="btn btn-primary">{{ .["t"](.StatusActionKey, .StatusActionLabel) }}{{ .["t"]("admin.customer_detail.action.account_suffix", "这个账号") }}</button>
         </form>
         {{else}}
         <p class="hint">
@@ -194,7 +194,7 @@
  <p data-write-status role="status" aria-live="polite"></p>
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="customerId" value="{{.ID}}">
-            <button type="submit" class="btn">{{ .["t"]("admin.customer_detail.action.unlock", "解除锁定") }}</button>
+            <button data-requires-js hidden type="submit" class="btn">{{ .["t"]("admin.customer_detail.action.unlock", "解除锁定") }}</button>
         </form>
         {{else}}
         <p class="hint">

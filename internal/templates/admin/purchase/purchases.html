@@ -322,7 +322,7 @@
             </div>
             {{end}}
             <div class="form-actions">
-                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.inventory_purchases.receipt.submitAll", "确认收货") }}</button>
+                <button data-requires-js hidden type="submit" class="btn btn-primary">{{ .["t"]("admin.inventory_purchases.receipt.submitAll", "确认收货") }}</button>
                 <span class="form-hint">{{ .["t"]("admin.inventory_purchases.receipt.submitHint", "本次到货默认填满剩余量；留 0 的行本次不收。") }}</span>
             </div>
         </form>
@@ -392,7 +392,7 @@
             </div>
             <div class="action-row">
                 <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
-                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.inventory_purchases.production.submit", "登记生产入库") }}</button>
+                <button data-requires-js hidden type="submit" class="btn btn-primary">{{ .["t"]("admin.inventory_purchases.production.submit", "登记生产入库") }}</button>
             </div>
         </form>
     </template>

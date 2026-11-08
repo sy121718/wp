@@ -96,11 +96,11 @@
           <td class="col-actions">
             <a class="btn btn-sm btn-ghost" href="/admin/mail/automation/canvas?id={{a.ID}}">{{tr("admin.common.action.edit", "编辑")}}</a>
             {{if a.Status == "active"}}
-            <button type="submit" form="automation-status-{{a.ID}}-pause" class="btn btn-sm">{{tr("admin.mail.automation.action.pause", "暂停")}}</button>
+            <button data-requires-js hidden type="submit" form="automation-status-{{a.ID}}-pause" class="btn btn-sm">{{tr("admin.mail.automation.action.pause", "暂停")}}</button>
             {{else}}
-            <button type="submit" form="automation-status-{{a.ID}}-active" class="btn btn-sm">{{tr("admin.mail.automation.action.enable", "启用")}}</button>
+            <button data-requires-js hidden type="submit" form="automation-status-{{a.ID}}-active" class="btn btn-sm">{{tr("admin.mail.automation.action.enable", "启用")}}</button>
             {{end}}
-            <button type="submit" form="automation-del-{{a.ID}}" class="btn btn-sm btn-danger">{{tr("admin.mail.automation.action.delete", "删除")}}</button>
+            <button data-requires-js hidden type="submit" form="automation-del-{{a.ID}}" class="btn btn-sm btn-danger">{{tr("admin.mail.automation.action.delete", "删除")}}</button>
           </td>
         </tr>
         {{end}}

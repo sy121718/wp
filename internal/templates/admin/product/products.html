@@ -186,7 +186,7 @@
 
                     <td class="col-actions">
                         <a class="btn btn-sm" href="/admin/products/edit?project={{selectedProject}}&amp;product={{p.ID}}">{{ .["t"]("pRowEdit", "编辑") }}</a>
-                        <button type="submit" form="product-preview-{{p.ID}}" class="btn btn-sm">{{ .["t"]("pRowPrev", "预览") }}</button>
+                        <button data-requires-js hidden type="submit" form="product-preview-{{p.ID}}" class="btn btn-sm">{{ .["t"]("pRowPrev", "预览") }}</button>
                         <button data-requires-js hidden type="submit" form="product-del-{{p.ID}}" class="btn btn-sm btn-danger">{{ .["t"]("uiActDel", "删除") }}</button>
                     </td>
                 </tr>

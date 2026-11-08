@@ -73,7 +73,7 @@
             {* 批量条只在有数据时渲染：空表没有可勾选的行，渲染一个永远显示不出来的条只是噪声。 *}
             {{if isset(.Buttons["inventory.warehouse_delete"])}}{{if len(.Warehouses) > 0}}
             {{yield bulkBarOpen(count=tr("admin.common.bulk.selected", "已选 {n} 项"))}}
-                <button type="submit" class="btn btn-sm btn-danger"
+                <button data-requires-js hidden type="submit" class="btn btn-sm btn-danger"
                         hx-confirm="{{tr("admin.inventory.warehouses.bulkDeleteConfirm", "删除选中的仓库？默认仓或仓内仍有非零库存的会被跳过，其余照常删除。")}}">{{tr("admin.common.bulk.delete", "批量删除")}}</button>
             {{yield bulkBarClose()}}
             {{end}}{{end}}
@@ -132,10 +132,10 @@
                     <button type="button" class="btn btn-sm btn-ghost" data-drawer-open="#tpl-warehouse-edit-{{w.ID}}" data-drawer-title="{{ .["t"]("admin.common.action.edit", "编辑") }}">{{ .["t"]("admin.common.action.edit", "编辑") }}</button>
                     {{end}}
                     {{if not w.IsDefault}}
-                    <button type="submit" form="wh-default-{{w.ID}}" class="btn btn-sm">{{ .["t"]("admin.inventory.setDefault", "设为默认仓") }}</button>
+                    <button data-requires-js hidden type="submit" form="wh-default-{{w.ID}}" class="btn btn-sm">{{ .["t"]("admin.inventory.setDefault", "设为默认仓") }}</button>
                     {{end}}
                     {{if isset(.Buttons["inventory.warehouse_delete"])}}
-                    <button type="submit" form="wh-del-{{w.ID}}" class="btn btn-sm btn-danger"
+                    <button data-requires-js hidden type="submit" form="wh-del-{{w.ID}}" class="btn btn-sm btn-danger"
                             data-confirm="{{ .["t"]("admin.inventory.list.deleteConfirm", "删除该仓库？默认仓或仓内仍有非零库存时会被拒绝。") }}" data-confirm-danger>{{ .["t"]("admin.inventory.action.delete", "删除") }}</button>
                     {{end}}
                 </td>
@@ -233,7 +233,7 @@
             </div>
             <div class="action-row">
                 <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
-                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.inventory.create.submit", "新建仓库") }}</button>
+                <button data-requires-js hidden type="submit" class="btn btn-primary">{{ .["t"]("admin.inventory.create.submit", "新建仓库") }}</button>
             </div>
         </form>
         </div>
@@ -312,7 +312,7 @@
             </div>
             <div class="action-row">
                 <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
-                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.inventory.list.save", "保存仓库") }}</button>
+                <button data-requires-js hidden type="submit" class="btn btn-primary">{{ .["t"]("admin.inventory.list.save", "保存仓库") }}</button>
             </div>
         </form>
         </div>

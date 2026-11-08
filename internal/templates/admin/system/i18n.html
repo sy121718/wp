@@ -85,7 +85,7 @@
             {* 批量条只在有数据时渲染：空表没有可勾选的行，渲染一个永远显示不出来的条只是噪声。 *}
             {{if canManage}}{{if len(entries) > 0}}
             {{yield bulkBarOpen(count=t("admin.common.bulk.selected", "已选 {n} 项"))}}
-                <button type="submit" class="btn btn-sm btn-danger">{{t("admin.common.bulk.delete", "批量删除")}}</button>
+                <button data-requires-js hidden type="submit" class="btn btn-sm btn-danger">{{t("admin.common.bulk.delete", "批量删除")}}</button>
             {{yield bulkBarClose()}}
             {{end}}{{end}}
         <div class="table-wrap table-scroll" tabindex="0">
@@ -123,7 +123,7 @@
                             <button type="button" class="btn btn-ghost" data-drawer-open hx-get="{{queryURL("/admin/i18n/edit", "key", e.Key, "lang", e.Lang)}}" hx-target="#admin-drawer-body" hx-swap="innerHTML" data-drawer-title="{{t("admin.i18n.action.edit", "编辑")}} {{e.Key}}">{{t("admin.i18n.action.edit", "编辑")}}</button>
                             {{end}}
                             {{if canManage}}
-                            <button type="submit" form="i18n-del-{{i}}" class="btn btn-sm btn-danger">{{t("admin.i18n.action.delete", "删除")}}</button>
+                            <button data-requires-js hidden type="submit" form="i18n-del-{{i}}" class="btn btn-sm btn-danger">{{t("admin.i18n.action.delete", "删除")}}</button>
                             {{end}}
                         </td>
                     </tr>
@@ -194,7 +194,7 @@
             </div>
             <div class="action-row">
                 <button type="button" class="btn btn-ghost" data-drawer-close>{{ t("admin.common.action.cancel", "取消") }}</button>
-                <button type="submit" class="btn btn-primary">{{ t("admin.i18n.action.save", "保存") }}</button>
+                <button data-requires-js hidden type="submit" class="btn btn-primary">{{ t("admin.i18n.action.save", "保存") }}</button>
             </div>
         </form>
     </template>

@@ -26,6 +26,6 @@
     {{end}}
     <div class="form-actions">
         <button type="button" class="btn btn-ghost" data-drawer-close>{{t("admin.common.action.cancel", "取消")}}</button>
-        {{if len(.Rows) > 0}}<button type="submit" class="btn btn-primary">{{t("admin.admins.role.save", "保存角色")}}</button>{{end}}
+        {{if len(.Rows) > 0}}<button data-requires-js hidden type="submit" class="btn btn-primary">{{t("admin.admins.role.save", "保存角色")}}</button>{{end}}
     </div>
 </form>

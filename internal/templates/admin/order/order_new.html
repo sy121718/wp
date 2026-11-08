@@ -286,7 +286,7 @@
         </section>
 
         <div class="action-row">
-            <button type="submit" class="btn btn-primary">{{ .["t"]("admin.order_new.action.submit", "创建订单") }}</button>
+            <button data-requires-js hidden type="submit" class="btn btn-primary">{{ .["t"]("admin.order_new.action.submit", "创建订单") }}</button>
             <a class="btn btn-ghost" href="/admin/orders?project={{selectedProject}}">{{ .["t"]("admin.common.action.cancel", "取消") }}</a>
         </div>
     </form>
