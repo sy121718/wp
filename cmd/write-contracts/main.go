@@ -353,6 +353,13 @@ func nativeBinding(body *ast.BlockStmt, pkg string, imports map[string]string,
 		case *ast.FuncLit:
 			return false
 		case *ast.CallExpr:
+			// pkg/binding 的泛型入口 binding.Form[T](c) / JSON[T](c) / Query[T](c) /
+			// ParseForm[T](c) / ParseJSON[T](c)：协议由函数名给，DTO 是类型实参。
+			// 它们不是 gin.Context 的方法调用，必须先于下面的方法锁判定识别。
+			if bind, okBind := bindingGenericDTO(node, pkg, imports); okBind {
+				bindings = append(bindings, bind)
+				break
+			}
 			method, ok := node.Fun.(*ast.SelectorExpr)
 			if !ok || len(node.Args) == 0 {
 				break
@@ -999,4 +1006,44 @@ func directGenericBinder(name string, index sourceIndex) bodyBinding {
 		return true
 	})
 	return out
+}
+
+// bindingGenericDTO 识别 pkg/binding 的泛型绑定入口。
+//
+//	binding.Form[T](c)      —— 标准表单编码
+//	binding.JSON[T](c)      —— 按 Content-Type 自适应（HTML 写端点仍在用）
+//	binding.Query[T](c)     —— 查询串
+//	binding.ParseForm[T](c) / ParseJSON[T](c) —— 显式表单 / JSON
+//
+// 这些都是 pkg/binding 的正式入口，协议由函数名确定、DTO 是类型实参；
+// 不识别会让所有走它的端点都报 unknown，把真正的欠账埋在噪声里。
+func bindingGenericDTO(call *ast.CallExpr, pkg string, imports map[string]string) (bodyBinding, bool) {
+	fun, ok := call.Fun.(*ast.IndexExpr)
+	if !ok {
+		return bodyBinding{}, false
+	}
+	sel, ok := fun.X.(*ast.SelectorExpr)
+	if !ok {
+		return bodyBinding{}, false
+	}
+	ident, ok := sel.X.(*ast.Ident)
+	if !ok || imports[ident.Name] != "go_wp/pkg/binding" {
+		return bodyBinding{}, false
+	}
+	protocol := ""
+	switch sel.Sel.Name {
+	case "Form", "ParseForm":
+		protocol = "form"
+	case "JSON", "ParseJSON":
+		protocol = "json"
+	case "Query":
+		protocol = "query"
+	default:
+		return bodyBinding{}, false
+	}
+	dto := typeName(fun.Index, pkg, imports)
+	if dto == "" {
+		return bodyBinding{Protocol: "unknown", Reason: "pkg/binding 泛型调用的类型实参不是具名类型"}, true
+	}
+	return bodyBinding{DTO: dto, Protocol: protocol}, true
 }

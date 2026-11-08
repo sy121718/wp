@@ -67,7 +67,7 @@ const (
 // 拒绝语义沿用单条删除：不能删自己、不能删超管、不存在即打回。
 // 会话吊销在提交之后做，因为它跨库且不可回滚。
 func (s *Service) AdminBulkDelete(ctx context.Context, req *admindto.AdminDeleteReq) (*admindto.AdminDeleteResp, error) {
-	ids := uniqueIDs(req.Id)
+	ids := uniqueIDs(req.IDList())
 	if len(ids) == 0 {
 		return nil, facing.WithStatus(facing.New(adminenums.ErrBulkDeleteEmpty), statusBadInput)
 	}
@@ -239,7 +239,7 @@ func (s *Service) RoleBulkDelete(ctx context.Context, req *admindto.RoleDeleteRe
 // 原有两条保护：已被角色引用、已被菜单引用。两者都在本事务内判定，
 // 任一不满足即整体打回并列出明细。
 func (s *Service) PermBulkDelete(ctx context.Context, req *admindto.PermDeleteReq) (*admindto.PermDeleteResp, error) {
-	ids := uniqueIDs(req.IDs)
+	ids := uniqueIDs(req.IDList())
 	if len(ids) == 0 {
 		return nil, facing.WithStatus(facing.New(adminenums.ErrBulkDeleteEmpty), statusBadInput)
 	}
@@ -325,7 +325,7 @@ func (s *Service) PermBulkDelete(ctx context.Context, req *admindto.PermDeleteRe
 // 保护语义沿用单条删除：系统菜单打回、有子节点打回。
 // 子节点判定读本事务内的行锁结果，不扩成级联删除。
 func (s *Service) MenuBulkDelete(ctx context.Context, req *admindto.MenuDeleteReq) error {
-	ids := uniqueIDs(req.IDs)
+	ids := uniqueIDs(req.IDList())
 	if len(ids) == 0 {
 		return facing.WithStatus(facing.New(adminenums.ErrBulkDeleteEmpty), statusBadInput)
 	}
@@ -452,7 +452,7 @@ func (s *Service) DeptBulkDelete(ctx context.Context, req *admindto.DeptDeleteRe
 
 // RuleBulkDelete 在单个事务里批量删除数据规则与其生效指派。
 func (s *Service) RuleBulkDelete(ctx context.Context, req *admindto.RuleDeleteReq) error {
-	ids := uniqueIDs(req.IDs)
+	ids := uniqueIDs(req.IDList())
 	if len(ids) == 0 {
 		return facing.WithStatus(facing.New(adminenums.ErrBulkDeleteEmpty), statusBadInput)
 	}

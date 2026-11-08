@@ -62,8 +62,20 @@ type AdminEditReq struct {
 }
 
 type AdminDeleteReq struct {
-	Id         []uint64 `json:"ids" form:"ids" binding:"required" validate:"required"`
+	ID         uint64   `json:"id" form:"id"`
+	Id         []uint64 `json:"ids" form:"ids"`
 	OperatorID uint64   `json:"-"`
+}
+
+// IDList 返回本次要处理的主键集合：单条传 id，批量传 ids，两者都传时以 ids 为准。
+func (r *AdminDeleteReq) IDList() []uint64 {
+	if len(r.Id) > 0 {
+		return r.Id
+	}
+	if r.ID == 0 {
+		return nil
+	}
+	return []uint64{r.ID}
 }
 
 type AdminListByDeptIDReq struct {

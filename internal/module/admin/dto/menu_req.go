@@ -59,5 +59,17 @@ type MenuUpdateFormReq struct {
 }
 
 type MenuDeleteReq struct {
-	IDs []uint64 `json:"ids" form:"ids" binding:"required,min=1" validate:"required,min=1"`
+	ID  uint64   `json:"id" form:"id"`
+	IDs []uint64 `json:"ids" form:"ids"`
+}
+
+// IDList 返回本次要处理的主键集合：单条传 id，批量传 ids，两者都传时以 ids 为准。
+func (r *MenuDeleteReq) IDList() []uint64 {
+	if len(r.IDs) > 0 {
+		return r.IDs
+	}
+	if r.ID == 0 {
+		return nil
+	}
+	return []uint64{r.ID}
 }
