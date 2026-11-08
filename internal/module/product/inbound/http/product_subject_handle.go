@@ -432,7 +432,7 @@ func applyPricingForm(c *gin.Context) (*productdto.PricingApplyReq, bool) {
 
 func (h *ProductHandle) BulkPricing(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	req, err := binding.ParseForm[productdto.BulkPricingJSONReq](c)
+	req, err := bindJSONFact[productdto.BulkPricingJSONReq](c)
 	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
 		return

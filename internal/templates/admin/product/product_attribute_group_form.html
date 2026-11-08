@@ -9,7 +9,7 @@
 {{gfKeyPh = gfTr("attrKeyEg", "标识（留空自动生成，如 color）")}}
 {{end}}
         <div data-write-host>
-        <form data-write hx-post="/api/product/attribute/{{if gfCreate}}create{{else}}update{{end}}" hx-target="find [data-write-result]" hx-swap="innerHTML" hx-sync="this:drop" hx-disable="findAll button:not(:disabled)" data-write-close="[data-drawer]" data-write-builder="product-attribute-values" class="form-stack" data-attr-group-form>
+        <form data-write hx-post="/api/product/attribute/{{if gfCreate}}create{{else}}update{{end}}" hx-target="find [data-write-result]" hx-swap="innerHTML" hx-sync="this:drop" hx-disable="findAll button:not(:disabled)" data-write-close="[data-drawer]" data-write-builder="product-attribute-group" class="form-stack" data-attr-group-form>
             <div data-write-result></div>
             <p class="form-hint">{{gfTr("attrSaved", "已保存。")}}</p>
             <input type="hidden" name="projectId" value="{{.Project}}">

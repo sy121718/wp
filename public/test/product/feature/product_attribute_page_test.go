@@ -104,8 +104,15 @@ func TestAttributeValuesFormWritesHTML(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	payload := `[{"id":"` + group.Values[1].ID + `","key":"m","label":"中码","sort":"2","enabled":"false"},{"key":"l","label":"L","sort":"1","enabled":"true"}]`
-	rec := postForm(engine, "/api/product/attribute/set-values", url.Values{"id": {group.ID}, "projectId": {f.projectID}, "values": {payload}})
+	// 属性值是结构化集合，端点声明的是 JSON 对象：按真实协议提交，不用表单拼数组。
+	body := map[string]any{
+		"id": group.ID, "projectId": f.projectID,
+		"values": []map[string]any{
+			{"id": group.Values[1].ID, "key": "m", "label": "中码", "sort": 2, "enabled": false},
+			{"key": "l", "label": "L", "sort": 1, "enabled": true},
+		},
+	}
+	rec := postJSON(t, engine, "/api/product/attribute/set-values", body)
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Header().Get("Content-Type"), "text/html") || !strings.Contains(rec.Body.String(), `role="status"`) {
 		t.Fatalf("保存应返回 HTML 200: %d %s", rec.Code, rec.Body.String())
 	}
@@ -116,7 +123,9 @@ func TestAttributeValuesFormWritesHTML(t *testing.T) {
 	if len(got.Values) != 2 || got.Values[0].Key != "l" || got.Values[1].ID != group.Values[1].ID || got.Values[1].Label != "中码" || got.Values[1].Enabled {
 		t.Fatalf("增删/保留身份/禁用/排序错误: %+v", got.Values)
 	}
-	rec = postForm(engine, "/api/product/attribute/set-values", url.Values{"id": {group.ID}, "projectId": {f.projectID}, "values": {"[]"}})
+	rec = postJSON(t, engine, "/api/product/attribute/set-values", map[string]any{
+		"id": group.ID, "projectId": f.projectID, "values": []map[string]any{},
+	})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("清空失败: %s", rec.Body.String())
 	}

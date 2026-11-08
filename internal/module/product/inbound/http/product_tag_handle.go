@@ -15,13 +15,13 @@ import (
 )
 
 func (h *ProductHandle) CreateTag(c *gin.Context) {
-	runProductWrite(c, func(ctx context.Context, req *productdto.CreateTagReq) (any, error) {
+	runProductWriteJSON(c, func(ctx context.Context, req *productdto.CreateTagReq) (any, error) {
 		return h.svc.CreateTag(ctx, req)
 	}, productWriteOK)
 }
 
 func (h *ProductHandle) UpdateTag(c *gin.Context) {
-	runProductWrite(c, func(ctx context.Context, req *productdto.UpdateTagReq) (any, error) {
+	runProductWriteJSON(c, func(ctx context.Context, req *productdto.UpdateTagReq) (any, error) {
 		return h.svc.UpdateTag(ctx, req)
 	}, productWriteOK)
 }

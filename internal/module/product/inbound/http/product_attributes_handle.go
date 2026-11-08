@@ -36,7 +36,7 @@ func (h *ProductPageHandle) ProductAttributesPage(c *gin.Context) {
 
 func (h *ProductHandle) CreateAttribute(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	req, err := binding.ParseForm[productdto.CreateAttributeReq](c)
+	req, err := bindJSONFact[productdto.CreateAttributeReq](c)
 	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
 		return
@@ -50,7 +50,7 @@ func (h *ProductHandle) CreateAttribute(c *gin.Context) {
 
 func (h *ProductHandle) UpdateAttribute(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	req, err := binding.ParseForm[productdto.UpdateAttributeReq](c)
+	req, err := bindJSONFact[productdto.UpdateAttributeReq](c)
 	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
 		return
@@ -63,7 +63,7 @@ func (h *ProductHandle) UpdateAttribute(c *gin.Context) {
 }
 
 func (h *ProductHandle) SetAttributeValues(c *gin.Context) {
-	runProductWrite(c, func(ctx context.Context, req *productdto.SetAttributeValuesReq) (any, error) {
+	runProductWriteJSON(c, func(ctx context.Context, req *productdto.SetAttributeValuesReq) (any, error) {
 		return h.svc.SetAttributeValues(ctx, req)
 	}, productWriteOK)
 }

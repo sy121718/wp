@@ -285,3 +285,59 @@ func (h *Handle) NoCallee(c *gin.Context) { passed := c; _ = passed }
 		t.Fatalf("二层包装不应被静默展开：%+v", wrapped)
 	}
 }
+
+// 泛型写骨架：请求类型由调用方实参决定，不能因为骨架体里看到的是类型参数就报 unknown。
+// 两种写法都要认：显式类型实参 f[XReq](...) 与回调推断 f(func(ctx, r *XReq) ...)。
+func TestGenericSkeletonResolvesCallerRequestType(t *testing.T) {
+	src := `package examplehttp
+import (
+ "context"
+ req "example/internal/dto"
+ wire "github.com/gin-gonic/gin/binding"
+ "github.com/gin-gonic/gin"
+)
+func runJSON[T any](c *gin.Context, call func(context.Context, *T) (any, error)) {
+ var in T
+ if err := c.ShouldBindJSON(&in); err != nil { return }
+ call(c.Request.Context(), &in)
+}
+func runForm[T any](c *gin.Context, call func(context.Context, *T) (any, error)) {
+ var in T
+ if err := c.ShouldBindWith(&in, wire.FormPost); err != nil { return }
+ call(c.Request.Context(), &in)
+}
+type Handle struct{}
+func (h *Handle) Explicit(c *gin.Context) {
+ runJSON[req.SaveReq](c, func(ctx context.Context, r *req.SaveReq) (any, error) { return nil, nil })
+}
+func (h *Handle) Inferred(c *gin.Context) {
+ runJSON(c, func(ctx context.Context, r *req.SaveReq) (any, error) { return nil, nil })
+}
+func (h *Handle) Form(c *gin.Context) {
+ runForm(c, func(ctx context.Context, r *req.RateReq) (any, error) { return nil, nil })
+}
+`
+	root := writeSources(t, map[string]string{
+		"dto/request.go": "package dto\ntype SaveReq struct { ID string `json:\"id\" binding:\"required\"` }\n" +
+			"type RateReq struct { Score int `form:\"score\" binding:\"required\"` }\n",
+		"http/handle.go": src,
+	})
+	index, err := scanSources(root, "example/internal")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := buildContracts([]route{
+		{Method: "POST", Path: "/explicit", Handler: "example/internal/http.(*Handle).Explicit-fm"},
+		{Method: "POST", Path: "/inferred", Handler: "example/internal/http.(*Handle).Inferred-fm"},
+		{Method: "POST", Path: "/form", Handler: "example/internal/http.(*Handle).Form-fm"},
+	}, index)
+	if got["POST /explicit"].Protocol != "json" {
+		t.Fatalf("显式泛型调用应解析成 json：%+v", got["POST /explicit"])
+	}
+	if got["POST /inferred"].Protocol != "json" || got["POST /inferred"].DTO != "example/internal/dto.SaveReq" {
+		t.Fatalf("推断泛型调用应解析成调用方的请求类型：%+v", got["POST /inferred"])
+	}
+	if got["POST /form"].Protocol != "form" {
+		t.Fatalf("表单骨架应保持 form：%+v", got["POST /form"])
+	}
+}

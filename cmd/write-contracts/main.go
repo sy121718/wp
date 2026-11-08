@@ -78,6 +78,11 @@ type funcSource struct {
 	recvName   string
 	paramNames []string
 	imports    map[string]string
+	// generics 是本函数声明的类型参数名（如 runProductWrite[T any] 的 T）。
+	// 泛型写骨架的请求类型由调用方的实参决定，不能在骨架体里凭空推断。
+	generics map[string]bool
+	// typeParams 记录形参的源码表达式，供泛型骨架按实参类型替换出真实 DTO。
+	typeParams map[string]ast.Expr
 }
 
 func run(check bool) error {
@@ -165,6 +170,9 @@ func buildContracts(routes []route, index sourceIndex) map[string]endpointSchema
 		identity := handlerIdentity(r.Handler)
 		binding, ok := index.Bindings[identity]
 		if !ok {
+			binding = genericSkeletonBinding(identity, index)
+		}
+		if binding.Protocol == "" && binding.Reason == "" {
 			binding = delegateBinding(identity, index)
 		}
 		if binding.Protocol == "" && binding.Reason == "" {
@@ -234,7 +242,8 @@ func scanSources(root, prefix string) (sourceIndex, error) {
 					continue
 				}
 				name := pkg + "." + node.Name.Name
-				src := &funcSource{name: name, body: node.Body, pkg: pkg, imports: imports, ctxParams: map[string]bool{}}
+				src := &funcSource{name: name, body: node.Body, pkg: pkg, imports: imports,
+					ctxParams: map[string]bool{}, generics: map[string]bool{}}
 				if node.Recv != nil && len(node.Recv.List) == 1 {
 					name = typeName(node.Recv.List[0].Type, pkg, imports) + "." + node.Name.Name
 					if names := node.Recv.List[0].Names; len(names) == 1 {
@@ -242,9 +251,18 @@ func scanSources(root, prefix string) (sourceIndex, error) {
 					}
 				}
 				src.name = name
+				src.typeParams = map[string]ast.Expr{}
+				if node.Type.TypeParams != nil {
+					for _, tp := range node.Type.TypeParams.List {
+						for _, tpName := range tp.Names {
+							src.generics[tpName.Name] = true
+						}
+					}
+				}
 				for _, field := range node.Type.Params.List {
 					for _, paramName := range field.Names {
 						src.paramNames = append(src.paramNames, paramName.Name)
+						src.typeParams[paramName.Name] = field.Type
 						if typeName(field.Type, pkg, imports) == "github.com/gin-gonic/gin.Context" {
 							src.ctxParams[paramName.Name] = true
 						}
@@ -252,6 +270,14 @@ func scanSources(root, prefix string) (sourceIndex, error) {
 				}
 				index.funcs[name] = src
 				if binding := nativeBinding(node.Body, pkg, imports); binding.DTO != "" || binding.Reason != "" {
+					// 泛型函数体的请求类型是类型参数而不是具体 DTO：即使 binder 能识别出协议，
+					// 这里也登记成「只有协议、没有 DTO」，由调用方实参补齐 DTO。
+					if len(src.generics) > 0 && binding.Protocol != "unknown" && binding.DTO != "" {
+						binding.DTO = ""
+					}
+					if binding.Protocol == "unknown" && len(src.generics) > 0 {
+						binding = bodyBinding{}
+					}
 					index.Bindings[name] = binding
 				}
 			}
@@ -332,6 +358,17 @@ func nativeBinding(body *ast.BlockStmt, pkg string, imports map[string]string) b
 			}
 			protocol := ""
 			switch method.Sel.Name {
+			case "ParseJSON":
+				// pkg/binding 的显式 JSON 口：只接收 JSON，不按 Content-Type 自动选择。
+				// 它是 `binding.ParseJSON[T](c)` 的泛型调用：请求类型在接收者上，不在实参上。
+				// 这里只登记协议，DTO 留给调用方的类型实参补齐。
+				if sel, okSel := method.X.(*ast.SelectorExpr); okSel {
+					if blind, okBlind := sel.X.(*ast.Ident); okBlind && indexImport(imports, blind.Name) == "go_wp/pkg/binding" {
+						bindings = append(bindings, bodyBinding{Protocol: "json"})
+						break
+					}
+				}
+				protocol = "unknown"
 			case "ShouldBindJSON":
 				protocol = "json"
 			case "ShouldBindWith":
@@ -587,4 +624,235 @@ func funcWithMethod(src *funcSource, method string) string {
 		return src.name
 	}
 	return src.name[:dot] + "." + method
+}
+
+// genericSkeletonBinding 识别「处理器把工作交给本包泛型写骨架」的形态。
+//
+// 为什么需要：`runProductWrite[T](c, call, success)` 这类骨架把绑定与调用收在一处，
+// 请求类型由**调用方实参**决定（`runProductWrite(c, func(_ context.Context, r *XReq) ...)`）。
+// 骨架体里看到的是类型参数 T，不是具体 DTO；直接扫骨架会得到空 DTO 而被误报 unknown。
+// 这里只做一件事：按调用方的实参推断 T，再读骨架自己的 binder 协议。
+// 推断不出来就如实返回 unknown —— 不按函数名猜「JSON 就是 JSON」。
+func genericSkeletonBinding(name string, index sourceIndex) bodyBinding {
+	src, ok := index.funcs[name]
+	if !ok {
+		return bodyBinding{}
+	}
+	var skeleton string
+	var dto string
+	var resolved bodyBinding
+	ast.Inspect(src.body, func(n ast.Node) bool {
+		call, okCall := n.(*ast.CallExpr)
+		if !okCall {
+			return true
+		}
+		// 泛型调用可以显式写类型实参（f[T](...)），也可以靠 Go 从回调推断（f(...)）。
+		// 两种都要认：只认 IndexExpr 会漏掉生产里更常见的推断写法。
+		var calleeName string
+		switch fun := call.Fun.(type) {
+		case *ast.IndexExpr:
+			ident, okIdent := fun.X.(*ast.Ident)
+			if !okIdent {
+				return true
+			}
+			calleeName = ident.Name
+		case *ast.IndexListExpr:
+			ident, okIdent := fun.X.(*ast.Ident)
+			if !okIdent {
+				return true
+			}
+			calleeName = ident.Name
+			_ = fun
+		case *ast.Ident:
+			calleeName = fun.Name
+		default:
+			return true
+		}
+		if calleeName == "" {
+			return true
+		}
+		target, okTarget := index.funcs[src.pkg+"."+calleeName]
+		if !okTarget || len(target.generics) == 0 {
+			return true
+		}
+		// 显式类型实参（f[XReq](...)）：直接就是 DTO。
+		if binding := explicitTypeArgDTO(call, calleeName, target, src, index); binding.Protocol != "" {
+			resolved = binding
+			return false
+		}
+		// 实参里的回调是 func(ctx, req *XReq) —— 兜底类型就是骨架上 T 的实例。
+		for _, arg := range call.Args {
+			lit, okLit := arg.(*ast.FuncLit)
+			if !okLit || lit.Type == nil || lit.Type.Params == nil {
+				continue
+			}
+			for _, field := range lit.Type.Params.List {
+				for _, pname := range field.Names {
+					if pname.Name == "_" {
+						continue
+					}
+					typ, okTyp := field.Type.(*ast.StarExpr)
+					if !okTyp {
+						continue
+					}
+					identified := typeName(typ.X, src.pkg, src.imports)
+					// 回调的第一个形参常是 *gin.Context —— 那是请求上下文，不是请求类型。
+					if identified == "" || identified == "github.com/gin-gonic/gin.Context" {
+						continue
+					}
+					skeleton, dto = target.name, identified
+					return false
+				}
+			}
+		}
+		return true
+	})
+	if resolved.Protocol != "" {
+		return resolved
+	}
+	if skeleton == "" || dto == "" {
+		return bodyBinding{}
+	}
+	binding, ok := index.Bindings[skeleton]
+	if !ok || binding.Protocol == "" || binding.Protocol == "unknown" {
+		binding = skeletonHelperBinding(index.funcs[skeleton], index)
+	}
+	if binding.Protocol == "" || binding.Protocol == "unknown" {
+		if protocol := skeletonJSONProtocol(index.funcs[skeleton]); protocol != "" {
+			binding = bodyBinding{Protocol: protocol}
+		} else if helper := index.funcs[skeleton]; helper != nil {
+			// helper 自己的泛型体里可能直接调 pkg/binding.ParseJSON —— 再问它一次。
+			if protocol := skeletonJSONProtocol(helper); protocol != "" {
+				binding = bodyBinding{Protocol: protocol}
+			}
+		}
+	}
+	// 多个字段由骨架内的同一个 binder 绑定：helper 只说明协议，DTO 由调用方给。
+	if binding.Protocol == "" || binding.Protocol == "unknown" {
+		return bodyBinding{Protocol: "unknown", Reason: "泛型写骨架没有可确定的 binder：" + skeleton}
+	}
+	binding.DTO = dto
+	return binding
+}
+
+// explicitTypeArgDTO 处理显式泛型调用 `f[XReq](...)`：类型实参就是请求类型。
+//
+// 与推断写法的区别：这里不需要读回调，直接取实参里的具名类型。
+// 返回 Protocol 为空表示「不是显式泛型调用，交给推断分支」。
+func explicitTypeArgDTO(call *ast.CallExpr, calleeName string, target *funcSource,
+	src *funcSource, index sourceIndex) bodyBinding {
+	var argList []ast.Expr
+	switch fun := call.Fun.(type) {
+	case *ast.IndexExpr:
+		argList = []ast.Expr{fun.Index}
+	case *ast.IndexListExpr:
+		argList = fun.Indices
+	default:
+		return bodyBinding{}
+	}
+	if len(argList) != 1 {
+		return bodyBinding{}
+	}
+	dto := typeName(argList[0], src.pkg, src.imports)
+	if dto == "" {
+		return bodyBinding{}
+	}
+	binding, ok := index.Bindings[target.name]
+	if !ok || binding.Protocol == "" || binding.Protocol == "unknown" {
+		if protocol := skeletonJSONProtocol(target); protocol != "" {
+			binding = bodyBinding{Protocol: protocol}
+		}
+	}
+	if binding.Protocol == "" || binding.Protocol == "unknown" {
+		return bodyBinding{Protocol: "unknown", Reason: "泛型写骨架没有可确定的 binder：" + target.name}
+	}
+	binding.DTO = dto
+	return binding
+}
+
+// skeletonHelperBinding 在骨架体里找它委托的另一个具名函数（通常是 bindXForm[T]），
+// 用那个函数的 binder 协议作骨架的输入协议。只跟一层，找不到就如实返回空。
+func skeletonHelperBinding(src *funcSource, index sourceIndex) bodyBinding {
+	if src == nil {
+		return bodyBinding{}
+	}
+	var out bodyBinding
+	ast.Inspect(src.body, func(n ast.Node) bool {
+		if out.Protocol != "" {
+			return false
+		}
+		call, okCall := n.(*ast.CallExpr)
+		if !okCall {
+			return true
+		}
+		var name string
+		switch fun := call.Fun.(type) {
+		case *ast.Ident:
+			name = fun.Name
+		case *ast.IndexExpr:
+			if ident, okIdent := fun.X.(*ast.Ident); okIdent {
+				name = ident.Name
+			}
+		case *ast.IndexListExpr:
+			if ident, okIdent := fun.X.(*ast.Ident); okIdent {
+				name = ident.Name
+			}
+		default:
+			return true
+		}
+		binding, ok := index.Bindings[src.pkg+"."+name]
+		if ok && binding.Protocol != "" && binding.Protocol != "unknown" {
+			// 泛型 helper 的 DTO 是 T，骨架体里看到的是类型参数：这里只要协议。
+			if len(index.funcs[src.pkg+"."+name].generics) > 0 {
+				binding.DTO = ""
+			}
+			out = binding
+			return false
+		}
+		return true
+	})
+	return out
+}
+
+// indexImport 返回导入别名的完整路径；未导入返回空。
+func indexImport(imports map[string]string, alias string) string { return imports[alias] }
+
+// skeletonJSONProtocol 识别骨架体里的 `binding.ParseJSON[T](c)` 调用。
+//
+// 这条调用把「显式 JSON 绑定」收在泛型骨架里：nativeBinding 看到的是泛型接收者
+// binding.ParseJSON[T]，识别不出协议；这里按导入路径确认它就是 pkg/binding 的 JSON 口。
+func skeletonJSONProtocol(src *funcSource) string {
+	if src == nil {
+		return ""
+	}
+	out := ""
+	ast.Inspect(src.body, func(n ast.Node) bool {
+		if out != "" {
+			return false
+		}
+		call, okCall := n.(*ast.CallExpr)
+		if !okCall {
+			return true
+		}
+		var sel *ast.SelectorExpr
+		switch fun := call.Fun.(type) {
+		case *ast.IndexExpr:
+			sel, _ = fun.X.(*ast.SelectorExpr)
+		case *ast.IndexListExpr:
+			sel, _ = fun.X.(*ast.SelectorExpr)
+		case *ast.SelectorExpr:
+			sel = fun
+		default:
+			return true
+		}
+		if sel == nil || sel.Sel.Name != "ParseJSON" {
+			return true
+		}
+		if ident, okIdent := sel.X.(*ast.Ident); okIdent && src.imports[ident.Name] == "go_wp/pkg/binding" {
+			out = "json"
+			return false
+		}
+		return true
+	})
+	return out
 }

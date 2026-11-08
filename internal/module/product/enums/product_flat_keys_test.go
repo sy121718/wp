@@ -37,6 +37,11 @@ func TestTranslationKeysAreCompleteShortLiterals(t *testing.T) {
 		if file.IsDir() || !strings.HasSuffix(file.Name(), ".go") || strings.HasSuffix(file.Name(), "_test.go") {
 			continue
 		}
+		// 权限码不是界面词条（AGENTS.md 明确豁免短 key 规则，也不进 sys_i18n）：
+		// 它与词条常量同前缀，按词条扫会永远报「非法 key」。
+		if file.Name() == "permission_codes.go" {
+			continue
+		}
 		parsed, err := parser.ParseFile(token.NewFileSet(), file.Name(), nil, 0)
 		if err != nil {
 			t.Fatal(err)

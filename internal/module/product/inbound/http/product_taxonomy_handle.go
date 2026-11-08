@@ -71,13 +71,13 @@ func (h *ProductPageHandle) ProductBrandsPage(c *gin.Context) {
 }
 
 func (h *ProductHandle) CreateCategory(c *gin.Context) {
-	runProductWrite(c, func(ctx context.Context, req *productdto.CreateCategoryReq) (any, error) {
+	runProductWriteJSON(c, func(ctx context.Context, req *productdto.CreateCategoryReq) (any, error) {
 		return h.svc.CreateCategory(ctx, req)
 	}, productWriteOK)
 }
 
 func (h *ProductHandle) UpdateCategory(c *gin.Context) {
-	runProductWrite(c, func(ctx context.Context, req *productdto.UpdateCategoryReq) (any, error) {
+	runProductWriteJSON(c, func(ctx context.Context, req *productdto.UpdateCategoryReq) (any, error) {
 		return h.svc.UpdateCategory(ctx, req)
 	}, productWriteOK)
 }

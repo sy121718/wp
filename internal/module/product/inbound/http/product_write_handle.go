@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 	ginbinding "github.com/gin-gonic/gin/binding"
 
+	"go_wp/pkg/binding"
 	pageview "go_wp/pkg/view"
 )
 
@@ -57,7 +58,7 @@ func bindProductForm[T any](c *gin.Context) *T {
 	return &req
 }
 
-// runProductWriteResult 用于「绑定 → 注入可信字段 → 调用 → 渲染结果片段」的端点。
+// runProductWriteResultJSON 是 runProductWriteResult 的显式 JSON 版本（表单是对象提供器）。
 func runProductWriteResult[T any](c *gin.Context,
 	prepare func(*gin.Context, *T),
 	call func(context.Context, *T) (any, error),
@@ -108,6 +109,66 @@ func runProductWriteEnd[T any](c *gin.Context, call func(context.Context, *T) er
 		return
 	}
 	success(c)
+}
+
+// runProductWriteJSON 用于**显式 JSON 输入**的写端点（复杂编辑器/对象提供器）。
+//
+// 前端 data-write-builder 交的是 JSON 对象（write-base 会设 Content-Type: application/json），
+// 用 FormPost 绑定只会拿到空结构 —— 两者协议必须对齐。
+// 用 binding.ParseJSON（显式 JSON，不按 Content-Type 自动选择协议）：端点声明的输入协议
+// 必须与其实际接受的一致，不能让同一端点悄悄接受两种形状。
+func runProductWriteJSON[T any](c *gin.Context,
+	call func(context.Context, *T) (any, error),
+	success func(*gin.Context)) {
+	c.Header("Cache-Control", "no-store")
+	req, err := binding.ParseJSON[T](c)
+	if err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
+		return
+	}
+	if _, err := call(c.Request.Context(), req); err != nil {
+		pageview.FailScene(c, productErrScene, err)
+		return
+	}
+	success(c)
+}
+
+// bindJSONFact 显式绑定 JSON 对象并交回错误事实（调用方自己决定失败出口）。
+func bindJSONFact[T any](c *gin.Context) (*T, error) {
+	return binding.ParseJSON[T](c)
+}
+
+// runProductWriteResultJSON 用于「JSON 绑定 → 注入可信字段 → 调用 → 渲染结果片段」。
+func runProductWriteResultJSON[T any](c *gin.Context,
+	prepare func(*gin.Context, *T),
+	call func(context.Context, *T) (any, error),
+	render func(*gin.Context, any)) {
+	c.Header("Cache-Control", "no-store")
+	req, err := binding.ParseJSON[T](c)
+	if err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
+		return
+	}
+	if prepare != nil {
+		prepare(c, req)
+	}
+	res, err := call(c.Request.Context(), req)
+	if err != nil {
+		pageview.FailScene(c, productErrScene, err)
+		return
+	}
+	render(c, res)
+}
+
+// bindProductJSON 显式绑定 JSON 对象；失败已由这里写出 400。
+func bindProductJSON[T any](c *gin.Context) *T {
+	c.Header("Cache-Control", "no-store")
+	req, err := binding.ParseJSON[T](c)
+	if err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
+		return nil
+	}
+	return req
 }
 
 // productWriteOK 是纯成功的公共出口。
