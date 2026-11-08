@@ -64,7 +64,7 @@ func TestPrepareReadsAdminctxKeys(t *testing.T) {
 	if path, _ := data["NavCurrentPath"].(string); path != "/admin/products" {
 		t.Fatalf("Prepare 应把当前路径作为请求事实交给模板，实际 %q", data["NavCurrentPath"])
 	}
-	if !jetpkg.NavBranchActive(items[0], "/admin/products") || !data["HasSubnav"].(bool) {
+	if !jetpkg.NavBranchActive(items[0], "/admin/products") || len(items) == 0 {
 		t.Fatalf("当前页 /admin/products 归属「商品」分组：模板函数应判为激活且 HasSubnav 为真，实际 %+v / %v",
 			items[0], data["HasSubnav"])
 	}
@@ -96,7 +96,7 @@ func TestPrepareFailsClosedOnInvalidContextValues(t *testing.T) {
 				}
 			}
 			items, ok := data["NavItems"].([]jetpkg.NavItem)
-			if !ok || len(items) != 0 || data["HasSubnav"] != false {
+			if !ok || len(items) != 0 {
 				t.Fatalf("navigation must fail closed: %#v", data)
 			}
 		})

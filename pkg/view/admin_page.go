@@ -134,7 +134,6 @@ func PreparePage(c *gin.Context, data gin.H) gin.H {
 
 	data["SidebarOpen"] = sidebarOpen(c)
 	data["SidebarPinned"] = sidebarPinned(c)
-	data["HasSubnav"] = hasNavChildren(navItems)
 	return data
 }
 

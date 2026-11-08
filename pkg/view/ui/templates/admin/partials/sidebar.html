@@ -33,7 +33,7 @@
     {{end}}
 </nav>
 
-{{if .["HasSubnav"]}}
+{{if isset(.NavItems) && len(.NavItems) > 0}}
 <nav class="subnav" id="subnav">
     <div class="subnav-pin">
         {* 文案走 sys_i18n（shell.sidebar.*）；data-label-* 供 admin.js 切换固定态时同步文案，

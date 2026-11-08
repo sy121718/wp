@@ -30,7 +30,7 @@ func TestPrepareInjectsShellFactsWithRealPipeline(t *testing.T) {
 	engine := gin.New()
 
 	loader := jet.NewInMemLoader()
-	loader.Set("probe.html", `{{ .["NavItems"] }}|{{ .["HasSubnav"] }}|{{ .["SidebarPinned"] }}|{{ .["csrf_token"] }}`)
+	loader.Set("probe.html", `{{ .["NavItems"] }}|{{if isset(.NavItems) && len(.NavItems) > 0}}true{{else}}false{{end}}|{{ .["SidebarPinned"] }}|{{ .["csrf_token"] }}`)
 	set := jet.NewSet(loader, jet.WithTemplateNameExtensions([]string{"", ".html"}))
 	engine.HTMLRender = templates.NewJetHTMLRenderWithSet(set)
 	engine.GET("/admin/products", func(c *gin.Context) {
