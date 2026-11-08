@@ -16,7 +16,7 @@
 //
 // ## 保存链路
 //
-// POST /admin/mail/template/save（body_json 走 JSON）→ 后端编译并落库 → 回带
+// POST /api/mail/template/save（body_json 走 JSON）→ 后端编译并落库 → 回带
 // body_compiled_html / body_compiled_text → 只替换 iframe srcdoc。失败时把 NodeKey
 // 定位原样显示（与画布的图校验同一约定）。
 
@@ -270,7 +270,7 @@ function saveTemplate() {
     if (!subject) { setStatus('请先填主题'); if (subjectEl) { subjectEl.focus(); } return; }
 
     setStatus('保存中…');
-    fetch('/admin/mail/template/save', {
+    fetch('/api/mail/template/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf() },
         credentials: 'same-origin',

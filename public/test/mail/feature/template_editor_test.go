@@ -111,7 +111,7 @@ func TestTemplateEditorSaveReturnsCompiled(t *testing.T) {
 		}},
 	}
 	raw, _ := json.Marshal(payload)
-	req := httptest.NewRequest(http.MethodPost, "/admin/mail/template/save", strings.NewReader(string(raw)))
+	req := httptest.NewRequest(http.MethodPost, "/api/mail/template/save", strings.NewReader(string(raw)))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
@@ -168,7 +168,7 @@ func newTemplateEditorRouter(t *testing.T, f *mailFixture) *gin.Engine {
 	api := mailhttp.NewHandle(f.svc)
 	router.GET("/admin/mail/templates/editor",
 		pageview.Slot(mailhttp.TemplateEditorPageTemplate, pageview.RenderPage), page.MailTemplateEditor)
-	router.POST("/admin/mail/template/save", api.TemplateSave)
+	router.POST("/api/mail/template/save", api.TemplateSave)
 	return router
 }
 
