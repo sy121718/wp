@@ -158,8 +158,9 @@ func verifyDeclaredPermissions(ctx context.Context, dir aicontract.PermDirectory
 			problems = append(problems, spec.Perm+" 未在权限目录中登记（"+act+" "+obj+"）")
 			continue
 		}
+		// 禁用是**合法启停**：管理员停用一个权限点后，入口仍要注册、鉴权仍会拒绝，
+		// 只是它不再属于「可用目录」。把禁用当成目录缺失会让一次正常的停用变成不就绪。
 		if e.Status != 1 {
-			problems = append(problems, spec.Perm+" 在权限目录中已禁用（"+act+" "+obj+"）")
 			continue
 		}
 		if e.Path != obj || e.Method != act {

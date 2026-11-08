@@ -42,6 +42,8 @@ func SetupPublicationRoutes(rg *mw.RouteGroup, db *gorm.DB) pubcontract.Publicat
 		Perm: adminenums.SEOAudit, Kind: mw.RoutePage,
 		AuthObject: "/api/seo/audit", AuthMethod: http.MethodPost,
 	})
+	// HTML 片段入口复用的是 SEO 审核这一操作本身的权限点：
+	// 真实路由是 /api/publication/seo-audit，鉴权对象仍是 /api/seo/audit（数据库里的既有绑定）。
 	g.POST("/seo-audit", pubenums.PublicationSEOAudit, builtin.CasbinMiddlewareForPath("/api/seo/audit"),
 		pageview.HTMLFragment, NewSeoAuditHandle(svc.RunSEOAudit).SeoAudit)
 	return svc

@@ -12,6 +12,8 @@ import (
 )
 
 var uninjectableSetters = map[string]string{
+	"SetRequestUserID": "routers 装配期把当前用户回调交给 pkg/view/jet 的失败日志事实，不参与业务端口接线",
+	"SetAdminPort":     "routers 装配期把 CSRF 签发与授权菜单树交给 pkg/view 的页面渲染端口，不参与业务端口接线",
 
 	"SetStaleMarkers": "media 的多路注入由 media 自身在两处分别登记（portMediaStaleMarker*）",
 }
@@ -33,6 +35,7 @@ var moduleInternalSetters = map[string]string{
 	"SetConfigReader":      "ai.SetupAIRoutes：形参 aiConfig（sysconfigcontract.Service）转交 MCP 端点",
 	"SetConfigService":     "ai.SetupAIPages：形参 aiConfig 转交 MCP 页面 handle",
 	"SetPermDirectory":     "ai.SetupAIPages：形参 dir（权限目录只读口）转交 MCP 页面 handle",
+	"SetAccountAuthorizer": "ai.SetupAIRoutes：模块内函数字面量（Casbin 授权闭包）注入 MCP 端点",
 
 	"SetCustomerCohort":    "user.SetupCustomerPages：形参 cohort（客户域聚合端口）转交",
 	"SetCustomerGrowth":    "user.SetupCustomerPages：形参 growth 转交",

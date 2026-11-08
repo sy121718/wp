@@ -1052,6 +1052,12 @@ func fabImageRequest(req *aidto.SendMessageReq, images, labels []string) {
 	req.ImageLabels = labels
 }
 
+// casbinAuthorizer 按操作绑定当前用户的授权事实。
+//
+// 每个登记里有两条事实：真实路由（Path/Method）与**实际被检查的鉴权目标**
+// （AuthObject/AuthMethod）。页面或 HTML 写入口复用别的权限时后者才不同 ——
+// 这里必须用后者判断，用 Path 会把「复用权限的页面入口」当成独立对象去查，
+// 结果永远是拒绝。
 func casbinAuthorizer(_ context.Context, userID int64, perm string) (bool, error) {
 	routes := mw.RoutesOf(perm)
 	if len(routes) == 0 {
@@ -1060,7 +1066,14 @@ func casbinAuthorizer(_ context.Context, userID int64, perm string) (bool, error
 		return false, nil
 	}
 	for _, r := range routes {
-		ok, err := builtin.EnforceForUser(userID, r.Path, r.Method)
+		object, action := r.AuthObject, r.AuthMethod
+		if object == "" {
+			object = r.Path
+		}
+		if action == "" {
+			action = r.Method
+		}
+		ok, err := builtin.EnforceForUser(userID, object, action)
 		if err != nil {
 			return false, err
 		}

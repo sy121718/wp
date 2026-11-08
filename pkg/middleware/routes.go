@@ -227,6 +227,23 @@ func (g *RouteGroup) POST(relativePath, perm string, handlers ...gin.HandlerFunc
 	return g.declareAndRegister(http.MethodPost, relativePath, perm, handlers...)
 }
 
+// DeclareRouteIn 登记一条不走本组默认登记的入口（如复用别的操作鉴权目标的页面/写入口）。
+//
+// 与 DeclareRoute 的区别只在调用点：它把「注册真实路由」和「登记权限绑定」分开写，
+// 用于真实路径与鉴权目标不同、或该路径不经过本组 declareAndRegister 的情形。
+func (g *RouteGroup) DeclareRouteIn(method, relativePath string, spec RouteSpec) {
+	if spec.Path == "" {
+		spec.Path = joinRoutePaths(g.BasePath(), relativePath)
+	}
+	if spec.Method == "" {
+		spec.Method = method
+	}
+	if spec.Kind == "" {
+		spec.Kind = g.Kind
+	}
+	DeclareRoute(spec)
+}
+
 // ExemptGET / ExemptPOST 在受保护组内声明明确豁免的入口：
 // 仍走该组自身的认证与 CSRF，只是不进后台权限目录。
 func (g *RouteGroup) ExemptGET(relativePath string, handlers ...gin.HandlerFunc) gin.IRoutes {
