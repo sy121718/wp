@@ -44,7 +44,7 @@
            「是不是筛选条件太窄」。空态落在 tbody 的整行里（colspan 随 canDelete ±1）。
            批量动作与勾选框同属一个 form：<form> 包 <table> 是合法的，提交时浏览器直接带上所有勾中的 ids，
            不需要在提交前注入隐藏域。行内删除表单留在表格外（HTML 不允许 form 嵌套），按钮用 form="<id>" 关联。 *}
-        <form method="post" action="/admin/departments/bulk-delete{{if lq}}?{{lq}}{{end}}">
+        <form method="post" action="/admin/departments/bulk-delete?{{if lq}}{{lq}}{{end}}">
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         {* 批量条只在有数据时渲染：空表没有可勾选的行，渲染一个永远显示不出来的条只是噪声。 *}
         {{if canDelete}}{{if len(.Rows) > 0}}
@@ -102,7 +102,7 @@
     {* 行内删除表单放表格外，按钮用 form="<id>" 关联（form 不能嵌套）。 *}
     {{range _, d := .Rows}}
     {{if isset(.Buttons["dept.delete"])}}
-    <form id="dept-del-{{d.ID}}" method="post" action="/admin/departments/delete{{if lq}}?{{lq}}{{end}}" class="hidden-form"
+    <form id="dept-del-{{d.ID}}" method="post" action="/admin/departments/delete?{{if lq}}{{lq}}{{end}}" class="hidden-form"
           data-confirm="{{tr("admin.depts.confirm.delete", "确认删除？")}}" data-confirm-danger>
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         <input type="hidden" name="id" value="{{d.ID}}">
@@ -113,7 +113,7 @@
 
 {* ===== 新建部门（抽屉表单模板） ===== *}
 <template id="tpl-dept-create">
-    <form method="post" action="/admin/departments/create{{if lq}}?{{lq}}{{end}}">
+    <form method="post" action="/admin/departments/create?{{if lq}}{{lq}}{{end}}">
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         <div class="form-group">
             <label class="form-label req">{{ .["t"]("admin.depts.field.name", "部门名称") }}</label>
@@ -159,7 +159,7 @@
 {* ===== 编辑部门（每行一份抽屉表单模板，服务端回显；parent_id 隐藏，保持不移动父级） ===== *}
 {{range _, d := .Rows}}
 <template id="tpl-dept-edit-{{d.ID}}">
-    <form method="post" action="/admin/departments/update{{if lq}}?{{lq}}{{end}}">
+    <form method="post" action="/admin/departments/update?{{if lq}}{{lq}}{{end}}">
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         <input type="hidden" name="id" value="{{d.ID}}">
         <input type="hidden" name="parent_id" value="{{d.ParentID}}">

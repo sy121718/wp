@@ -47,7 +47,7 @@
            也才能判断「是不是筛选条件太窄」。空态落在 tbody 的整行里（colspan 随 canDelete ±1），
            <form> 依旧包住 <table>（批量动作与勾选框必须同属一个 form：提交时浏览器直接带上
            所有勾中的 ids，不需要在提交前注入隐藏域；admin.js 与 theme.css 也依赖这个结构）。 *}
-        <form method="post" action="/admin/administrators/bulk-delete{{if lq}}?{{lq}}{{end}}">
+        <form method="post" action="/admin/administrators/bulk-delete?{{if lq}}{{lq}}{{end}}">
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         {* 批量条只在有数据时渲染：空表没有可勾选的行，渲染一个永远显示不出来的条只是噪声。 *}
         {{if canDelete}}{{if len(.Rows) > 0}}
@@ -111,7 +111,7 @@
        提前闭合表格；按钮用 form="<id>" 关联到这里的隐藏表单。 *}
     {{range _, a := .Rows}}
     {{if isset(.Buttons["admin.delete"])}}
-    <form id="admin-del-{{a.ID}}" method="post" action="/admin/administrators/delete{{if lq}}?{{lq}}{{end}}" class="hidden-form"
+    <form id="admin-del-{{a.ID}}" method="post" action="/admin/administrators/delete?{{if lq}}{{lq}}{{end}}" class="hidden-form"
           data-confirm="{{tr("admin.admins.confirm.delete", "确认删除？")}}" data-confirm-danger>
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         <input type="hidden" name="id" value="{{a.ID}}">
@@ -122,7 +122,7 @@
 
 {* ===== 新建管理员（抽屉表单模板） ===== *}
 <template id="tpl-admin-create">
-    <form method="post" action="/admin/administrators/create{{if lq}}?{{lq}}{{end}}">
+    <form method="post" action="/admin/administrators/create?{{if lq}}{{lq}}{{end}}">
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         <div class="form-group">
             <label class="form-label req">{{ .["t"]("admin.admins.field.username", "用户名") }}</label>
@@ -154,7 +154,7 @@
 {* ===== 编辑管理员（每行一份抽屉表单模板，服务端回显） ===== *}
 {{range _, a := .Rows}}
 <template id="tpl-admin-edit-{{a.ID}}">
-    <form method="post" action="/admin/administrators/update{{if lq}}?{{lq}}{{end}}">
+    <form method="post" action="/admin/administrators/update?{{if lq}}{{lq}}{{end}}">
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         <input type="hidden" name="id" value="{{a.ID}}">
         <div class="form-group">

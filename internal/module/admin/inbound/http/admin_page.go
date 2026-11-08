@@ -316,14 +316,12 @@ func (h *AdminPagesHandle) AdministratorsUpdate(c *gin.Context) {
 }
 
 func (h *AdminPagesHandle) AdministratorsDelete(c *gin.Context) {
-	id := reqparams.ParseUint(c.PostForm("id"))
-	if id == 0 {
-		response.ErrorStatusAuto(c, adminErrScene, adminenums.BadRequest())
+	req, ok := bindAdminForm[admindto.AdminDeleteReq](c)
+	if !ok {
 		return
 	}
-	if _, err := h.admins.AdminDelete(c.Request.Context(), &admindto.AdminDeleteReq{
-		Id: []uint64{id}, OperatorID: builtin.CurrentUserID(c),
-	}); err != nil {
+	req.OperatorID = builtin.CurrentUserID(c)
+	if _, err := h.admins.AdminDelete(c.Request.Context(), req); err != nil {
 		response.ErrorStatusAuto(c, "admin.write", err)
 		return
 	}
@@ -331,15 +329,12 @@ func (h *AdminPagesHandle) AdministratorsDelete(c *gin.Context) {
 }
 
 func (h *AdminPagesHandle) AdministratorsBulkDelete(c *gin.Context) {
-	// 批量删除要么全成要么全败：一次进 service，同事务校验 + 删除。
-	normalized, berr := adminservice.NormalizeBulkIDs(c.PostFormArray("ids"))
-	if berr != nil {
-		response.ErrorStatusAuto(c, adminErrScene, berr)
+	req, ok := bindAdminForm[admindto.AdminDeleteReq](c)
+	if !ok {
 		return
 	}
-	res, err := h.admins.AdminDelete(c.Request.Context(), &admindto.AdminDeleteReq{
-		Id: normalized, OperatorID: builtin.CurrentUserID(c),
-	})
+	req.OperatorID = builtin.CurrentUserID(c)
+	res, err := h.admins.AdminDelete(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorStatusAuto(c, adminErrScene, err)
 		return
@@ -475,12 +470,11 @@ func (h *AdminPagesHandle) dataruleConfigFor(c *gin.Context, id uint64) (admindt
 }
 
 func (h *AdminPagesHandle) DatarulesDelete(c *gin.Context) {
-	id := reqparams.ParseUint(c.PostForm("id"))
-	if id == 0 {
-		response.ErrorStatusAuto(c, adminErrScene, adminenums.BadRequest())
+	req, ok := bindAdminForm[admindto.RuleDeleteReq](c)
+	if !ok {
 		return
 	}
-	if err := h.rules.RuleDelete(c.Request.Context(), &admindto.RuleDeleteReq{IDs: []uint64{id}}); err != nil {
+	if err := h.rules.RuleDelete(c.Request.Context(), req); err != nil {
 		response.ErrorStatusAuto(c, "admin.write", err)
 		return
 	}
@@ -488,13 +482,11 @@ func (h *AdminPagesHandle) DatarulesDelete(c *gin.Context) {
 }
 
 func (h *AdminPagesHandle) DatarulesBulkDelete(c *gin.Context) {
-	// 批量删除要么全成要么全败：一次进 service，同事务校验 + 删除。
-	normalized, berr := adminservice.NormalizeBulkIDs(c.PostFormArray("ids"))
-	if berr != nil {
-		response.ErrorStatusAuto(c, adminErrScene, berr)
+	req, ok := bindAdminForm[admindto.RuleDeleteReq](c)
+	if !ok {
 		return
 	}
-	if err := h.rules.RuleDelete(c.Request.Context(), &admindto.RuleDeleteReq{IDs: normalized}); err != nil {
+	if err := h.rules.RuleDelete(c.Request.Context(), req); err != nil {
 		response.ErrorStatusAuto(c, adminErrScene, err)
 		return
 	}
@@ -591,12 +583,11 @@ func (h *AdminPagesHandle) DepartmentsUpdate(c *gin.Context) {
 }
 
 func (h *AdminPagesHandle) DepartmentsDelete(c *gin.Context) {
-	id := reqparams.ParseUint(c.PostForm("id"))
-	if id == 0 {
-		response.ErrorStatusAuto(c, adminErrScene, adminenums.BadRequest())
+	req, ok := bindAdminForm[admindto.DeptDeleteReq](c)
+	if !ok {
 		return
 	}
-	if err := h.depts.DeptDelete(c.Request.Context(), &admindto.DeptDeleteReq{ID: id}); err != nil {
+	if err := h.depts.DeptDelete(c.Request.Context(), req); err != nil {
 		response.ErrorStatusAuto(c, "admin.write", err)
 		return
 	}
@@ -604,13 +595,11 @@ func (h *AdminPagesHandle) DepartmentsDelete(c *gin.Context) {
 }
 
 func (h *AdminPagesHandle) DepartmentsBulkDelete(c *gin.Context) {
-	// 批量删除要么全成要么全败：一次进 service，同事务校验 + 删除。
-	normalized, berr := adminservice.NormalizeBulkIDs(c.PostFormArray("ids"))
-	if berr != nil {
-		response.ErrorStatusAuto(c, adminErrScene, berr)
+	req, ok := bindAdminForm[admindto.DeptDeleteReq](c)
+	if !ok {
 		return
 	}
-	if err := h.depts.DeptDelete(c.Request.Context(), &admindto.DeptDeleteReq{IDs: normalized}); err != nil {
+	if err := h.depts.DeptDelete(c.Request.Context(), req); err != nil {
 		response.ErrorStatusAuto(c, adminErrScene, err)
 		return
 	}
@@ -988,11 +977,11 @@ func (h *AdminPagesHandle) MenusUpdate(c *gin.Context) {
 }
 
 func (h *AdminPagesHandle) MenusDelete(c *gin.Context) {
-	id := reqparams.ParseUint(c.PostForm("id"))
-	if id == 0 {
-		response.ErrorStatusAuto(c, adminErrScene, adminenums.BadRequest())
+	req, ok := bindAdminForm[admindto.MenuDeleteReq](c)
+	if !ok {
 		return
 	}
+	id := req.IDs[0]
 	nodes, err := h.menus.MenuTree(c.Request.Context(), &admindto.MenuTreeReq{})
 	if err != nil {
 		response.ErrorStatusAuto(c, "admin.write", err)
@@ -1002,7 +991,7 @@ func (h *AdminPagesHandle) MenusDelete(c *gin.Context) {
 		response.ErrorStatusAuto(c, "admin.write", adminenums.Err(adminenums.ErrMenuNotFound))
 		return
 	}
-	if err := h.menus.MenuDelete(c.Request.Context(), &admindto.MenuDeleteReq{IDs: []uint64{id}}); err != nil {
+	if err := h.menus.MenuDelete(c.Request.Context(), req); err != nil {
 		response.ErrorStatusAuto(c, "admin.write", err)
 		return
 	}
@@ -1010,13 +999,11 @@ func (h *AdminPagesHandle) MenusDelete(c *gin.Context) {
 }
 
 func (h *AdminPagesHandle) MenusBulkDelete(c *gin.Context) {
-	// 批量删除要么全成要么全败：一次进 service，同事务校验 + 删除。
-	normalized, berr := adminservice.NormalizeBulkIDs(c.PostFormArray("ids"))
-	if berr != nil {
-		response.ErrorStatusAuto(c, adminErrScene, berr)
+	req, ok := bindAdminForm[admindto.MenuDeleteReq](c)
+	if !ok {
 		return
 	}
-	if err := h.menus.MenuDelete(c.Request.Context(), &admindto.MenuDeleteReq{IDs: normalized}); err != nil {
+	if err := h.menus.MenuDelete(c.Request.Context(), req); err != nil {
 		response.ErrorStatusAuto(c, adminErrScene, err)
 		return
 	}
@@ -1107,12 +1094,11 @@ func (h *AdminPagesHandle) PermissionsUpdate(c *gin.Context) {
 }
 
 func (h *AdminPagesHandle) PermissionsDelete(c *gin.Context) {
-	id := reqparams.ParseUint(c.PostForm("id"))
-	if id == 0 {
-		response.ErrorStatusAuto(c, adminErrScene, adminenums.BadRequest())
+	req, ok := bindAdminForm[admindto.PermDeleteReq](c)
+	if !ok {
 		return
 	}
-	if _, err := h.perms.PermDelete(c.Request.Context(), &admindto.PermDeleteReq{IDs: []uint64{id}}); err != nil {
+	if _, err := h.perms.PermDelete(c.Request.Context(), req); err != nil {
 		response.ErrorStatusAuto(c, "admin.write", err)
 		return
 	}
@@ -1120,13 +1106,11 @@ func (h *AdminPagesHandle) PermissionsDelete(c *gin.Context) {
 }
 
 func (h *AdminPagesHandle) PermissionsBulkDelete(c *gin.Context) {
-	// 批量删除要么全成要么全败：一次进 service，同事务校验 + 删除。
-	normalized, berr := adminservice.NormalizeBulkIDs(c.PostFormArray("ids"))
-	if berr != nil {
-		response.ErrorStatusAuto(c, adminErrScene, berr)
+	req, ok := bindAdminForm[admindto.PermDeleteReq](c)
+	if !ok {
 		return
 	}
-	res, err := h.perms.PermDelete(c.Request.Context(), &admindto.PermDeleteReq{IDs: normalized})
+	res, err := h.perms.PermDelete(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorStatusAuto(c, adminErrScene, err)
 		return
@@ -1246,12 +1230,11 @@ func (h *AdminPagesHandle) RolesUpdate(c *gin.Context) {
 }
 
 func (h *AdminPagesHandle) RolesDelete(c *gin.Context) {
-	id := reqparams.ParseUint(c.PostForm("id"))
-	if id == 0 {
-		response.ErrorStatusAuto(c, adminErrScene, adminenums.BadRequest())
+	req, ok := bindAdminForm[admindto.RoleDeleteReq](c)
+	if !ok {
 		return
 	}
-	if err := h.roles.RoleDelete(c.Request.Context(), &admindto.RoleDeleteReq{ID: id}); err != nil {
+	if err := h.roles.RoleDelete(c.Request.Context(), req); err != nil {
 		response.ErrorStatusAuto(c, "admin.write", err)
 		return
 	}
@@ -1259,13 +1242,11 @@ func (h *AdminPagesHandle) RolesDelete(c *gin.Context) {
 }
 
 func (h *AdminPagesHandle) RolesBulkDelete(c *gin.Context) {
-	// 批量删除要么全成要么全败：一次进 service，同事务校验 + 删除。
-	normalized, berr := adminservice.NormalizeBulkIDs(c.PostFormArray("ids"))
-	if berr != nil {
-		response.ErrorStatusAuto(c, adminErrScene, berr)
+	req, ok := bindAdminForm[admindto.RoleDeleteReq](c)
+	if !ok {
 		return
 	}
-	if err := h.roles.RoleDelete(c.Request.Context(), &admindto.RoleDeleteReq{IDs: normalized}); err != nil {
+	if err := h.roles.RoleDelete(c.Request.Context(), req); err != nil {
 		response.ErrorStatusAuto(c, adminErrScene, err)
 		return
 	}
