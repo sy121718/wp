@@ -26,16 +26,31 @@ func (h *articlePageHandle) SetArticleLinkLocator(loc presentationcontract.Publi
 
 func (h *articlePageHandle) ArticleLinkSuggestions(c *gin.Context) {
 	ctx := c.Request.Context()
-	projectID, ok := h.linkSuggestProjectID(ctx, strings.TrimSpace(c.PostForm("projectId")))
+	form, ok := bindArticleLinkRequest(c)
 	if !ok {
 		response.Success(c, []seoscore.LinkSuggestion{})
 		return
 	}
-
-	rows, err := h.contents.List(ctx, &contentdto.ListReq{EntityType: "article", Limit: articleLinkIndexSize})
-	if err != nil {
+	projectID, ok := h.linkSuggestProjectID(ctx, form.ProjectID)
+	if !ok {
 		response.Success(c, []seoscore.LinkSuggestion{})
 		return
+	}
+	suggestions := articleLinkSuggestions(ctx, h, projectID, form)
+	if suggestions == nil {
+		suggestions = []seoscore.LinkSuggestion{}
+	}
+	response.Success(c, suggestions)
+}
+
+// articleLinkSuggestions 是内链建议的取数组合：候选文章 → 已发布路径 → 建议。
+//
+// 这是查询编排，不是入口：控制器只绑定、调用与写响应（分层判据见 AGENTS.md）。
+func articleLinkSuggestions(ctx context.Context, h *articlePageHandle, projectID string,
+	form *contentdto.ArticleLinkReq) []seoscore.LinkSuggestion {
+	rows, err := h.contents.List(ctx, &contentdto.ListReq{EntityType: "article", Limit: articleLinkIndexSize})
+	if err != nil {
+		return nil
 	}
 	ids := make([]string, 0, len(rows))
 	rowByd := make(map[string]*contentdto.ContentResp, len(rows))
@@ -48,8 +63,7 @@ func (h *articlePageHandle) ArticleLinkSuggestions(c *gin.Context) {
 	}
 	cands := make([]seoscore.LinkCandidate, 0, len(ids))
 	if h.linkLocator != nil && len(ids) > 0 {
-		paths, perr := h.linkLocator.PublishedEntityPaths(ctx, projectID, "article", "", ids)
-		if perr == nil {
+		if paths, perr := h.linkLocator.PublishedEntityPaths(ctx, projectID, "article", "", ids); perr == nil {
 			for id, path := range paths {
 				r := rowByd[id]
 				if r == nil {
@@ -66,22 +80,23 @@ func (h *articlePageHandle) ArticleLinkSuggestions(c *gin.Context) {
 	}
 
 	linked := make(map[string]bool)
-	for _, u := range strings.FieldsFunc(c.PostForm("linked"), func(r rune) bool { return r == '\n' || r == '\r' }) {
+	for _, u := range strings.FieldsFunc(form.Linked, func(r rune) bool { return r == '\n' || r == '\r' }) {
 		if u = strings.TrimSpace(u); u != "" {
 			linked[u] = true
 		}
 	}
-	doc := &seoscore.LinkDocument{
-		SelfID:       strings.TrimSpace(c.PostForm("id")),
-		FocusKeyword: strings.TrimSpace(c.PostForm("focusKeyword")),
-		LinkedURLs:   linked,
-	}
+	return seoscore.InternalLinkSuggestions(&seoscore.LinkDocument{
+		SelfID: form.ID, FocusKeyword: form.FocusKeyword, LinkedURLs: linked,
+	}, cands, 0)
+}
 
-	suggestions := seoscore.InternalLinkSuggestions(doc, cands, 0)
-	if suggestions == nil {
-		suggestions = []seoscore.LinkSuggestion{}
+// bindArticleLinkRequest 绑定内链建议表单；失败按「没有建议」的既有口径兜底。
+func bindArticleLinkRequest(c *gin.Context) (*contentdto.ArticleLinkReq, bool) {
+	form, err := binding.ParseForm[contentdto.ArticleLinkReq](c)
+	if err != nil {
+		return nil, false
 	}
-	response.Success(c, suggestions)
+	return form, true
 }
 
 func (h *articlePageHandle) linkSuggestProjectID(ctx context.Context, formProjectID string) (string, bool) {

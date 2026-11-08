@@ -99,9 +99,10 @@
         {{end}}
         {* 勾选框与批量动作同属一个 form（<form> 包 <table> 是合法的）：提交时浏览器直接带上
            所有勾中的 ids，不需要在提交前注入隐藏域。批量条默认 hidden，选中后才显形。
-           action 上带本次筛选（FilterQuery 是 Go 预编码的成品 query 串）：写动作失败/成功后
-           回跳列表页时由 shell.BackPath 从这次请求的 query 读回，翻页与筛选不会丢。 *}
-        <form method="post" action="/admin/articles/bulk-delete{{ .["FilterQuery"] }}">
+           action 上带本次筛选（FilterQuery 是 Go 预编码的 query 串，不含问号）：问号留在模板里，
+           路径本身是静态的（写端点与字段契约才能按 METHOD+PATH 对账）；回跳由 shell.BackPath
+           从这次请求的 query 读回，翻页与筛选不会丢。 *}
+        <form method="post" action="/admin/articles/bulk-delete?{{ .["FilterQuery"] }}">
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         {* 批量条只在有数据时渲染：空表没有可勾选的行，渲染一个永远显示不出来的条只是噪声。 *}
         {{if !.Empty}}
@@ -190,7 +191,7 @@
        action 同样带本次筛选，回跳时由 shell.BackPath 读回。 *}
     {{if !.Empty}}
     {{range _, r := rows}}
-    <form id="article-del-{{r.ID}}" class="hidden-form" method="post" action="/admin/articles/delete{{ .["FilterQuery"] }}"
+    <form id="article-del-{{r.ID}}" class="hidden-form" method="post" action="/admin/articles/delete?{{ .["FilterQuery"] }}"
           data-confirm="{{ .["t"]("admin.article.list.deleteConfirm", "删除这篇文章？引用它的页面会在下次构建时失去内容。") }}" data-confirm-danger>
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         <input type="hidden" name="id" value="{{r.ID}}">

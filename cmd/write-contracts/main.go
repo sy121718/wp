@@ -553,30 +553,55 @@ func marshalStable(in map[string]endpointSchema) ([]byte, error) {
 // 传给被委托方的 gin.Context 形参，被委托方自己的 binder 才是该端点的契约。
 // 出现多条委托或委托目标仍无 binder 时如实返回 unknown 与原因，不猜。
 func delegateBinding(name string, index sourceIndex) bodyBinding {
+	return delegateBindingDepth(name, index, 3)
+}
+
+// delegateBindingDepth 沿委托链找 binder，深度有界（处理器 → bindX → bindXInto 是常见三层）。
+//
+// 一个处理器可能既委托「绑定」又委托「读取」：只有带明确 binder 的被委托方才说明
+// 输入契约，读取方（按 id 取实体之类）没有 binder、不该把它算成第二个输入形状。
+// 因此先过滤出带 binder 的目标；恰好一个才算唯一契约，多个不同 binder 仍报歧义。
+func delegateBindingDepth(name string, index sourceIndex, depth int) bodyBinding {
 	src, ok := index.funcs[name]
-	if !ok {
+	if !ok || depth <= 0 {
 		return bodyBinding{}
 	}
-	var targets []string
+	// 处理器常把上下文交给多个辅助函数（错误提示、回跳、取值），但只有**带 body
+	// binder** 的那条才定义了输入契约；因此沿每条委托链继续下探，只收真实 binder。
+	var bound []bodyBinding
 	for _, target := range delegatedTargets(src, index) {
-		targets = append(targets, target)
+		callee, okTarget := index.funcs[target]
+		if !okTarget {
+			continue
+		}
+		binding, okBinding := index.Bindings[callee.name]
+		if !okBinding || binding.Protocol == "" || binding.Protocol == "unknown" {
+			if inner := delegateBindingDepth(target, index, depth-1); inner.Protocol != "" && inner.Protocol != "unknown" {
+				binding, okBinding = inner, true
+			}
+		}
+		if !okBinding || binding.Protocol == "" || binding.Protocol == "unknown" {
+			continue
+		}
+		duplicate := false
+		for _, seen := range bound {
+			if seen.Protocol == binding.Protocol && seen.DTO == binding.DTO {
+				duplicate = true
+				break
+			}
+		}
+		if !duplicate {
+			bound = append(bound, binding)
+		}
 	}
-	if len(targets) == 0 {
+	switch len(bound) {
+	case 0:
 		return bodyBinding{}
-	}
-	if len(targets) > 1 {
+	case 1:
+		return bound[0]
+	default:
 		return bodyBinding{Protocol: "unknown", Reason: "处理器把请求委托给多个处理器，无法确定唯一输入契约"}
 	}
-	callee, ok := index.funcs[targets[0]]
-	if !ok {
-		return bodyBinding{Protocol: "unknown", Reason: "委托目标不在源码索引内：" + targets[0]}
-	}
-	if binding, ok := index.Bindings[callee.name]; ok {
-		return binding
-	}
-	// 二层包装很常见（导出处理器 → 私有实现），但只跟一层就停：
-	// 继续展开会把无关调用链误并进来，宁可如实报 unknown。
-	return bodyBinding{Protocol: "unknown", Reason: "委托目标没有显式 body binder：" + callee.name}
 }
 
 // delegatedTargets 返回本函数里「把 gin.Context 实参转交给另一个函数」的目标标识。
@@ -588,37 +613,49 @@ func delegatedTargets(src *funcSource, index sourceIndex) []string {
 		if !ok {
 			return true
 		}
-		sel, ok := call.Fun.(*ast.SelectorExpr)
-		if !ok {
+		// 委托目标既可能是方法（h.bindX(c)），也可能是同包辅助函数（bindX(c)）。
+		target := calleeOf(src, call.Fun, index)
+		if target == nil {
 			return true
 		}
 		// 找一找实参里有没有本函数的 gin.Context 形参。
-		passesCtx := false
 		for i, arg := range call.Args {
 			ident, ok := arg.(*ast.Ident)
 			if !ok || !src.ctxParams[ident.Name] {
 				continue
 			}
 			// 被委托方的第 i 个形参也必须是 gin.Context，才算是整包委托。
-			target := resolveCallee(src, sel, index)
-			if target == nil || i >= len(target.paramNames) {
+			if i >= len(target.paramNames) || !target.ctxParams[target.paramNames[i]] {
 				continue
 			}
-			if target.ctxParams[target.paramNames[i]] {
-				passesCtx = true
-				break
-			}
-		}
-		if passesCtx {
-			if target := resolveCallee(src, sel, index); target != nil && !seen[target.name] {
+			if !seen[target.name] {
 				seen[target.name] = true
 				out = append(out, target.name)
 			}
+			break
 		}
 		return true
 	})
 	sort.Strings(out)
 	return out
+}
+
+// calleeOf 把一次调用的被调方解析成源码索引里的函数标识；解析不出返回 nil。
+//
+// 两种形态：同包辅助函数（Ident，如 bindArticleForm）与方法调用（SelectorExpr，
+// 如 h.articleByID）。前者在委托链里更常见 —— 绑定与读取都收在包级辅助函数里。
+func calleeOf(src *funcSource, fun ast.Expr, index sourceIndex) *funcSource {
+	switch node := fun.(type) {
+	case *ast.Ident:
+		if callee, ok := index.funcs[src.pkg+"."+node.Name]; ok {
+			return callee
+		}
+		return nil
+	case *ast.SelectorExpr:
+		return resolveCallee(src, node, index)
+	default:
+		return nil
+	}
 }
 
 // resolveCallee 把一次方法调用解析成源码索引里的函数标识；解析不出返回 nil。

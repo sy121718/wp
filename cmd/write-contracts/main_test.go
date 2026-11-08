@@ -256,6 +256,8 @@ func (h *Handle) Wrapped(c *gin.Context) { h.nested(c) }
 func (h *Handle) nested(c *gin.Context) { h.deeper(c) }
 func (h *Handle) deeper(c *gin.Context) { var in req.OtherReq; c.ShouldBindWith(&in, wire.FormPost) }
 func (h *Handle) NoCallee(c *gin.Context) { passed := c; _ = passed }
+func (h *Handle) WithHelpers(c *gin.Context) { h.saveImpl(c); h.notify(c) }
+func (h *Handle) notify(c *gin.Context) { _ = c.Request.URL.Path }
 `,
 	})
 	index, err := scanSources(root, "example/internal")
@@ -266,6 +268,7 @@ func (h *Handle) NoCallee(c *gin.Context) { passed := c; _ = passed }
 		{Method: "POST", Path: "/export", Handler: "example/internal/http.(*Handle).Export-fm"},
 		{Method: "POST", Path: "/ambiguous", Handler: "example/internal/http.(*Handle).Ambiguous-fm"},
 		{Method: "POST", Path: "/wrapped", Handler: "example/internal/http.(*Handle).Wrapped-fm"},
+		{Method: "POST", Path: "/with-helpers", Handler: "example/internal/http.(*Handle).WithHelpers-fm"},
 	}, index)
 
 	export := got["POST /export"]
@@ -279,10 +282,19 @@ func (h *Handle) NoCallee(c *gin.Context) { passed := c; _ = passed }
 		t.Fatalf("多条委托必须如实报未检查：%+v", ambiguous)
 	}
 
-	// 只跟一层：二层包装不展开，避免把无关调用链误并进来。
+	// 二层包装沿链展开（有界深度）：处理器 → bindX → bindXInto 是常见三层，
+	// 只跟一层会把这类端点误报成「没有 binder」。
 	wrapped := got["POST /wrapped"]
-	if wrapped.Protocol != "unknown" || !strings.Contains(wrapped.Reason, "没有显式 body binder") {
-		t.Fatalf("二层包装不应被静默展开：%+v", wrapped)
+	if wrapped.Reason != "" || wrapped.Protocol != "form" || wrapped.DTO != "example/internal/dto.OtherReq" {
+		t.Fatalf("二层包装应沿委托链取到真实 binder：%+v", wrapped)
+	}
+
+	// 处理器同时委托「绑定」与「无绑定的辅助函数」时，输入契约由带 binder 的那条决定；
+	// 辅助函数不是第二个输入形状，不该让端点降级成未检查。
+	withHelpers := got["POST /with-helpers"]
+	if withHelpers.Reason != "" || withHelpers.Protocol != "form" ||
+		withHelpers.DTO != "example/internal/dto.SaveReq" {
+		t.Fatalf("只有一条委托带 binder 时应直接采用：%+v", withHelpers)
 	}
 }
 

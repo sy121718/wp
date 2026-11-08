@@ -105,10 +105,36 @@ def expand_template(path, source=None, blocks=None, active=()):
             owner, body = available[yielded.group(1)]
             identity = ('yield', owner, yielded.group(1))
             if identity not in active:
+                body = substitute_block_args(body, owner, yielded.group(1), token)
                 return expand_template(owner, source=body, blocks=available, active=active + (identity,))
         return tag.group(0)
 
     return JET_TAG.sub(expand_tag, source)
+
+
+BLOCK_PARAMS = re.compile(r'\{\{\s*block\s+[A-Za-z_]\w*\s*\(([^)]*)\)')
+YIELD_ARGS = re.compile(r'([A-Za-z_]\w*)\s*=\s*("[^"]*"|\'[^\']*\')')
+
+
+def substitute_block_args(body, owner, block_name, yield_token):
+    """把 yield 的字面量具名实参代进 block 参数。
+
+    片段里的 `name="{{field}}"` 是参数化的字段名；只按字面实参替换，
+    非字面实参（变量、表达式）保持原样 —— 后者仍按动态字段名报未检查。
+    """
+    params_match = BLOCK_PARAMS.search(template_source(owner))
+    if not params_match:
+        return body
+    params = {p.strip() for p in params_match.group(1).split(',') if p.strip()}
+    call = BLOCK_START.sub('', yield_token)
+    call = call[call.find('(') + 1:]
+    values = {}
+    for name, literal in YIELD_ARGS.findall(call):
+        if name in params:
+            values[name] = literal[1:-1]
+    for name, literal in values.items():
+        body = re.sub(r'\{\{\s*%s\s*\}\}' % re.escape(name), literal, body)
+    return body
 
 
 WRITE_METHODS = ('post', 'put', 'patch', 'delete')
@@ -121,6 +147,20 @@ def write_endpoint(attrs):
     if attrs.get('method', '').lower() in WRITE_METHODS and attrs.get('action'):
         return attrs['method'].upper(), attrs['action']
     return None
+
+
+def unresolved_endpoint(attrs):
+    """写端点是否仍含未展开的 Jet 表达式（动态字段名 / 路径）。
+
+    控件自身的 hx-* 与原生表单的 action 都算：只看其中一个会让
+    action 里的 {{r.ID}} 混过掩码后变成 `__JET_…__` 却被当成静态路径。
+    """
+    for name, value in attrs.items():
+        if name.startswith('hx-') and str(value or '').find('__JET_') >= 0:
+            return True
+    if attrs.get('action') and str(attrs['action']).find('__JET_') >= 0:
+        return True
+    return False
 
 
 class FormParser(HTMLParser):
@@ -286,10 +326,77 @@ def mask_jet(match):
     return '__JET_' + hashlib.sha256(match.group(1).encode('utf-8')).hexdigest()[:16] + '__'
 
 
+# 二元字面量分支（{{if C}}/a{{else}}/b{{end}}）静态可判定：两个端点都是确定的
+# 本站路径，只是按条件二选一。与 check-write-endpoints.sh 同一判据：展开成两条
+# 端点分别对账，而不是降级成「动态端点未检查」；含变量拼接、三支以上或非 / 开头的
+# 仍保持未检查。
+BINARY_FULL = re.compile(
+    r'\{\{\s*if\s+[^}]+\}\}\s*(/[^\s"\'<>{}]*)\s*\{\{\s*else\s*\}\}\s*(/[^\s"\'<>{}]*)\s*\{\{\s*end\s*\}\}',
+    re.S)
+BINARY_SEG = re.compile(
+    r'(/[^\s"\'<>{}]*?)\{\{\s*if\s+[^}]+\}\}\s*([^\s"\'{}]*?)\s*\{\{\s*else\s*\}\}\s*([^\s"\'{}]*?)\s*\{\{\s*end\s*\}\}',
+    re.S)
+
+
+def expand_binary_endpoints(src):
+    src = BINARY_FULL.sub(lambda m: m.group(1) + '" data-alt-endpoint="' + m.group(2), src)
+    return BINARY_SEG.sub(
+        lambda m: m.group(1) + m.group(2) + '" data-alt-endpoint="' + m.group(1) + m.group(3), src)
+
+
+
+
 def report(message):
     global violations
     print(message)
     violations += 1
+
+
+def check_endpoint(rel, method, urls, attrs, offered):
+    """对账一张表单（或其二元分支的两个端点）；返回是否已对账。"""
+    global checked_forms
+    passed = True
+    for url in urls:
+        parsed = urlsplit(url)
+        if '__JET_' in parsed.path or not parsed.path.startswith('/') or parsed.netloc or parsed.scheme:
+            report(f'{rel}：未检查动态或非本站端点 {method} {url}；不使用宽泛前缀匹配')
+            passed = False
+            continue
+        endpoint = method + ' ' + parsed.path
+        spec = contracts.get(endpoint)
+        if spec is None:
+            report(f'{rel}：端点 {endpoint} 不在写端点契约里（先重跑 go run ./cmd/write-contracts）')
+            passed = False
+            continue
+        protocol = spec.get('protocol')
+        if protocol not in ('form', 'multipart', 'json') or spec.get('reason'):
+            report(f'{rel}：未检查 {endpoint}：' + spec.get('reason', '契约缺少确定输入协议'))
+            passed = False
+            continue
+        encoding = attrs.get('hx-encoding') or attrs.get('enctype') or ''
+        actual = 'json' if attrs.get('data-write-builder') else ('multipart' if encoding == 'multipart/form-data' else 'form')
+        if protocol != actual:
+            report(f'{rel}：{endpoint} 输入协议不匹配：模板 {actual}，真实 binder {protocol}')
+            passed = False
+            continue
+        if protocol == 'json':
+            report(f'{rel}：未检查 {endpoint} 的 JSON 对象提供器字段；需要真实对象链路验证，不能按普通控件冒充已对账')
+            passed = False
+            continue
+        offered.discard('csrf_token')
+        if any('__JET_' in field for field in offered):
+            report(f'{rel}：未检查 {endpoint} 的动态字段名')
+            passed = False
+            continue
+        allowed = {field['name'] for field in spec.get('fields', [])}
+        for field in sorted(offered - allowed):
+            report(f'{rel}：字段 name="{field}" 不在 {endpoint} 的 DTO 字段表里；原生 binder 不折叠点号或数组下标')
+            passed = False
+        for field in spec.get('fields', []):
+            if field.get('required') and field['name'] not in offered:
+                report(f'{rel}：{spec["dto"]} 的必填字段 "{field["name"]}" 没有出现在表单里（端点 {endpoint}）')
+                passed = False
+    return passed
 
 
 for dirpath, _, files in os.walk(root):
@@ -301,45 +408,18 @@ for dirpath, _, files in os.walk(root):
         if not rel.startswith(prefix):
             continue
         checked_templates += 1
-        text = expand_template(Path(path).resolve())
+        text = expand_binary_endpoints(expand_template(Path(path).resolve()))
         parser = FormParser()
         parser.feed(JET_TAG.sub(mask_jet, text))
         for (method, url), attrs, offered, uncertain in parser.actions():
             if uncertain:
                 report(f'{rel}：未检查 {method} {url} 的参数选择/继承声明：' + ', '.join(sorted(uncertain)))
                 continue
-            parsed = urlsplit(url)
-            if '__JET_' in parsed.path or not parsed.path.startswith('/') or parsed.netloc or parsed.scheme:
-                report(f'{rel}：未检查动态或非本站端点 {method} {url}；不使用宽泛前缀匹配')
-                continue
-            endpoint = method + ' ' + parsed.path
-            spec = contracts.get(endpoint)
-            if spec is None:
-                report(f'{rel}：端点 {endpoint} 不在写端点契约里（先重跑 go run ./cmd/write-contracts）')
-                continue
-            protocol = spec.get('protocol')
-            if protocol not in ('form', 'multipart', 'json') or spec.get('reason'):
-                report(f'{rel}：未检查 {endpoint}：' + spec.get('reason', '契约缺少确定输入协议'))
-                continue
-            encoding = attrs.get('hx-encoding') or attrs.get('enctype') or ''
-            actual = 'json' if attrs.get('data-write-builder') else ('multipart' if encoding == 'multipart/form-data' else 'form')
-            if protocol != actual:
-                report(f'{rel}：{endpoint} 输入协议不匹配：模板 {actual}，真实 binder {protocol}')
-                continue
-            if protocol == 'json':
-                report(f'{rel}：未检查 {endpoint} 的 JSON 对象提供器字段；需要真实对象链路验证，不能按普通控件冒充已对账')
-                continue
-            offered.discard('csrf_token')
-            if any('__JET_' in field for field in offered):
-                report(f'{rel}：未检查 {endpoint} 的动态字段名')
-                continue
-            allowed = {field['name'] for field in spec.get('fields', [])}
-            for field in sorted(offered - allowed):
-                report(f'{rel}：字段 name="{field}" 不在 {endpoint} 的 DTO 字段表里；原生 binder 不折叠点号或数组下标')
-            for field in spec.get('fields', []):
-                if field.get('required') and field['name'] not in offered:
-                    report(f'{rel}：{spec["dto"]} 的必填字段 "{field["name"]}" 没有出现在表单里（端点 {endpoint}）')
-            checked_forms += 1
+            urls = [url]
+            if attrs.get('data-alt-endpoint'):
+                urls.append(attrs['data-alt-endpoint'])
+            if check_endpoint(rel, method, urls, attrs, offered):
+                checked_forms += 1
 
 if checked_templates == 0:
     report(f'字段门禁未检查：范围 {prefix or root} 没有模板')
