@@ -4,11 +4,10 @@ import (
 	"strings"
 	"testing"
 
-	"gorm.io/gorm"
 	admindto "go_wp/internal/module/admin/dto"
-	view "go_wp/pkg/view"
 	"go_wp/public/migrations"
 	"go_wp/public/test/support"
+	"gorm.io/gorm"
 )
 
 func TestSystemSettingsMenuRendersInSidebar(t *testing.T) {
@@ -45,7 +44,7 @@ func TestSystemSettingsMenuRendersInSidebar(t *testing.T) {
 	}
 	parent.Children = []admindto.MenuTreeNode{leaf}
 
-	items := view.NavItemsOf(navNodes([]admindto.MenuTreeNode{parent}))
+	items := navItemsOf(navNodes([]admindto.MenuTreeNode{parent}))
 	var rendered strings.Builder
 	for _, g := range items {
 		for _, n := range g.Children {

@@ -36,6 +36,11 @@ var pkgStructuralRules = []struct {
 		message: "Jet 适配层不得依赖构建器或 internal",
 	},
 	{
+		from:    "pkg/view",
+		forbid:  []string{"go_wp/pkg/view/jet", "go_wp/internal/"},
+		message: "view 根包只定义出口与协议，不反向依赖引擎子包",
+	},
+	{
 		from:    "pkg/publish",
 		forbid:  []string{"go_wp/pkg/builder", "go_wp/internal/"},
 		message: "发布内核不得依赖编译实现或 internal",
@@ -97,6 +102,10 @@ func TestPkgStructuralBoundaries(t *testing.T) {
 				return walkErr
 			}
 			if d.IsDir() || !strings.HasSuffix(path, ".go") {
+				return nil
+			}
+			// 测试可以用真实适配层做集成验证；边界只约束生产代码。
+			if strings.HasSuffix(path, "_test.go") {
 				return nil
 			}
 			for _, imp := range fileImports(t, path) {

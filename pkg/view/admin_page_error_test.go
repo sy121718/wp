@@ -55,7 +55,7 @@ func TestPageErrorFactClassifiesBusinessErrors(t *testing.T) {
 	t.Run("基础设施错误一律归口，不透出原文", func(t *testing.T) {
 		raw := `pq: relation "pages" does not exist (SQLSTATE 42P01)`
 		fact := PageErrorFact(c, "page", errors.New(raw))
-		if fact.Business || fact.Key != MsgInternalError {
+		if fact.Business || fact.Key != ScopeInternalKey() {
 			t.Fatalf("未命中的错误应落归口 key，实际 %+v", fact)
 		}
 		text := ErrorFactText(c, fact)

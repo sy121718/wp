@@ -42,6 +42,23 @@ func (s *sidebarStub) BuildAuthorizedTree(context.Context, []string) ([]admindto
 
 // navNodesForTest 复刻应用装配层的投影（routers.view_admin_port.go）：
 // 上下文里的菜单树是模块 DTO，pkg/view 只接受自己的渲染事实类型。
+// navItemsForTest 复刻应用装配层的菜单投影（routers.view_scope_port.go 的同一逻辑）。
+func navItemsForTest(nodes []view.AdminNavNode) []jetpkg.NavItem {
+	out := make([]jetpkg.NavItem, 0, len(nodes))
+	for _, n := range nodes {
+		if n.Hidden {
+			continue
+		}
+		item := jetpkg.NavItem{ID: n.ID, Title: n.Title, TitleKey: n.TitleKey, Path: n.Path, Icon: n.Icon}
+		item.Children = navItemsForTest(n.Children)
+		if len(item.Children) == 0 && item.Path == "" {
+			continue
+		}
+		out = append(out, item)
+	}
+	return out
+}
+
 func navNodesForTest(nodes []admindto.MenuTreeNode) []view.AdminNavNode {
 	out := make([]view.AdminNavNode, 0, len(nodes))
 	for i := range nodes {
@@ -74,7 +91,7 @@ func TestMiddlewareErrorReachesPrepareAsEmptyPermissions(t *testing.T) {
 		if v, ok := c.Get(adminctx.NavTreeKey); ok {
 			tree, _ = v.([]admindto.MenuTreeNode)
 		}
-		items := view.NavItemsOf(navNodesForTest(tree))
+		items := navItemsForTest(navNodesForTest(tree))
 		data = gin.H{"PermSet": facts.PermSet, "Buttons": facts.Buttons,
 			"NavItems": items, "HasSubnav": len(items) > 0}
 		c.Status(http.StatusNoContent)
@@ -115,7 +132,7 @@ func TestMiddlewareTreeReachesAdminuiSidebar(t *testing.T) {
 		if v, ok := c.Get(adminctx.NavTreeKey); ok {
 			tree, _ = v.([]admindto.MenuTreeNode)
 		}
-		items := view.NavItemsOf(navNodesForTest(tree))
+		items := navItemsForTest(navNodesForTest(tree))
 		data = gin.H{"PermSet": facts.PermSet, "Buttons": facts.Buttons, "NavItems": items}
 		c.Status(http.StatusNoContent)
 	})

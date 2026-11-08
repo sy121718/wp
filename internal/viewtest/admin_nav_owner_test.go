@@ -1,10 +1,9 @@
 package viewtest
 
 import (
-	view "go_wp/pkg/view"
+	admindto "go_wp/internal/module/admin/dto"
 	jetpkg "go_wp/pkg/view/jet"
 	"testing"
-	admindto "go_wp/internal/module/admin/dto"
 )
 
 func navTestTree() []admindto.MenuTreeNode {
@@ -26,7 +25,7 @@ func navTestTree() []admindto.MenuTreeNode {
 
 func activePaths(t *testing.T, current string) map[string]bool {
 	t.Helper()
-	items := view.NavItemsOf(navNodes(navTestTree()))
+	items := navItemsOf(navNodes(navTestTree()))
 	owner := jetpkg.NavOwner(items, current)
 	got := map[string]bool{}
 	var walk func([]jetpkg.NavItem)

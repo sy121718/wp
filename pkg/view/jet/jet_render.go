@@ -25,6 +25,9 @@ type Source struct {
 // 装配方显式给出的 loader（ReleaseLoader）优先：开发期的复合 FS 与生产的 embed
 // 都走它，逻辑键一致。没有 loader 时才回退磁盘目录。
 func NewJetHTMLRenderWithSource(src Source, isDev bool) ginrender.HTMLRender {
+	// 任何实例化都意味着「这个进程用 Jet 渲染页面」：顺手登记渲染作用域，
+	// 让 pkg/view 根包的出口接上真实引擎（重复调用幂等）。
+	InstallRenderScope()
 	var loader jet.Loader
 	switch {
 	case src.ReleaseLoader != nil:
@@ -130,6 +133,7 @@ func (i *jetInstance) WriteContentType(w http.ResponseWriter) {
 // 早在 GetTemplate 就报错，那是另一条分支。测试用内存 loader 造出真正的执行期失败。
 // 生产装配仍走 NewJetHTMLRender。
 func NewJetHTMLRenderWithSet(set *jet.Set) ginrender.HTMLRender {
+	InstallRenderScope()
 	return &jetHTMLRender{set: set}
 }
 

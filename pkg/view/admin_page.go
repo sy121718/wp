@@ -12,7 +12,6 @@ import (
 	"go_wp/pkg/pagination"
 	"go_wp/pkg/reqparams"
 	"go_wp/pkg/response"
-	jetpkg "go_wp/pkg/view/jet"
 )
 
 // 后台页面渲染的公共事实在这里装配一次；应用只在装配期把请求事实的来源注入。
@@ -80,12 +79,12 @@ type Facts struct {
 // PageFacts 返回本次请求的取词函数、CSRF 与权限集合。
 func PageFacts(c *gin.Context) Facts {
 	f := Facts{
-		T:            jetpkg.RequestTranslateFunc(c),
+		T:            ScopeTranslate(c),
 		CSRFToken:    CSRF(c),
 		PermSet:      map[string]bool{},
 		Buttons:      map[string]bool{},
-		LangRedirect: jetpkg.LangRedirect(c),
-		RequestPath:  jetpkg.RequestURI(c),
+		LangRedirect: ScopeLangRedirect(c),
+		RequestPath:  ScopeRequestURI(c),
 	}
 	if v, ok := c.Get(PermSetKey); ok {
 		if m, ok := v.(map[string]bool); ok {
@@ -105,7 +104,7 @@ func PreparePage(c *gin.Context, data gin.H) gin.H {
 	if data == nil {
 		data = gin.H{}
 	}
-	data = jetpkg.Inject(c, data)
+	data = InjectScope(c, data)
 	data["csrf_token"] = CSRF(c)
 
 	set := map[string]bool{}
@@ -124,8 +123,8 @@ func PreparePage(c *gin.Context, data gin.H) gin.H {
 	}
 	data["Buttons"] = buttons
 
-	navItems := NavItemsOf(adminNavTree(c))
-	data["NavItems"] = navItems
+	// 导航事实的类型属于引擎适配层：根包只把投影结果原样交给模板。
+	data["NavItems"] = ScopeNavItems(adminNavTree(c))
 	if c.Request != nil && c.Request.URL != nil {
 		data["NavCurrentPath"] = c.Request.URL.Path
 	} else {
@@ -139,7 +138,7 @@ func PreparePage(c *gin.Context, data gin.H) gin.H {
 
 // PrepareBare 只注入取词作用域（不带权限、菜单与侧栏事实），供独立片段使用。
 func PrepareBare(c *gin.Context, data gin.H) gin.H {
-	return jetpkg.Inject(c, data)
+	return InjectScope(c, data)
 }
 
 // ViewMap 把视图对象投影成渲染数据。
@@ -179,8 +178,8 @@ func RenderFailure(c *gin.Context, status int, scene string, err error) {
 	if c.Writer.Written() {
 		return
 	}
-	jetpkg.AttachScope(c)
-	data := jetpkg.BuildFailureData(status, jetpkg.FactOf(c, scene, err), err)
+	AttachScope(c)
+	data := ScopeFailureData(status, ScopeFactOf(c, scene, err), err)
 	c.Header("Cache-Control", "no-store")
 	tpl := "admin/errors/page.html"
 	if IsFragment(c) {
@@ -224,35 +223,6 @@ func AdminNavNodeFrom(id uint64, title, titleKey, path, icon string, hidden bool
 	}
 }
 
-// NavItemsOf 把原始菜单树投影成导航事实（不做激活 / 展开 / 首链接派生）。
-func NavItemsOf(nodes []AdminNavNode) []jetpkg.NavItem {
-	out := make([]jetpkg.NavItem, 0, len(nodes))
-	for _, n := range nodes {
-		if n.Hidden {
-			continue
-		}
-		item := jetpkg.NavItem{
-			ID: n.ID, Title: n.Title, TitleKey: n.TitleKey,
-			Path: n.Path, Icon: n.Icon,
-		}
-		item.Children = NavItemsOf(n.Children)
-		if len(item.Children) == 0 && item.Path == "" {
-			continue
-		}
-		out = append(out, item)
-	}
-	return out
-}
-
-func hasNavChildren(items []jetpkg.NavItem) bool {
-	for _, item := range items {
-		if len(item.Children) > 0 {
-			return true
-		}
-	}
-	return false
-}
-
 func sidebarOpen(c *gin.Context) bool {
 	if c.Request == nil {
 		return true
@@ -272,20 +242,12 @@ func sidebarPinned(c *gin.Context) bool {
 	return v == "1"
 }
 
-// 归口错误消息事实：key + 兜底，供页面侧拼装受控提示。
-const (
-	// MsgInternalError 是页面归口错误的词条 key。
-	MsgInternalError = jetpkg.InternalKey
-	// InternalErrorFallback 是缺词时的兜底文案。
-	InternalErrorFallback = response.InternalFallback
-)
-
 // ErrFact 是页面侧使用的错误事实形状。
 type ErrFact = facing.Fact
 
 // PageErrorFact 返回本次请求的错误事实（直连请求级取词作用域）。
 func PageErrorFact(c *gin.Context, scene string, err error) ErrFact {
-	return jetpkg.FactOf(c, scene, err)
+	return ScopeFactOf(c, scene, err)
 }
 
 // PageErrorFactQuiet 返回错误事实，但不按场景记日志。
@@ -296,7 +258,7 @@ func PageErrorFactQuiet(_ *gin.Context, _ string, err error) ErrFact {
 	if fact, ok := facing.FactOf(err); ok {
 		return fact
 	}
-	return ErrFact{Key: MsgInternalError, Fallback: InternalErrorFallback}
+	return FailureKey()
 }
 
 // ErrorFactText 按请求语言取词后返回错误文案。
@@ -304,7 +266,7 @@ func ErrorFactText(c *gin.Context, fact ErrFact) string {
 	if fact.Key == "" {
 		return ""
 	}
-	return jetpkg.RequestTranslateFunc(c)(fact.Key, fact.Fallback)
+	return ScopeTranslate(c)(fact.Key, fact.Fallback)
 }
 
 // PageErrorText 是 PageErrorFact + ErrorFactText 的组合。
@@ -318,13 +280,17 @@ func PageErrorTextQuiet(c *gin.Context, scene string, err error) string {
 }
 
 // InternalErrorFact 返回归口错误事实。
-func InternalErrorFact() ErrFact {
-	return ErrFact{Key: MsgInternalError, Fallback: InternalErrorFallback}
+func InternalErrorFact() ErrFact { return FailureKey() }
+
+// FailureKey 是归口错误事实（key + 兜底）；词条与兜底来自渲染作用域端口。
+func FailureKey() ErrFact {
+	return ErrFact{Key: ScopeInternalKey(), Fallback: ScopeInternalFallback()}
 }
 
 // InternalMsg 是归口错误消息事实，供页面侧拼装受控提示。
 func InternalMsg() facing.Msg {
-	return facing.Msg{Key: MsgInternalError, Fallback: InternalErrorFallback}
+	k := FailureKey()
+	return facing.Msg{Key: k.Key, Fallback: k.Fallback}
 }
 
 // BulkIDsFacingText 把批量 id 超限 / 读取失败转成受控文案。
@@ -332,7 +298,7 @@ func BulkIDsFacingText(c *gin.Context, err error) string {
 	var tooMany *bulkids.IDsError
 	if errors.As(err, &tooMany) {
 		logger.Scene("view").
-			With("path", jetpkg.RequestURI(c)).
+			With("path", ScopeRequestURI(c)).
 			With("count", tooMany.Count).
 			With("max", tooMany.Max).
 			Warn("批量操作被拒：提交的 id 数量超过上限")
@@ -340,7 +306,7 @@ func BulkIDsFacingText(c *gin.Context, err error) string {
 	}
 	if err != nil {
 		logger.Scene("view").
-			With("path", jetpkg.RequestURI(c)).
+			With("path", ScopeRequestURI(c)).
 			Error(err, "批量 id 读取失败：未命中受控错误，只对外给归口文案")
 	}
 	return response.MessageOf(c, "view", err)
@@ -382,7 +348,7 @@ func NewSuccessWriter() SuccessWriter {
 		if c == nil {
 			return
 		}
-		jetpkg.AttachScope(c)
+		AttachScope(c)
 		c.Header("Cache-Control", "no-store")
 		c.HTML(http.StatusOK, SuccessTemplate, gin.H{
 			"HasSuccessMessage": fact.Key != "" || fact.Fallback != "",

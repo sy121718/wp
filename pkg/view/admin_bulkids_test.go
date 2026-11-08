@@ -71,8 +71,8 @@ func TestBulkIDsFacingTextFallsBackForUnknownError(t *testing.T) {
 		}
 	}
 
-	if got != MsgInternalError && !strings.Contains(got, "内部错误") {
-		t.Fatalf("未命中应回落 MsgInternalError（或其译文），got %q", got)
+	if got != ScopeInternalKey() && !strings.Contains(got, "内部错误") {
+		t.Fatalf("未命中应回落 ScopeInternalKey()（或其译文），got %q", got)
 	}
 }
 
