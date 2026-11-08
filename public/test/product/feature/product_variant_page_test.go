@@ -30,7 +30,9 @@ func grantProductPerms(engine *gin.Engine) {
 		c.Set(adminctx.ButtonsKey, map[string]bool{
 			"product.create": true, "product.update": true,
 			"product.variant_create": true, "product.variant_generate": true,
-			"product.variant_delete": true, "product.delete": true})
+			"product.variant_delete": true, "product.delete": true,
+			"product.rating_add": true, "product.rating_delete": true,
+			"product.seo_score": true})
 
 		c.Next()
 	})

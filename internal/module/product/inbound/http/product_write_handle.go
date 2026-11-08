@@ -3,6 +3,7 @@ package producthttp
 import (
 	"context"
 	"net/http"
+	"net/url"
 
 	"github.com/gin-gonic/gin"
 	ginbinding "github.com/gin-gonic/gin/binding"
@@ -47,15 +48,48 @@ func runProductWriteErr[T any](c *gin.Context,
 	success(c)
 }
 
-// bindProductForm 绑定商品写表单；失败已由这里写出 400。
+// formValidator 是表单自己的业务校验入口。
+//
+// Gin 不会自动调用任意 Validate()，需要绑定后显式调用 —— 否则「把校验搬进 DTO」
+// 只是换了个位置，运行时照样不生效。
+type formValidator interface {
+	Validate() error
+}
+
+// formPresenceValidator 在绑定前检查原始表单的「出现 / 清空」语义：
+// 绑定会把空串压成零值，绑定后就分不清「显式 0」与「空白」。
+type formPresenceValidator interface {
+	ValidatePresence(url.Values) error
+}
+
+// bindProductForm 绑定商品写表单并跑表单级校验；失败已由这里写出 400。
 func bindProductForm[T any](c *gin.Context) *T {
 	c.Header("Cache-Control", "no-store")
 	var req T
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+	if err := bindProductFormInto(c, &req); err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
 		return nil
 	}
 	return &req
+}
+
+// bindProductFormInto 绑定一张表单并跑「出现/清空」与「业务」两级校验。
+//
+// 绑定前先解析原始表单：PostForm 在 ParseForm 之前是空 map，
+// 直接读会把「字段缺失」当成「没提交」而漏判清空语义。
+func bindProductFormInto[T any](c *gin.Context, req *T) error {
+	if c.Request != nil && c.Request.PostForm == nil {
+		_ = c.Request.ParseMultipartForm(32 << 20)
+	}
+	if v, ok := any(req).(formPresenceValidator); ok {
+		if err := v.ValidatePresence(c.Request.PostForm); err != nil {
+			return err
+		}
+	}
+	if err := c.ShouldBindWith(req, ginbinding.FormPost); err != nil {
+		return err
+	}
+	return validateProductForm(req)
 }
 
 // runProductWriteResultJSON 是 runProductWriteResult 的显式 JSON 版本（表单是对象提供器）。
@@ -126,6 +160,10 @@ func runProductWriteJSON[T any](c *gin.Context,
 		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
 		return
 	}
+	if err := validateProductForm(req); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
+		return
+	}
 	if _, err := call(c.Request.Context(), req); err != nil {
 		pageview.FailScene(c, productErrScene, err)
 		return
@@ -133,9 +171,21 @@ func runProductWriteJSON[T any](c *gin.Context,
 	success(c)
 }
 
-// bindJSONFact 显式绑定 JSON 对象并交回错误事实（调用方自己决定失败出口）。
+// validateProductForm 跑表单级校验（未实现 Validate 的 DTO 直接通过）。
+func validateProductForm[T any](req *T) error {
+	if v, ok := any(req).(formValidator); ok {
+		return v.Validate()
+	}
+	return nil
+}
+
+// bindJSONFact 显式绑定 JSON 对象并跑表单级校验；错误事实交回调用方决定出口。
 func bindJSONFact[T any](c *gin.Context) (*T, error) {
-	return binding.ParseJSON[T](c)
+	req, err := binding.ParseJSON[T](c)
+	if err != nil {
+		return req, err
+	}
+	return req, validateProductForm(req)
 }
 
 // runProductWriteResultJSON 用于「JSON 绑定 → 注入可信字段 → 调用 → 渲染结果片段」。
