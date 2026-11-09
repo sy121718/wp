@@ -66,7 +66,6 @@ var pendingControllerFiles = map[string]bool{
 var pendingControllerBinding = map[string]bool{
 	"internal/module/admin/inbound/http/admin_page.go":                  true,
 	"internal/module/ai/inbound/http/ai_page.go":                        true,
-	"internal/module/navigation/inbound/http/navigation_page_handle.go": true,
 	"internal/module/order/inbound/http/order_create_page.go":           true,
 	"internal/module/project/inbound/http/project_page.go":              true,
 }

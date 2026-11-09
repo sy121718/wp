@@ -16,6 +16,7 @@ import (
 	navigationenums "go_wp/internal/module/navigation/enums"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/pkg/backpath"
+	"go_wp/pkg/binding"
 	"go_wp/pkg/facing"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
@@ -309,16 +310,36 @@ func normalizeNavKind(kind string) string {
 	return navKindHeader
 }
 
-func (h *navigationPageHandle) NavigationUpdate(c *gin.Context) {
-	id := strings.TrimSpace(c.PostForm("id"))
-	projectID := strings.TrimSpace(c.PostForm("projectId"))
-
-	echo := navEditEcho{
-		ID: id, ProjectID: projectID, Kind: strings.TrimSpace(c.PostForm("kind")),
-		Title: c.PostForm("title"), Path: c.PostForm("path"),
-		Target: c.PostForm("target"), UpdatedAt: c.PostForm("expectedUpdatedAt"),
-		PanelBlockID: c.PostForm("panelBlockId"), PanelWidth: c.PostForm("panelWidth"),
+// bindNavEditForm 绑定导航编辑抽屉的表单；失败按本域既有出口写 400。
+func bindNavEditForm(c *gin.Context) (*navigationdto.PanelForm, bool) {
+	form, err := binding.ParseForm[navigationdto.PanelForm](c)
+	if err != nil {
+		c.String(http.StatusBadRequest, "%s", response.MsgText(c, navInvalidParamMsg))
+		return nil, false
 	}
+	return form, true
+}
+
+// navEditEchoOf 把绑定结果投影成回显事实（重渲抽屉时原样带回用户输入）。
+func navEditEchoOf(form *navigationdto.PanelForm) navEditEcho {
+	if form == nil {
+		return navEditEcho{}
+	}
+	return navEditEcho{
+		ID: strings.TrimSpace(form.ID), ProjectID: strings.TrimSpace(form.ProjectID), Kind: strings.TrimSpace(form.Kind),
+		Title: form.Title, Path: form.Path, Target: form.Target, UpdatedAt: form.ExpectedUpdatedAt,
+		PanelBlockID: form.PanelBlockID, PanelWidth: form.PanelWidth,
+	}
+}
+
+func (h *navigationPageHandle) NavigationUpdate(c *gin.Context) {
+	form, ok := bindNavEditForm(c)
+	if !ok {
+		return
+	}
+	id := strings.TrimSpace(form.ID)
+
+	echo := navEditEchoOf(form)
 	if id == "" {
 		if navEditHTMX(c) {
 			h.renderNavigationEdit(c, echo, navInvalidParamMsg)
@@ -335,17 +356,16 @@ func (h *navigationPageHandle) NavigationUpdate(c *gin.Context) {
 		return
 	}
 	req := &navigationdto.UpdateReq{ID: id}
-	if v := strings.TrimSpace(c.PostForm("title")); v != "" {
+	if v := strings.TrimSpace(form.Title); v != "" {
 		req.Title = &v
 	}
-	if v := strings.TrimSpace(c.PostForm("path")); v != "" {
+	if v := strings.TrimSpace(form.Path); v != "" {
 		req.Path = &v
 	}
-	if v := strings.TrimSpace(c.PostForm("target")); v != "" {
+	if v := strings.TrimSpace(form.Target); v != "" {
 		req.Target = &v
 	}
-
-	if v := strings.TrimSpace(c.PostForm("expectedUpdatedAt")); v != "" {
+	if v := strings.TrimSpace(form.ExpectedUpdatedAt); v != "" {
 		req.ExpectedUpdatedAt = &v
 	}
 	if _, err := h.navigations.Update(c.Request.Context(), req); err != nil {
@@ -372,15 +392,13 @@ func (h *navigationPageHandle) SetBlockPanelPort(p BlockPanelPort) {
 }
 
 func (h *navigationPageHandle) PanelSet(c *gin.Context) {
-	projectID := strings.TrimSpace(c.PostForm("projectId"))
-	id := strings.TrimSpace(c.PostForm("id"))
-
-	echo := navEditEcho{
-		ID: id, ProjectID: projectID, Kind: strings.TrimSpace(c.PostForm("kind")),
-		PanelBlockID: c.PostForm("panelBlockId"), PanelWidth: c.PostForm("panelWidth"),
-		UpdatedAt: c.PostForm("expectedUpdatedAt"),
-		Title:     c.PostForm("title"), Path: c.PostForm("path"), Target: c.PostForm("target"),
+	form, ok := bindNavEditForm(c)
+	if !ok {
+		return
 	}
+	id := strings.TrimSpace(form.ID)
+
+	echo := navEditEchoOf(form)
 	if id == "" {
 		if navEditHTMX(c) {
 			h.renderNavigationEdit(c, echo, navInvalidParamMsg)
@@ -397,13 +415,12 @@ func (h *navigationPageHandle) PanelSet(c *gin.Context) {
 		return
 	}
 
-	blockID := strings.TrimSpace(c.PostForm("panelBlockId"))
+	blockID := strings.TrimSpace(form.PanelBlockID)
 	req := &navigationdto.UpdateReq{ID: id, PanelBlockID: &blockID}
-	if w := strings.TrimSpace(c.PostForm("panelWidth")); w != "" {
+	if w := strings.TrimSpace(form.PanelWidth); w != "" {
 		req.PanelWidth = &w
 	}
-
-	if v := strings.TrimSpace(c.PostForm("expectedUpdatedAt")); v != "" {
+	if v := strings.TrimSpace(form.ExpectedUpdatedAt); v != "" {
 		req.ExpectedUpdatedAt = &v
 	}
 	if _, err := h.navigations.Update(c.Request.Context(), req); err != nil {
@@ -416,12 +433,16 @@ func (h *navigationPageHandle) PanelSet(c *gin.Context) {
 
 func (h *navigationPageHandle) PanelCreate(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	projectID := strings.TrimSpace(c.PostForm("projectId"))
-	kind := normalizeNavKind(c.PostForm("kind"))
-	title := strings.TrimSpace(c.PostForm("title"))
+	form, ok := bindNavEditForm(c)
+	if !ok {
+		return
+	}
+	projectID := strings.TrimSpace(form.ProjectID)
+	kind := normalizeNavKind(form.Kind)
+	title := strings.TrimSpace(form.Title)
 
-	menuID := strings.TrimSpace(c.PostForm("id"))
-	if !h.navEditOwnedRow(c, navEditEcho{ID: menuID, ProjectID: projectID, Kind: strings.TrimSpace(c.PostForm("kind"))}) {
+	menuID := strings.TrimSpace(form.ID)
+	if !h.navEditOwnedRow(c, navEditEcho{ID: menuID, ProjectID: projectID, Kind: strings.TrimSpace(form.Kind)}) {
 		return
 	}
 	if h.blocks == nil {

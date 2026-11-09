@@ -101,7 +101,8 @@ func (f *AddSourceForm) Req() *AddSourceReq {
 	}
 }
 
-// PanelForm 是导航项悬浮面板的编辑表单（设置已有面板 / 新建面板共用字段）。
+// PanelForm 是导航项编辑抽屉里三个提交入口共用的字段集：
+// 保存导航项 / 设置悬浮面板 / 新建面板块都读这一份回显，字段名与控件逐字一致。
 type PanelForm struct {
 	ProjectID         string `json:"projectId" form:"projectId"`
 	ID                string `json:"id" form:"id"`

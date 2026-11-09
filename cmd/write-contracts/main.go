@@ -576,7 +576,13 @@ func delegateBindingDepth(name string, index sourceIndex, depth int) bodyBinding
 		}
 		binding, okBinding := index.Bindings[callee.name]
 		if !okBinding || binding.Protocol == "" || binding.Protocol == "unknown" {
-			if inner := delegateBindingDepth(target, index, depth-1); inner.Protocol != "" && inner.Protocol != "unknown" {
+			// 被委托方自己可能只是一个泛型骨架的调用者（bindX[T](c) 显式写实参）：
+			// 先按调用方实参解析出真实 DTO，再退回沿链继续下探。
+			if inner := genericSkeletonBinding(target, index); inner.Protocol != "" && inner.Protocol != "unknown" {
+				binding, okBinding = inner, true
+			} else if inner := directGenericBinder(target, index); inner.Protocol != "" && inner.Protocol != "unknown" {
+				binding, okBinding = inner, true
+			} else if inner := delegateBindingDepth(target, index, depth-1); inner.Protocol != "" && inner.Protocol != "unknown" {
 				binding, okBinding = inner, true
 			}
 		}
@@ -653,6 +659,11 @@ func calleeOf(src *funcSource, fun ast.Expr, index sourceIndex) *funcSource {
 		return nil
 	case *ast.SelectorExpr:
 		return resolveCallee(src, node, index)
+	case *ast.IndexExpr:
+		// 显式类型实参的泛型骨架调用（runWrite[SomeReq](c, ...)）。
+		return calleeOf(src, node.X, index)
+	case *ast.IndexListExpr:
+		return calleeOf(src, node.X, index)
 	default:
 		return nil
 	}
