@@ -66,10 +66,14 @@ func (c RuleConfigDTO) ToRuleConfig() datarule.RuleConfig {
 	return datarule.RuleConfig{OmitFields: c.OmitFields, ConditionGroups: groups}
 }
 
+// Config 在两个基础表单里**不由列表抽屉提交**：新建从空配置开始，
+// 更新沿用库里已有配置（要改配置请去编辑页）。所以它不是这两个端点的必填字段；
+// 标成 required 只会让字段门禁与真实提交形状对不上（gin 对结构体的 required
+// 也是恒真，拦不住任何东西）。
 type RuleCreateReq struct {
 	RuleName string        `json:"rule_name" form:"rule_name" binding:"required,max=100" validate:"required,max=100"`
 	Domain   string        `json:"domain" form:"domain" binding:"required,max=50" validate:"required,max=50"`
-	Config   RuleConfigDTO `json:"config" form:"config" binding:"required" validate:"required"`
+	Config   RuleConfigDTO `json:"config" form:"config"`
 	Status   int           `json:"status" form:"status" binding:"oneof=0 1" validate:"oneof=0 1"`
 	Remark   string        `json:"remark" form:"remark" binding:"omitempty,max=200" validate:"omitempty,max=200"`
 }
@@ -78,7 +82,7 @@ type RuleUpdateReq struct {
 	ID       uint64        `json:"id" form:"id" binding:"required" validate:"required"`
 	RuleName string        `json:"rule_name" form:"rule_name" binding:"required,max=100" validate:"required,max=100"`
 	Domain   string        `json:"domain" form:"domain" binding:"required,max=50" validate:"required,max=50"`
-	Config   RuleConfigDTO `json:"config" form:"config" binding:"required" validate:"required"`
+	Config   RuleConfigDTO `json:"config" form:"config"`
 	Status   int           `json:"status" form:"status" binding:"oneof=0 1" validate:"oneof=0 1"`
 	Remark   string        `json:"remark" form:"remark" binding:"omitempty,max=200" validate:"omitempty,max=200"`
 }

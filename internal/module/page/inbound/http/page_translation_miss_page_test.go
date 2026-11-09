@@ -131,9 +131,10 @@ func TestTranslationMissesPageRenders(t *testing.T) {
 	for _, want := range []string{
 		"/about", "zh-CN", "48",
 		`name="csrf_token"`,
-		`action="/admin/page-translation-misses/cancel?project=`,
+		// 工程上下文只经 action 的 query 串回带（行内表单不再重复一个同名字段）；
+		// 过滤器里的 select 只在有工程列表时渲染，这组夹具没有。
+		`action="/admin/page-translation-misses/cancel?project=` + projectID,
 		"取词未命中",
-		`name="project"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("报告页缺少 %q：body=%s", want, body)

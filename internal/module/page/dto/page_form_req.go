@@ -21,13 +21,15 @@ type PageDeleteFormReq struct {
 	ID string `form:"id"`
 }
 
+// 行列表必须带 form tag：契约生成器按它出线上字段表，缺 tag 会回落到 Go 字段名
+// （RowContext），与模板真实提交的 rowContext 对不上。
 type PageTranslationsSaveFormReq struct {
-	PageID     string `form:"pageId"`
-	Lang       string `form:"lang"`
-	RowContext []string
-	RowSource  []string
-	RowHash    []string
-	RowTarget  []string
+	PageID     string   `form:"pageId"`
+	Lang       string   `form:"lang"`
+	RowContext []string `form:"rowContext"`
+	RowSource  []string `form:"rowSource"`
+	RowHash    []string `form:"rowHash"`
+	RowTarget  []string `form:"rowTarget"`
 }
 
 func (r *PageTranslationsSaveFormReq) BindForm(v url.Values) error {

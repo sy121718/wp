@@ -98,8 +98,12 @@ func (r *SourceFormReq) UpdateReq() (*UpdateSourceReq, error) {
 	return req, nil
 }
 
+// SourceDeleteFormReq 必须带工程：模板会提交页面当前选中的工程，
+// service 按它做 FORCE 作用域与归属探测；只收 id 会把选中工程静默丢掉，
+// 退化成「整个账号下唯一工程的猜测」。
 type SourceDeleteFormReq struct {
-	ID string `form:"id"`
+	ID        string `form:"id"`
+	ProjectID string `form:"projectId"`
 }
 
 type SourceBulkFormReq struct {

@@ -30,8 +30,12 @@ type PricingRuleReq struct {
 	TagID      string `json:"tagId" form:"tagId"`
 }
 
+// PricingPreviewReq 与 ApplyPricing 共用同一张表单：模板里的「备注」字段在预览时
+// 也要能绑定（不落库，只是同一表单的两种提交按钮），所以两个 DTO 的字段集必须一致。
 type PricingPreviewReq struct {
 	PricingRuleReq
+
+	Note string `json:"note" form:"note"`
 }
 
 type PricingApplyReq struct {

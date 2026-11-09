@@ -71,7 +71,8 @@
                 <td class="col-actions">
                     <form method="post" action="/admin/page-translation-misses/cancel?project={{projectID}}">
                         <input type="hidden" name="csrf_token" value="{{csrfToken}}">
-                        <input type="hidden" name="project" value="{{projectID}}">
+                        {* 工程筛选只走 action 的 query 串（回跳按它重建）；这里再塞一个同名字段
+                           只会让写端点多收一个它不绑定的键。 *}
                         <input type="hidden" name="pageId" value="{{r.PageID}}">
                         <input type="hidden" name="lang" value="{{r.Lang}}">
                         <button type="submit" class="btn btn-sm btn-danger">{{tr("admin.page.translation_misses.action.cancel", "取消该语言")}}</button>

@@ -237,7 +237,7 @@ func (h *sourcePageHandle) SourceDelete(c *gin.Context) {
 		return
 	}
 	if err := h.purchase.DeleteSource(c.Request.Context(), &purchasedto.DeleteSourceReq{
-		ID: form.ID,
+		ID: form.ID, ProjectID: form.ProjectID,
 	}); err != nil {
 		purchaseFail(c, err)
 		return

@@ -117,11 +117,11 @@ func (h *inventoryTransferPageHandle) CreateTransfer(c *gin.Context) {
 }
 
 func (h *inventoryTransferPageHandle) ShipTransfer(c *gin.Context) {
-	runTransferWrite(c, nil, h.transfers.ShipTransfer, inventoryWriteOK)
+	runTransferWrite[inventorydto.TransferShipReq](c, nil, h.transfers.ShipTransfer, inventoryWriteOK)
 }
 
 func (h *inventoryTransferPageHandle) ReceiveTransfer(c *gin.Context) {
-	runTransferWrite(c, nil, h.transfers.ReceiveTransfer, inventoryWriteOK)
+	runTransferWrite[inventorydto.TransferReceiveReq](c, nil, h.transfers.ReceiveTransfer, inventoryWriteOK)
 }
 
 func (h *inventoryTransferPageHandle) InventoryTransferStockOptions(c *gin.Context) {
@@ -138,15 +138,15 @@ func (h *inventoryTransferPageHandle) InventoryTransferStockOptions(c *gin.Conte
 }
 
 func (h *inventoryTransferPageHandle) ApproveTransfer(c *gin.Context) {
-	runTransferWrite(c, transferApproveOperator, h.transfers.ApproveTransfer, inventoryWriteOK)
+	runTransferWrite[inventorydto.TransferApproveReq](c, transferApproveOperator, h.transfers.ApproveTransfer, inventoryWriteOK)
 }
 
 func (h *inventoryTransferPageHandle) RejectTransfer(c *gin.Context) {
-	runTransferWrite(c, transferRejectOperator, h.transfers.RejectTransfer, inventoryWriteOK)
+	runTransferWrite[inventorydto.TransferRejectReq](c, transferRejectOperator, h.transfers.RejectTransfer, inventoryWriteOK)
 }
 
 func (h *inventoryTransferPageHandle) CancelTransfer(c *gin.Context) {
-	runTransferWrite(c, nil, h.transfers.CancelTransfer, inventoryWriteOK)
+	runTransferWrite[inventorydto.TransferCancelReq](c, nil, h.transfers.CancelTransfer, inventoryWriteOK)
 }
 
 // transferOperatorOf 取审批人：身份只从会话取，不能由表单提交。
