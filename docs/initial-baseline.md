@@ -5,7 +5,7 @@
 
 ## 1. 现状事实（实测）
 
-- 初始化 = 跑完 `public/migrations` 的 701 个 SQL 文件（177 条注册迁移 + seed）。迁移执行器**没有版本台账**：每条迁移自带 `CheckSQL` 幂等检查，命中即跳过（[public/migrations/migrator.go](../public/migrations/migrator.go)）。`sys_migration_marker` 只记「一次性数据动作」，不是版本表。
+- 初始化 = 跑完 `public/migrations` 的 701 个 SQL 文件（182 条注册迁移 + seed）。迁移执行器**没有版本台账**：每条迁移自带 `CheckSQL` 幂等检查，命中即跳过（[public/migrations/migrator.go](../public/migrations/migrator.go)）。`sys_migration_marker` 只记「一次性数据动作」，不是版本表。
 - 隔离库实测：`go run ./cmd -migrate-only` 从空库到终态约 53 秒，退出码 0。
 - 结构快照 [schema/CURRENT.sql](../schema/CURRENT.sql) 由 [scripts/schema-snapshot.sh](../scripts/schema-snapshot.sh) 生成，来源是「跑完本仓迁移的库」，当前 131 张表 / 10320 行。
 - 分区表只有 3 张：`page_views`、`inventory_stock_movements`、`master_data_changes`（[173_partition_append_only_tables.sql](../public/migrations/173_partition_append_only_tables.sql)）。月分区窗口由两处生成：迁移 173 的 DO 块（建库时）+ [pkg/database/partition](../pkg/database/partition/partition.go) 的 `EnsureAhead`（启动与 `-migrate-only` 都会跑），范围 `AheadMonths=3`，即当前月 -1 至 +3，另有一张 `_default` 兜底。
@@ -42,9 +42,9 @@ GOWP_SNAPSHOT_DB=wp_baseline_probe bash scripts/schema-snapshot.sh
 
 | 文件 | 内容 |
 |---|---|
-| `structure.sql` | 非分区对象全量（表/列/索引/约束/扩展/函数/触发器/RLS/default 分区）+ 3 张分区父表结构，剔除全部 `_YYYY_MM` 月分区 |
+| `structure.sql` | 非分区对象全量（表/列/索引/约束/扩展/函数/触发器/RLS/default 分区，含纯 DDL 迁移建的 `ai_*` 六张表）+ 3 张分区父表结构，剔除全部 `_YYYY_MM` 月分区 |
 | `system_data.sql` | **迁移阶段产生的**系统数据（词条、权限、菜单、字典、默认配置），不含业务数据，也不含 seed 的产物 |
-| `manifest.txt` | 基线覆盖的 177 个迁移 version，逐行一条，顺序即注册顺序 |
+| `manifest.txt` | 基线覆盖的 182 个迁移 version，逐行一条，顺序即注册顺序 |
 | `init.sql` | `\ir structure.sql` → `\ir system_data.sql` → 写 `sys_baseline` 一行 |
 
 生成与校验：
@@ -121,7 +121,7 @@ bash scripts/baseline-verify.sh --keep   # 保留库与 /tmp/wp-baseline-verify-
 ### 3.8 已知限制
 
 - artex 不是本仓迁移产物库（3.5 实测），不接入基线；需要基线环境请新建库载入 `schema/baseline/init.sql`。
-- **seed 里仍有 DDL**：6 张 `ai_*` 表由 seed 542 建（`registerSeed` + `CREATE TABLE`），所以结构基线（`-skip-seeds` 生成）不含它们，靠初始化时跑 seed 补齐。这是既有形状，本次不改历史 seed；新数据/结构应分别落在 Migration 与 Seed。
+- **seed 里曾有 DDL（已修）**：6 张 `ai_*` 表原由 seed 511/512/537/541/542 建（`CREATE TABLE IF NOT EXISTS`，无数据），`-skip-seeds` 生成的结构基线因此不含它们。现已改为迁移登记：`register(Migration{...})`，`CheckSQL` 仍是 `to_regclass` 判存在，存量库自动跳过；基线随之 112→118 张表、manifest 177→182 条。判据固定为「纯 DDL 走 Migration，seed 只写数据」。
 - 结构比较依赖 deparse 归一规则。将来 pg_dump 若改变其它表达式的输出形式，验收会报红，需要在 `scripts/baseline-verify.sh` 的 `normalize` 里补规则，**不要放宽成忽略 CHECK**。
 - manifest 必须与注册表同序同集：改迁移就要重生成基线，[public/migrations/baseline_manifest_test.go](../public/migrations/baseline_manifest_test.go) 会拦。
 - `schema/CURRENT.sql`（阶段 1）与基线是两份产物：前者用于回归比对含月分区全量结构，后者用于初始化。改迁移时两者都要更新。

@@ -1,6 +1,6 @@
 -- 初始化基线：结构（由 scripts/baseline-generate.sh 生成，请勿手改）。
 -- 不含任何 _YYYY_MM 月分区：月窗口由 partition.EnsureAhead 在初始化末尾补齐。
--- 生成时间：2026-11-15T06:37:23+08:00
+-- 生成时间：2026-11-15T06:47:08+08:00
 
 --
 -- PostgreSQL database dump
@@ -172,6 +172,246 @@ CREATE SEQUENCE public.admin_side_effect_tasks_id_seq
 --
 
 ALTER SEQUENCE public.admin_side_effect_tasks_id_seq OWNED BY public.admin_side_effect_tasks.id;
+
+
+--
+-- Name: ai_access_token; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ai_access_token (
+    id bigint NOT NULL,
+    name character varying(80) DEFAULT ''::character varying NOT NULL,
+    user_id bigint DEFAULT 0 NOT NULL,
+    token_prefix character varying(16) DEFAULT ''::character varying NOT NULL,
+    token_hash character varying(64) DEFAULT ''::character varying NOT NULL,
+    scopes jsonb DEFAULT '[]'::jsonb NOT NULL,
+    status smallint DEFAULT 1 NOT NULL,
+    expires_at timestamp with time zone,
+    last_used_time timestamp with time zone,
+    revoked_time timestamp with time zone,
+    create_time timestamp with time zone DEFAULT now() NOT NULL,
+    update_time timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: ai_access_token_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.ai_access_token_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: ai_access_token_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.ai_access_token_id_seq OWNED BY public.ai_access_token.id;
+
+
+--
+-- Name: ai_call_log; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ai_call_log (
+    id bigint NOT NULL,
+    session_id bigint DEFAULT 0 NOT NULL,
+    user_id bigint DEFAULT 0 NOT NULL,
+    provider_key character varying(50) DEFAULT ''::character varying NOT NULL,
+    model_id character varying(120) DEFAULT ''::character varying NOT NULL,
+    protocol character varying(50) DEFAULT ''::character varying NOT NULL,
+    input_tokens bigint DEFAULT 0 NOT NULL,
+    output_tokens bigint DEFAULT 0 NOT NULL,
+    total_tokens bigint DEFAULT 0 NOT NULL,
+    usage_reported boolean DEFAULT false NOT NULL,
+    latency_ms bigint DEFAULT 0 NOT NULL,
+    status character varying(20) DEFAULT ''::character varying NOT NULL,
+    error_key character varying(80) DEFAULT ''::character varying NOT NULL,
+    create_time timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: ai_call_log_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.ai_call_log_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: ai_call_log_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.ai_call_log_id_seq OWNED BY public.ai_call_log.id;
+
+
+--
+-- Name: ai_event; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ai_event (
+    id bigint NOT NULL,
+    session_id bigint NOT NULL,
+    seq bigint NOT NULL,
+    kind character varying(30) NOT NULL,
+    surface_op character varying(20) DEFAULT 'append'::character varying NOT NULL,
+    replace_from_seq bigint DEFAULT 0 NOT NULL,
+    replace_to_seq bigint DEFAULT 0 NOT NULL,
+    content text DEFAULT ''::text NOT NULL,
+    content_tokens bigint DEFAULT 0 NOT NULL,
+    meta jsonb DEFAULT '{}'::jsonb NOT NULL,
+    create_time timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: ai_event_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.ai_event_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: ai_event_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.ai_event_id_seq OWNED BY public.ai_event.id;
+
+
+--
+-- Name: ai_provider; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ai_provider (
+    id bigint NOT NULL,
+    provider_key character varying(50) NOT NULL,
+    display_name character varying(100) NOT NULL,
+    base_url character varying(500),
+    protocol character varying(50) DEFAULT 'openai_chat_completions'::character varying NOT NULL,
+    api_key_cipher text,
+    status smallint DEFAULT 1 NOT NULL,
+    sort integer DEFAULT 0 NOT NULL,
+    config_data jsonb DEFAULT '{}'::jsonb NOT NULL,
+    version bigint DEFAULT 1 NOT NULL,
+    create_by bigint DEFAULT 0 NOT NULL,
+    create_time timestamp with time zone DEFAULT now() NOT NULL,
+    update_by bigint DEFAULT 0 NOT NULL,
+    update_time timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: ai_provider_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.ai_provider_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: ai_provider_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.ai_provider_id_seq OWNED BY public.ai_provider.id;
+
+
+--
+-- Name: ai_session; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ai_session (
+    id bigint NOT NULL,
+    session_key character varying(120) NOT NULL,
+    title character varying(200) DEFAULT ''::character varying NOT NULL,
+    provider_key character varying(50) DEFAULT ''::character varying NOT NULL,
+    model_id character varying(120) DEFAULT ''::character varying NOT NULL,
+    status smallint DEFAULT 1 NOT NULL,
+    next_seq bigint DEFAULT 1 NOT NULL,
+    head_seq bigint DEFAULT 0 NOT NULL,
+    compact_count integer DEFAULT 0 NOT NULL,
+    context_tokens bigint DEFAULT 0 NOT NULL,
+    version bigint DEFAULT 1 NOT NULL,
+    create_by bigint DEFAULT 0 NOT NULL,
+    create_time timestamp with time zone DEFAULT now() NOT NULL,
+    update_by bigint DEFAULT 0 NOT NULL,
+    update_time timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: ai_session_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.ai_session_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: ai_session_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.ai_session_id_seq OWNED BY public.ai_session.id;
+
+
+--
+-- Name: ai_tool_call_log; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ai_tool_call_log (
+    id bigint NOT NULL,
+    session_id bigint DEFAULT 0 NOT NULL,
+    user_id bigint DEFAULT 0 NOT NULL,
+    tool_name character varying(80) DEFAULT ''::character varying NOT NULL,
+    arguments_summary character varying(500) DEFAULT ''::character varying NOT NULL,
+    result_summary character varying(500) DEFAULT ''::character varying NOT NULL,
+    result_len bigint DEFAULT 0 NOT NULL,
+    truncated boolean DEFAULT false NOT NULL,
+    status character varying(20) DEFAULT ''::character varying NOT NULL,
+    error_key character varying(80) DEFAULT ''::character varying NOT NULL,
+    latency_ms bigint DEFAULT 0 NOT NULL,
+    create_time timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: ai_tool_call_log_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.ai_tool_call_log_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: ai_tool_call_log_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.ai_tool_call_log_id_seq OWNED BY public.ai_tool_call_log.id;
 
 
 --
@@ -3594,6 +3834,48 @@ ALTER TABLE ONLY public.admin_side_effect_tasks ALTER COLUMN id SET DEFAULT next
 
 
 --
+-- Name: ai_access_token id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ai_access_token ALTER COLUMN id SET DEFAULT nextval('public.ai_access_token_id_seq'::regclass);
+
+
+--
+-- Name: ai_call_log id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ai_call_log ALTER COLUMN id SET DEFAULT nextval('public.ai_call_log_id_seq'::regclass);
+
+
+--
+-- Name: ai_event id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ai_event ALTER COLUMN id SET DEFAULT nextval('public.ai_event_id_seq'::regclass);
+
+
+--
+-- Name: ai_provider id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ai_provider ALTER COLUMN id SET DEFAULT nextval('public.ai_provider_id_seq'::regclass);
+
+
+--
+-- Name: ai_session id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ai_session ALTER COLUMN id SET DEFAULT nextval('public.ai_session_id_seq'::regclass);
+
+
+--
+-- Name: ai_tool_call_log id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ai_tool_call_log ALTER COLUMN id SET DEFAULT nextval('public.ai_tool_call_log_id_seq'::regclass);
+
+
+--
 -- Name: ai_tool_idempotency id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -3928,6 +4210,54 @@ ALTER TABLE ONLY public.webhook_endpoints ALTER COLUMN id SET DEFAULT nextval('p
 
 ALTER TABLE ONLY public.admin_side_effect_tasks
     ADD CONSTRAINT admin_side_effect_tasks_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: ai_access_token ai_access_token_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ai_access_token
+    ADD CONSTRAINT ai_access_token_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: ai_call_log ai_call_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ai_call_log
+    ADD CONSTRAINT ai_call_log_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: ai_event ai_event_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ai_event
+    ADD CONSTRAINT ai_event_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: ai_provider ai_provider_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ai_provider
+    ADD CONSTRAINT ai_provider_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: ai_session ai_session_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ai_session
+    ADD CONSTRAINT ai_session_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: ai_tool_call_log ai_tool_call_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ai_tool_call_log
+    ADD CONSTRAINT ai_tool_call_log_pkey PRIMARY KEY (id);
 
 
 --
@@ -4867,6 +5197,30 @@ ALTER TABLE ONLY public.themes
 
 
 --
+-- Name: ai_event uk_ai_event_session_seq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ai_event
+    ADD CONSTRAINT uk_ai_event_session_seq UNIQUE (session_id, seq);
+
+
+--
+-- Name: ai_provider uk_ai_provider_provider_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ai_provider
+    ADD CONSTRAINT uk_ai_provider_provider_key UNIQUE (provider_key);
+
+
+--
+-- Name: ai_session uk_ai_session_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ai_session
+    ADD CONSTRAINT uk_ai_session_key UNIQUE (session_key);
+
+
+--
 -- Name: ai_tool_idempotency uk_ai_tool_idempotency_actor; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4991,6 +5345,97 @@ ALTER TABLE ONLY public.webhook_endpoints
 --
 
 CREATE INDEX idx_admin_side_effect_tasks_pending ON public.admin_side_effect_tasks USING btree (id) WHERE (processed_time IS NULL);
+
+
+--
+-- Name: idx_ai_access_token_prefix; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ai_access_token_prefix ON public.ai_access_token USING btree (token_prefix);
+
+
+--
+-- Name: idx_ai_access_token_user; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ai_access_token_user ON public.ai_access_token USING btree (user_id, id DESC);
+
+
+--
+-- Name: idx_ai_call_log_session_time; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ai_call_log_session_time ON public.ai_call_log USING btree (session_id, create_time DESC);
+
+
+--
+-- Name: idx_ai_call_log_time; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ai_call_log_time ON public.ai_call_log USING btree (create_time DESC);
+
+
+--
+-- Name: idx_ai_call_log_user_time; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ai_call_log_user_time ON public.ai_call_log USING btree (user_id, create_time DESC);
+
+
+--
+-- Name: idx_ai_event_session_kind; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ai_event_session_kind ON public.ai_event USING btree (session_id, kind);
+
+
+--
+-- Name: idx_ai_provider_sort; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ai_provider_sort ON public.ai_provider USING btree (sort);
+
+
+--
+-- Name: idx_ai_provider_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ai_provider_status ON public.ai_provider USING btree (status);
+
+
+--
+-- Name: idx_ai_session_status_time; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ai_session_status_time ON public.ai_session USING btree (status, update_time DESC);
+
+
+--
+-- Name: idx_ai_tool_call_log_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ai_tool_call_log_session ON public.ai_tool_call_log USING btree (session_id, id DESC);
+
+
+--
+-- Name: idx_ai_tool_call_log_time; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ai_tool_call_log_time ON public.ai_tool_call_log USING btree (create_time DESC);
+
+
+--
+-- Name: idx_ai_tool_call_log_tool_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ai_tool_call_log_tool_status ON public.ai_tool_call_log USING btree (tool_name, status);
+
+
+--
+-- Name: idx_ai_tool_call_log_user; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ai_tool_call_log_user ON public.ai_tool_call_log USING btree (user_id, id DESC);
 
 
 --
@@ -6412,6 +6857,13 @@ CREATE UNIQUE INDEX uk_page_artifacts_page_hash ON public.page_artifacts USING b
 --
 
 CREATE UNIQUE INDEX uk_presentation_artifacts_instance_version_lang ON public.presentation_artifacts USING btree (presentation_instance_id, version, lang);
+
+
+--
+-- Name: uq_ai_access_token_hash; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_ai_access_token_hash ON public.ai_access_token USING btree (token_hash);
 
 
 --

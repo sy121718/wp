@@ -1,6 +1,6 @@
 -- 初始化基线：系统数据（由 scripts/baseline-generate.sh 生成，请勿手改）。
 -- 只含迁移产生的初始数据，不含用户、订单、密钥、自定义译文等业务数据。
--- 生成时间：2026-11-15T06:37:23+08:00
+-- 生成时间：2026-11-15T06:47:08+08:00
 
 --
 -- PostgreSQL database dump
@@ -23,6 +23,54 @@ SET row_security = off;
 --
 
 COPY public.admin_side_effect_tasks (id, kind, payload, create_time, claimed_time, processed_time, attempts, last_error) FROM stdin;
+\.
+
+
+--
+-- Data for Name: ai_access_token; Type: TABLE DATA; Schema: public; Owner: -
+--
+
+COPY public.ai_access_token (id, name, user_id, token_prefix, token_hash, scopes, status, expires_at, last_used_time, revoked_time, create_time, update_time) FROM stdin;
+\.
+
+
+--
+-- Data for Name: ai_call_log; Type: TABLE DATA; Schema: public; Owner: -
+--
+
+COPY public.ai_call_log (id, session_id, user_id, provider_key, model_id, protocol, input_tokens, output_tokens, total_tokens, usage_reported, latency_ms, status, error_key, create_time) FROM stdin;
+\.
+
+
+--
+-- Data for Name: ai_event; Type: TABLE DATA; Schema: public; Owner: -
+--
+
+COPY public.ai_event (id, session_id, seq, kind, surface_op, replace_from_seq, replace_to_seq, content, content_tokens, meta, create_time) FROM stdin;
+\.
+
+
+--
+-- Data for Name: ai_provider; Type: TABLE DATA; Schema: public; Owner: -
+--
+
+COPY public.ai_provider (id, provider_key, display_name, base_url, protocol, api_key_cipher, status, sort, config_data, version, create_by, create_time, update_by, update_time) FROM stdin;
+\.
+
+
+--
+-- Data for Name: ai_session; Type: TABLE DATA; Schema: public; Owner: -
+--
+
+COPY public.ai_session (id, session_key, title, provider_key, model_id, status, next_seq, head_seq, compact_count, context_tokens, version, create_by, create_time, update_by, update_time) FROM stdin;
+\.
+
+
+--
+-- Data for Name: ai_tool_call_log; Type: TABLE DATA; Schema: public; Owner: -
+--
+
+COPY public.ai_tool_call_log (id, session_id, user_id, tool_name, arguments_summary, result_summary, result_len, truncated, status, error_key, latency_ms, create_time) FROM stdin;
 \.
 
 
@@ -759,8 +807,8 @@ COPY public.sys_dict (type, code, url_code, iso639_1, iso639_2, ui_available, sy
 --
 
 COPY public.sys_i18n (id, item_key, lang, item_value, http_code, status, create_time, update_time, category, remark) FROM stdin;
-1	trSavedMarkFail	zh-CN	已保存 {n} 条译文，但未能标记页面待重建 —— 请手动重新发布一次，否则前台仍是旧译文。	200	1	2026-11-15 06:37:22.7095+08	2026-11-15 06:37:22.7095+08	admin	product translation saved but stale mark failed
-2	trSavedMarkFail	en-US	Saved {n} translation(s), but failed to mark pages for rebuild — please republish manually, otherwise the site still shows the old text.	200	1	2026-11-15 06:37:22.7095+08	2026-11-15 06:37:22.7095+08	admin	product translation saved but stale mark failed
+1	trSavedMarkFail	zh-CN	已保存 {n} 条译文，但未能标记页面待重建 —— 请手动重新发布一次，否则前台仍是旧译文。	200	1	2026-11-15 06:47:08.610085+08	2026-11-15 06:47:08.610085+08	admin	product translation saved but stale mark failed
+2	trSavedMarkFail	en-US	Saved {n} translation(s), but failed to mark pages for rebuild — please republish manually, otherwise the site still shows the old text.	200	1	2026-11-15 06:47:08.610085+08	2026-11-15 06:47:08.610085+08	admin	product translation saved but stale mark failed
 \.
 
 
@@ -769,7 +817,7 @@ COPY public.sys_i18n (id, item_key, lang, item_value, http_code, status, create_
 --
 
 COPY public.sys_i18n_revision (id, revision, update_time) FROM stdin;
-1	0	2026-11-15 06:37:21.804+08
+1	0	2026-11-15 06:47:07.674+08
 \.
 
 
@@ -786,9 +834,9 @@ COPY public.sys_media_variant (id, attachment_id, variant_type, file_path, width
 --
 
 COPY public.sys_menu_permission (id, menu_id, permission_code, create_time, update_time) FROM stdin;
-1	1	i18n:manage	2026-11-15 06:37:22.653621+08	2026-11-15 06:37:22.653621+08
-2	3	inventory:warehouse_list	2026-11-15 06:37:22.653621+08	2026-11-15 06:37:22.653621+08
-3	4	inventory:reason_list	2026-11-15 06:37:22.653621+08	2026-11-15 06:37:22.653621+08
+1	1	i18n:manage	2026-11-15 06:47:08.529505+08	2026-11-15 06:47:08.529505+08
+2	3	inventory:warehouse_list	2026-11-15 06:47:08.529505+08	2026-11-15 06:47:08.529505+08
+3	4	inventory:reason_list	2026-11-15 06:47:08.529505+08	2026-11-15 06:47:08.529505+08
 \.
 
 
@@ -797,10 +845,10 @@ COPY public.sys_menu_permission (id, menu_id, permission_code, create_time, upda
 --
 
 COPY public.sys_menus (id, permission_code, title, parent_id, type, path, component, external_url, icon, status, is_hidden, is_public, is_system, sort_order, remark, create_by, create_time, update_by, update_time, deleted_at, title_key) FROM stdin;
-1	i18n:manage	文案词条	0	2	/i18n	view.i18n			1	0	0	1	17	\N	0	2026-11-15 06:37:22.382736+08	0	2026-11-15 06:37:22.536454+08	\N	\N
-2	\N	库存	0	1				warehouse	1	0	0	1	4	库存模块一级目录：库存流水 / 仓库 / 货源 / 采购 / 变动原因	0	2026-11-15 06:37:22.536454+08	0	2026-11-15 06:37:22.538678+08	\N	\N
-3	inventory:warehouse_list	仓库管理	2	2	/admin/inventory/warehouses				1	0	0	1	2	仓库实体：短码 / 默认仓 / 状态	0	2026-11-15 06:37:22.536454+08	0	2026-11-15 06:37:22.538678+08	\N	\N
-4	inventory:reason_list	变动原因字典	2	2	/admin/inventory/reasons				1	0	0	1	5	库存变动原因的取值集合（内置 + 自定义）	0	2026-11-15 06:37:22.536454+08	0	2026-11-15 06:37:22.538678+08	\N	\N
+1	i18n:manage	文案词条	0	2	/i18n	view.i18n			1	0	0	1	17	\N	0	2026-11-15 06:47:08.240106+08	0	2026-11-15 06:47:08.410941+08	\N	\N
+2	\N	库存	0	1				warehouse	1	0	0	1	4	库存模块一级目录：库存流水 / 仓库 / 货源 / 采购 / 变动原因	0	2026-11-15 06:47:08.410941+08	0	2026-11-15 06:47:08.413421+08	\N	\N
+3	inventory:warehouse_list	仓库管理	2	2	/admin/inventory/warehouses				1	0	0	1	2	仓库实体：短码 / 默认仓 / 状态	0	2026-11-15 06:47:08.410941+08	0	2026-11-15 06:47:08.413421+08	\N	\N
+4	inventory:reason_list	变动原因字典	2	2	/admin/inventory/reasons				1	0	0	1	5	库存变动原因的取值集合（内置 + 自定义）	0	2026-11-15 06:47:08.410941+08	0	2026-11-15 06:47:08.413421+08	\N	\N
 \.
 
 
@@ -809,7 +857,7 @@ COPY public.sys_menus (id, permission_code, title, parent_id, type, path, compon
 --
 
 COPY public.sys_migration_marker (version, component, note, completed_at, completed_by) FROM stdin;
-597-block-bulk-delete-grant-copy	permission	把历史 block:delete 主体的删除能力一次性复制到 block:bulk_delete（不随后续授权变动重放；源按 v3 识别，含 canonical 与 bulk 两条历史路径）	2026-11-15 06:37:22.704329+08	0
+597-block-bulk-delete-grant-copy	permission	把历史 block:delete 主体的删除能力一次性复制到 block:bulk_delete（不随后续授权变动重放；源按 v3 识别，含 canonical 与 bulk 两条历史路径）	2026-11-15 06:47:08.607317+08	0
 \.
 
 
@@ -818,12 +866,12 @@ COPY public.sys_migration_marker (version, component, note, completed_at, comple
 --
 
 COPY public.sys_permission (id, permission_code, permission_name, module, api_path, api_method, status, remark, create_by, create_time, update_by, update_time) FROM stdin;
-1	media:download_batch	批量下载媒体	media	/api/media/download/batch	GET	1	\N	0	2026-11-15 06:37:21.787+08	0	2026-11-15 06:37:21.787+08
-2	media:download	下载媒体资源包	media	/api/media/download	GET	1	\N	0	2026-11-15 06:37:21.787+08	0	2026-11-15 06:37:21.787+08
-3	media:variants_generate	重新生成媒体变体	media	/api/media/variants/generate	POST	1	\N	0	2026-11-15 06:37:21.787+08	0	2026-11-15 06:37:21.787+08
-4	i18n:manage	文案词条管理	i18n	/api/i18n/save	POST	1	\N	0	2026-11-15 06:37:22.382736+08	0	2026-11-15 06:37:22.382736+08
-5	seo:audit	产物 SEO 体检	seo	/api/seo/audit	POST	1	\N	0	2026-11-15 06:37:22.384641+08	0	2026-11-15 06:37:22.384641+08
-6	i18n:view	文案词条查看	i18n	/api/i18n/list	GET	1	\N	0	2026-11-15 06:37:22.592436+08	0	2026-11-15 06:37:22.592436+08
+1	media:download_batch	批量下载媒体	media	/api/media/download/batch	GET	1	\N	0	2026-11-15 06:47:07.656+08	0	2026-11-15 06:47:07.656+08
+2	media:download	下载媒体资源包	media	/api/media/download	GET	1	\N	0	2026-11-15 06:47:07.656+08	0	2026-11-15 06:47:07.656+08
+3	media:variants_generate	重新生成媒体变体	media	/api/media/variants/generate	POST	1	\N	0	2026-11-15 06:47:07.656+08	0	2026-11-15 06:47:07.656+08
+4	i18n:manage	文案词条管理	i18n	/api/i18n/save	POST	1	\N	0	2026-11-15 06:47:08.240106+08	0	2026-11-15 06:47:08.240106+08
+5	seo:audit	产物 SEO 体检	seo	/api/seo/audit	POST	1	\N	0	2026-11-15 06:47:08.243321+08	0	2026-11-15 06:47:08.243321+08
+6	i18n:view	文案词条查看	i18n	/api/i18n/list	GET	1	\N	0	2026-11-15 06:47:08.47307+08	0	2026-11-15 06:47:08.47307+08
 \.
 
 
@@ -904,6 +952,48 @@ COPY public.webhook_deliveries (id, endpoint_id, event_type, payload, status, at
 --
 
 SELECT pg_catalog.setval('public.admin_side_effect_tasks_id_seq', 1, false);
+
+
+--
+-- Name: ai_access_token_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
+--
+
+SELECT pg_catalog.setval('public.ai_access_token_id_seq', 1, false);
+
+
+--
+-- Name: ai_call_log_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
+--
+
+SELECT pg_catalog.setval('public.ai_call_log_id_seq', 1, false);
+
+
+--
+-- Name: ai_event_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
+--
+
+SELECT pg_catalog.setval('public.ai_event_id_seq', 1, false);
+
+
+--
+-- Name: ai_provider_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
+--
+
+SELECT pg_catalog.setval('public.ai_provider_id_seq', 1, false);
+
+
+--
+-- Name: ai_session_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
+--
+
+SELECT pg_catalog.setval('public.ai_session_id_seq', 1, false);
+
+
+--
+-- Name: ai_tool_call_log_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
+--
+
+SELECT pg_catalog.setval('public.ai_tool_call_log_id_seq', 1, false);
 
 
 --

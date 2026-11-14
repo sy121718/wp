@@ -134,6 +134,11 @@
 496-media-variant-full-slot
 501-order-ship-country
 507-partition-rls-reconcile
+511-ai-provider
+512-ai-session
+537-ai-call-log
+541-ai-tool-call-log
+542-ai-access-token
 569-ai-tool-idempotency
 596-sys-migration-marker
 597-block-bulk-delete-grant-copy

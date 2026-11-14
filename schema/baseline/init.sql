@@ -10,4 +10,4 @@ SET search_path = public, ext_shared;
 \ir system_data.sql
 
 INSERT INTO sys_baseline (version, manifest_sha256, applied_at, note)
-VALUES ('baseline-2026-11-15', '111e0915475a81870ef9c0e3a83f03c2005e5e911b974c84c86a1ec62355dfaf', now(), '由 scripts/baseline-generate.sh 生成');
+VALUES ('baseline-2026-11-15', '01bcfdf34259c6047613a2a172e8c35968f5ce285031f888b8bd69e6e076fdb0', now(), '由 scripts/baseline-generate.sh 生成');
