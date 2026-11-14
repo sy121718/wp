@@ -97,7 +97,7 @@ func TestProductHTMLRealBrowser(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cmd.Env = append(os.Environ(), "GOWP_PRODUCT_BASE_URL="+server.URL, "GOWP_PRODUCT_PROJECT_ID="+f.projectID, "GOWP_PRODUCT_EDIT_IDS="+string(ids))
+	cmd.Env = append(os.Environ(), "GOWP_PRODUCT_BASE_URL="+server.URL, "GOWP_PRODUCT_PROJECT_ID="+f.projectID, "GOWP_PRODUCT_EDIT_IDS="+string(ids), "GOWP_PUPPETEER_MODULE="+browserPuppeteerModule())
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("商品真实浏览器验收失败：%v\n%s", err, output)

@@ -27,6 +27,16 @@ func TestProductSEORealBrowser(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = auth.Close() })
+	// 与商品浏览器夹具同源：不走 routers 装配时，页面事实端口要接同一个会话令牌签发，
+	// 否则抽屉表单里的 csrf_token 为空，评分 POST 一律 403。
+	pageview.SetAdminPort(pageview.AdminPort{CSRFToken: func(c *gin.Context) string {
+		token, err := builtin.EnsureCSRFToken(c)
+		if err != nil {
+			t.Errorf("签发浏览器 CSRF 令牌失败：%v", err)
+		}
+		return token
+	}})
+	t.Cleanup(func() { pageview.SetAdminPort(pageview.AdminPort{}) })
 	engine, f := newCreateFlowEngine(t, builtin.CSRFMiddleware(), func(c *gin.Context) {
 		if c.Request.Method == "POST" {
 			time.Sleep(250 * time.Millisecond)
@@ -67,7 +77,12 @@ func TestProductSEORealBrowser(t *testing.T) {
 	// 仅夹具授予明确权限，不替代生产登录与 Casbin 验收。
 	engine.Use(func(c *gin.Context) {
 		c.Set(adminctx.PermSetKey, map[string]bool{"product:update": true, "product:seo_score": true, "product:category_seo_score": true, "product:brand_seo_score": true})
-		buttons := map[string]bool{"product.update": true}
+		// SEO 抽屉入口的显隐读按钮集（.Buttons["product.seo_score"] 等）。
+		// readonly=1 模拟「仅评分权限」：编辑入口不渲染、评分入口保留。
+		buttons := map[string]bool{
+			"product.update":    true,
+			"product.seo_score": true, "product.category_seo_score": true, "product.brand_seo_score": true,
+		}
 		if c.Query("readonly") != "1" {
 			buttons["product.category_update"], buttons["product.brand_update"] = true, true
 		}
@@ -86,7 +101,8 @@ func TestProductSEORealBrowser(t *testing.T) {
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "node", "--test", "testdata/product-seo-browser.cjs")
 	cmd.Env = append(os.Environ(), "GOWP_PRODUCT_BASE_URL="+server.URL, "GOWP_PRODUCT_PROJECT_ID="+f.projectID,
-		"GOWP_SEO_PRODUCT="+p.ID, "GOWP_SEO_CATEGORY="+category.ID, "GOWP_SEO_BRAND="+brand.ID)
+		"GOWP_SEO_PRODUCT="+p.ID, "GOWP_SEO_CATEGORY="+category.ID, "GOWP_SEO_BRAND="+brand.ID,
+		"GOWP_PUPPETEER_MODULE="+browserPuppeteerModule())
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("SEO 真实浏览器验收失败：%v\n%s", err, output)

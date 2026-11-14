@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -149,10 +150,23 @@ func TestHTMLUIRealBrowser(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "node", "--test", "../templates/testdata/html-ui/browser.cjs")
-	cmd.Env = append(os.Environ(), "GOWP_HTML_UI_BASE_URL="+server.URL)
+	cmd.Env = append(os.Environ(), "GOWP_HTML_UI_BASE_URL="+server.URL, "GOWP_PUPPETEER_MODULE="+browserPuppeteerModule())
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("真实浏览器组合验收失败：%v\n%s", err, output)
 	}
 	t.Logf("%s", output)
+}
+
+// browserPuppeteerModule 让 browser.cjs 解析到本机安装的 puppeteer-core：
+// 优先 GOWP_PUPPETEER_MODULE，否则回落到桌面端 profile 下的依赖。
+func browserPuppeteerModule() string {
+	if v := os.Getenv("GOWP_PUPPETEER_MODULE"); v != "" {
+		return v
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "puppeteer-core"
+	}
+	return filepath.Join(home, ".dsh", "profiles", "desktop", "node_modules", "puppeteer-core")
 }

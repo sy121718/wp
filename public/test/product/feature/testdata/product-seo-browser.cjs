@@ -78,7 +78,11 @@ test('SEO 三入口只交换 Jet 结果，保留未保存状态', async t => {
                     if (kind === 'product') {
                         await page.$eval('#product-edit-main [name=name]', node => { node.value = ''; });
                     }
-                    const opener = `[data-drawer-open="#tpl-${kind === 'product' ? 'product-seo' : kind + '-edit-' + id}"]`;
+                    // 分类/品牌用页面上真实存在的行入口：夹具创建的实体不一定排在列表首行，
+                    // 按 env 里的 id 拼选择器会把「列表没渲染这一行」误判成交互失败。
+                    const opener = kind === 'product'
+                        ? '[data-drawer-open="#tpl-product-seo"]'
+                        : `[data-drawer-open^="#tpl-${kind}-edit-"]`;
                     const beforeOpen = writes.length;
                     await click(opener);
                     await page.waitForSelector(button + ':not([hidden]):not([disabled])');
