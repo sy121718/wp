@@ -1,6 +1,6 @@
 # 框架基础归一与可视化工具化任务书
 
-当前状态（2026-11-15 第十九轮收口）：**154 处原生 FormPost 已全部迁移、初始化基线阶段 1、2 均已落地**。契约 362 条：**239 form / 106 json / 8 query / 4 multipart / 3 nobody / 2 raw，unknown 为 0**；`ParseForm` 端点额外声明 `encodings: [urlencoded, multipart]`，`BindForm` 钩子读取的字面量键（remember / pageSize / emailNotify / shipName…）已并入字段表。非表单编码现在直接 400，不再「忽略 JSON 后写默认值」。447 历史 SQL 已恢复原文并归档，现行执行源改为 758b。密码业务链补齐生产布局（`/production`）三视口 × 四输入 12 格。`go test ./...` **283 包 ok（rls 188 秒）**；`check-all.sh --with-db` 39/39；`go build ./...`、`go vet ./...`、`write-contracts -check` 通过。第十七轮改动分五批提交（`e466ac95` / `db4ba666` / `e95c7ce7` / `5e9e3842` / `ee1c3391`），第十八轮改动分五批提交（`2edc91ea` / `ff6b9730` / `63d347fe` / `f5625910` / `87960150`），第十九轮改动分六批提交（`f8bed43c` / `2854dc40` / `52142147` / `a95c86ef` / `e5ac0333` / `74c840f9`），另 `c1cfc5dd` 修分区列名回退。最新范围与证据边界以[当前收口任务](#当前收口任务)为准；历轮记录保留为历史，不据其旧缺口重复实施。未 push。
+当前状态（2026-11-15 第二十轮收口）：**154 处原生 FormPost 已全部迁移、初始化基线阶段 1、2 均已落地**。契约 362 条：**239 form / 106 json / 8 query / 4 multipart / 3 nobody / 2 raw，unknown 为 0**；`ParseForm` 端点额外声明 `encodings: [urlencoded, multipart]`，`BindForm` 钩子读取的字面量键（remember / pageSize / emailNotify / shipName…）已并入字段表。非表单编码现在直接 400，不再「忽略 JSON 后写默认值」。447 历史 SQL 已恢复原文并归档，现行执行源改为 758b。密码业务链补齐生产布局（`/production`）三视口 × 四输入 12 格。`go test ./...` **283 包 ok（rls 188 秒）**；`check-all.sh --with-db` 39/39；`go build ./...`、`go vet ./...`、`write-contracts -check` 通过。第十七轮改动分五批提交（`e466ac95` / `db4ba666` / `e95c7ce7` / `5e9e3842` / `ee1c3391`），第十八轮改动分五批提交（`2edc91ea` / `ff6b9730` / `63d347fe` / `f5625910` / `87960150`），第十九轮改动分六批提交（`f8bed43c` / `2854dc40` / `52142147` / `a95c86ef` / `e5ac0333` / `74c840f9`），另 `c1cfc5dd` 修分区列名回退。最新范围与证据边界以[当前收口任务](#当前收口任务)为准；历轮记录保留为历史，不据其旧缺口重复实施。第二十轮改动分两批提交（`c0610ea0` 观测列迁 761、`4be9537d` 浏览器矩阵），并已推送 `origin/main`（`c6b4a178..4be9537d`，321 个提交）。
 
 本任务书是本次重构的唯一实施清单，不是第二份架构规范；规范仍以 [AGENTS.md](AGENTS.md) 为准。原 [商品后台通用写反馈任务书](TASK-html-feedback.md) 保留为背景和原始用例索引，其实施安排由本文接替：不再由 `internal/adminui` 承担成功渲染，不分开交付第二套反馈，不按旧任务书默认运行全量门禁。
 
@@ -824,6 +824,43 @@ pkg/database/{retention,partition}
 - `go test ./public/test/... -count=1 -p 4`：**最终态 65 包 ok，EXIT=0**。首轮唯一红项是 `public/test/partition/unit` 的 `TestTableTimeColumnsMatchPartitionKeys` —— `a95c86ef` 把两张分区表的 `TimeColumn` 误改为 `created_at`（真实分区键是 `create_time`），回退（`c1cfc5dd`）后整包重跑全绿。
 - `bash scripts/check-all.sh` 31 脚本全过；`--db-only` 8 脚本全过（重复索引只报告、不自动 DROP）。
 - 一处测试对齐：`public/test/publication/feature/seo_audit_json_test.go` 的 multipart 子用例按新契约改为「multipart 也在契约内」（`74c840f9`）。
+
+### 第二十轮：观测列迁 761、浏览器矩阵全绿、首次推送远端（2026-11-15）
+
+承接第十九轮的三项遗留：seed 净 DDL 缺口、浏览器矩阵、push。
+
+**1. 观测列从 seed 收进迁移 761**
+
+- 529 / 535 / 566 三份 seed 全是幂等 DDL、没有一行数据，`-skip-seeds` 生成的结构基线因此缺 5 列 + 2 索引（`ai_event.provider_key` / `model_id` / `user_id`、`ai_call_log.cached_tokens` / `cached_reported`、`idx_ai_event_session_model` / `idx_ai_event_user_time`）。
+- 新增 [761_ai_event_call_log_columns.sql](public/migrations/761_ai_event_call_log_columns.sql) + 注册（`CheckSQL` 五列齐全即视为已应用，存量库自动跳过），删除三份 seed 与三个注册文件。
+- 重生成 [schema/baseline](schema/baseline)：118 张表 / 183 个基线迁移 / 114 张有数据表；[schema/CURRENT.sql](schema/CURRENT.sql) 132 张表 / 10375 行。
+- 验收：`baseline-verify.sh` 三条全绿（结构一致、129 张表行数一致、幂等、哈希不匹配回落），`baseline-generate.sh --check` 与 `schema-snapshot.sh --check` 绿。
+
+**2. 浏览器矩阵（真实 Chrome）**
+
+| 用例 | 结果 |
+|---|---|
+| `internal/viewtest` 共享表单/抽屉（三视口 + 并发语言隔离） | 5/5 |
+| `public/test/product` 商品创建→编辑→删除（三视口 × 四输入 12 格 + 4 项链路） | 16/16 |
+| `internal/module/workbench` 编辑器四宿主 × 三视口 | 12 格 |
+| `internal/module/project` 工作台面板闭环 / 主题落库 | 6/6、2/2 |
+| `public/test/product` SEO 三入口三视口 | 4/4 |
+
+修掉三处只在真实 Chrome 里暴露的阻断：
+
+- **puppeteer-core 解析**：`browser.cjs` 用 `GOWP_PUPPETEER_MODULE` 兜底 `require`，Go 侧从未传该变量 → `MODULE_NOT_FOUND`。viewtest 与 product feature 各加一个 helper（env 优先、回落桌面端 profile 依赖）并显式传给子进程。
+- **SEO 抽屉评分 403**：夹具不走 routers 装配，页面事实端口没接 CSRF 签发，抽屉 `csrf_token` 为空。补 `pageview.SetAdminPort` 同源签发；补 `Buttons` 的 `product.seo_score` / `category` / `brand`（按钮集与 `PermSet` 是两套键，缺按钮集则「SEO 评分」入口不渲染）；`readonly=1` 表示「仅评分权限」，保留评分入口、去掉编辑入口。
+- **cjs 入口选择器**：按 env 实体 id 拼 `data-drawer-open` 会把「列表没渲染这一行」误判成交互失败，改为页面真实行入口前缀匹配。
+
+**3. 首次推送远端**
+
+`c6b4a178..4be9537d`（321 个提交）推到 `origin/main`，本地与远端对齐、0 待推送；此前自 2026-10-29 起从未 push。
+
+**4. 仍未闭环**
+
+- `TestRepeaterBrowserFixture` 在当前环境挂住（>6 分钟无输出，已停掉），需单独排查。
+- `TestAdminUIBrowserFixture` 需要外部服务地址（`GOWP_ADMIN_UI_BROWSER_ADDR`），本次未跑。
+- 跨进程策略传播仍未实测（[:345](#345) 口径）；artex 接入基线留待人工 `baseline-adopt.sh --apply`。
 
 ### 第十七轮实施与验收（2026-11-14）
 
