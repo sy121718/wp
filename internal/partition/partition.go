@@ -13,8 +13,8 @@ import (
 // Tables 是应用的表目录（保留在生产迁移所属的应用侧）。
 var Tables = []pkgpartition.Table{
 	{Name: "page_views", TimeColumn: "viewed_at"},
-	{Name: "inventory_stock_movements", TimeColumn: "created_at"},
-	{Name: "master_data_changes", TimeColumn: "created_at"},
+	{Name: "inventory_stock_movements", TimeColumn: "create_time"},
+	{Name: "master_data_changes", TimeColumn: "create_time"},
 }
 
 const AheadMonths = pkgpartition.AheadMonths
