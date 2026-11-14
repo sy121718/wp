@@ -431,11 +431,12 @@ func seoAuditRun(t *testing.T, chain *seoAuditChain, label, projectID string, wa
 	return res
 }
 
-// TestSEOAuditAcceptsFormTransportsAndReturnsFragment 证明声明协议（form-urlencoded）
-// 得到片段，且 HX-Request 头不改变出口形态（协议由路由声明，不由请求头协商）。
+// TestSEOAuditAcceptsFormTransportsAndReturnsFragment 证明声明的表单编码
+// （urlencoded / multipart）都能得到片段，且 HX-Request 头不改变出口形态
+// （协议由路由声明，不由请求头协商）。
 //
-// 另外两种编码被显式拒绝：端点已收窄成标准表单（write-contracts 记 form），
-// multipart 不是契约的一部分，JSON 是退役的兼容入口。收窄后它们必须 400，
+// JSON 是退役的兼容入口：端点已收窄成标准表单（write-contracts 记 form，
+// encodings 为 urlencoded + multipart），JSON 必须 400，
 // 而不是被静默当成空表单继续跑体检。
 func TestSEOAuditAcceptsFormTransportsAndReturnsFragment(t *testing.T) {
 	chain := newSEOAuditChain(t)
@@ -469,7 +470,7 @@ func TestSEOAuditAcceptsFormTransportsAndReturnsFragment(t *testing.T) {
 		})
 	}
 
-	t.Run("multipart 不在契约内", func(t *testing.T) {
+	t.Run("multipart 也在契约内", func(t *testing.T) {
 		body, ct := seoAuditMultipartBody(t, map[string]string{"project": seoAuditProjectA})
 		res := doSeoAudit(t, chain.Engine, seoAuditRequest{
 			ContentType: ct,
@@ -477,9 +478,9 @@ func TestSEOAuditAcceptsFormTransportsAndReturnsFragment(t *testing.T) {
 			Cookie:      chain.Super.Cookie,
 			CSRF:        chain.Super.CSRFToken,
 		})
-		assertSeoAuditHTML(t, "multipart", res, http.StatusBadRequest)
-		if strings.Contains(res.Body, "data-seo-audit-state") {
-			t.Fatalf("multipart 不该跑出结论：%q", firstN(res.Body, 200))
+		assertSeoAuditHTML(t, "multipart", res, http.StatusOK)
+		if state := seoAuditState(res.Body); state != "clean" {
+			t.Fatalf("multipart：结论档位 %q，期望 clean（同一个 project 的产物集）", state)
 		}
 	})
 }
