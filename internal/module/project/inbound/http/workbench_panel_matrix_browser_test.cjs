@@ -264,6 +264,89 @@ test('面板输入矩阵：三视口 × 四种输入', async (t) => {
             }
         }
 
+        // 密码按钮生产矩阵：三视口 × 四输入，完整走「输入明文 → 提交 → 服务端 bcrypt
+        // 回填哈希 → 文档变脏 → 明文不落文档」这一条链。
+        //
+        // 此前的窄视口专项只断言按钮有可点面积，不证明真的能设密码；这里每一种
+        // 输入方式都必须走完同一条链，判据是文档里的 passwordHash 以 $2 开头。
+        for (const vp of VIEWPORTS) {
+            for (const input of INPUTS) {
+                await t.test(`${vp.name} · 密码按钮 · ${input}`, async () => {
+                    const page = await open(browser, vp);
+                    try {
+                        await page.evaluate(() => window.__wb.renderSettingsPanelHtmx());
+                        await page.waitForSelector('#wb-settings-content [name="wb-access-password"]', { timeout: 8000 });
+                        await reveal(page, '#wb-settings-content [name="wb-access-password"]');
+
+                        const field = '#wb-settings-content [name="wb-access-password"]';
+                        const apply = '#wb-settings-content [data-wb-access-set]';
+
+                        // 输入明文：按输入方式落到字段上。
+                        if (input === 'keyboard') {
+                            await page.focus(field);
+                            await page.keyboard.type('p@ssw0rd-matrix');
+                        } else if (input === 'touch') {
+                            await tap(page, field);
+                            await page.keyboard.type('p@ssw0rd-matrix');
+                        } else {
+                            if (input === 'wheel') {
+                                await scrollBy(page, '#wb-settings-content', 240);
+                                await reveal(page, field);
+                            }
+                            await page.click(field);
+                            await page.keyboard.type('p@ssw0rd-matrix');
+                        }
+                        assert.equal(await page.$eval(field, (el) => el.value), 'p@ssw0rd-matrix');
+
+                        // 提交：按输入方式落到按钮上。
+                        const saved = page.waitForResponse(
+                            (r) => new URL(r.url()).pathname === '/workbench/settings');
+                        switch (input) {
+                            case 'keyboard':
+                                await page.focus(apply);
+                                await page.keyboard.press('Enter');
+                                break;
+                            case 'touch':
+                                await tap(page, apply);
+                                break;
+                            default:
+                                await page.click(apply);
+                                break;
+                        }
+                        const res = await saved;
+                        assert.equal(res.status(), 200, `密码提交应 200，实际 ${res.status()}`);
+                        // 密码表单挂 workbench-settings 对象提供器：请求体是 JSON
+                        // {document, accessPassword}，不是表单编码。
+                        const body = JSON.parse(res.request().postData() || '{}');
+                        assert.equal(body.accessPassword, 'p@ssw0rd-matrix',
+                            '提交的明文必须来自当前输入（对象提供器从密码表单隐藏域读取）');
+                        assert.ok(body.document && typeof body.document === 'object',
+                            '同一跳要带整份文档对象');
+
+                        // 服务端 bcrypt 回填：文档里的哈希以 $2 开头，且文档变脏。
+                        await page.waitForFunction(
+                            () => (window.__wb.doc.settings?.access?.passwordHash || '').startsWith('$2'),
+                            { timeout: 8000 },
+                        ).catch((e) => { throw new Error('哈希没有回填进文档：' + e.message); });
+                        const state = await page.evaluate(() => ({
+                            hash: window.__wb.doc.settings?.access?.passwordHash || '',
+                            type: window.__wb.doc.settings?.access?.type || '',
+                            saveState: window.__wb.saveState,
+                            doc: JSON.stringify(window.__wb.doc),
+                        }));
+                        assert.match(state.hash, /^\$2[aby]\$/, '文档里的必须是 bcrypt 哈希');
+                        assert.equal(state.type, 'password');
+                        assert.equal(state.saveState, 'dirty', '哈希进文档后应标记为未保存');
+                        // 明文绝不进文档（会随 page_revisions 落库）。
+                        assert.ok(!state.doc.includes('p@ssw0rd-matrix'), '明文不得进入文档');
+                        assert.ok(page.errors.length === 0, '页面错误：' + page.errors.join(' | '));
+                    } finally {
+                        await page.close();
+                    }
+                });
+            }
+        }
+
         // 窄视口专项：设置面板的「设置访问密码」按钮在 375 宽下也必须可点。
         for (const vp of VIEWPORTS) {
             await t.test(`${vp.name} · 设置面板密码按钮可操作`, async () => {
