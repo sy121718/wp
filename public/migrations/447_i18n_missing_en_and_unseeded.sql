@@ -1,5 +1,5 @@
--- 447 · 补齐两类缺失词条（共 17 行）：
---   第一类（13 行，只补 en-US）：058 写下的 Msg* 词条只有 zh-CN 行，
+-- 447 · 补齐两类缺失词条（共 13 行）：
+--   第一类（9 行，只补 en-US）：058 写下的 Msg* 词条只有 zh-CN 行，
 --     英文界面因「指定语言缺失 → 默认语言」的降级链**回落成中文**。
 --   第二类（4 行，中英成对）：模板已在取词、但 sys_i18n 与全部迁移里都不存在的 key，
 --     取词只能拿到模板里的中文兜底 —— 英文界面同样是中文。
@@ -11,8 +11,9 @@
 --   remark **不复用 058 的路径** —— 那是 `internal/module/dashboard/enums/dashboard_enums.go`，
 --   而 dashboard 模块早已随页面回迁删除（`internal/shell/errors.go` 有注明）。照抄旧路径
 --   会把后来人指向不存在的文件，故本批逐个核实了每个 key 的真实定义位置（常量值即 key 名）：
---     · MsgAdministratorsTitle / MsgRolesTitle / MsgMenusTitle / MsgPermissionsTitle /
---       MsgDepartmentsTitle / MsgDatarulesTitle → internal/module/admin/inbound/http/admin_pages_handle.go:39-45
+--     · MsgRolesTitle / MsgMenusTitle → internal/module/admin/inbound/http/admin_pages_handle.go:39-45
+--       管理员 / 权限资源 / 部门管理 / 数据权限四个标题已由 735 迁成短 key（adminTitle / permTitle /
+--       deptTitle / dataruleTitle）并清理旧 key，本批不再补它们的 en-US 行。
 --     · MsgBlocksTitle        → internal/module/block/inbound/http/block_page_handle.go:29
 --     · MsgNavigationsTitle   → internal/module/navigation/inbound/http/navigation_page_handle.go:33
 --     · MsgThemesTitle        → internal/module/project/inbound/http/theme_admin_pages.go:33
@@ -39,13 +40,9 @@
 INSERT INTO sys_i18n (item_key, lang, item_value, http_code, category, remark, status, create_time, update_time)
 VALUES
 ('MsgAdminGenericFailed', 'en-US', 'Operation failed, check your input or contact an administrator.', 200, 'ui', '058 遗留词条，Go 侧无引用（本批补 en-US）', 1, now(), now()),
-('MsgAdministratorsTitle', 'en-US', 'Administrators', 200, 'ui', 'internal/module/admin/inbound/http/admin_pages_handle.go:39: 管理员页面标题（本批补 en-US）', 1, now(), now()),
 ('MsgBlocksTitle', 'en-US', 'Global blocks', 200, 'ui', 'internal/module/block/inbound/http/block_page_handle.go:29: 全局块页面标题（本批补 en-US）', 1, now(), now()),
-('MsgDatarulesTitle', 'en-US', 'Data rules', 200, 'ui', 'internal/module/admin/inbound/http/admin_pages_handle.go:45: 数据权限页面标题（本批补 en-US）', 1, now(), now()),
-('MsgDepartmentsTitle', 'en-US', 'Departments', 200, 'ui', 'internal/module/admin/inbound/http/admin_pages_handle.go:44: 部门管理页面标题（本批补 en-US）', 1, now(), now()),
 ('MsgMenusTitle', 'en-US', 'Menus', 200, 'ui', 'internal/module/admin/inbound/http/admin_pages_handle.go:42: 菜单管理页面标题（本批补 en-US）', 1, now(), now()),
 ('MsgNavigationsTitle', 'en-US', 'Navigations', 200, 'ui', 'internal/module/navigation/inbound/http/navigation_page_handle.go:33: 导航菜单页面标题（本批补 en-US）', 1, now(), now()),
-('MsgPermissionsTitle', 'en-US', 'Permissions', 200, 'ui', 'internal/module/admin/inbound/http/admin_pages_handle.go:43: 权限资源页面标题（本批补 en-US）', 1, now(), now()),
 ('MsgRolesTitle', 'en-US', 'Roles', 200, 'ui', 'internal/module/admin/inbound/http/admin_pages_handle.go:40: 角色管理页面标题（本批补 en-US）', 1, now(), now()),
 ('MsgSiteSettingsSaved', 'en-US', 'Site settings saved.', 200, 'ui', '058 遗留词条，Go 侧无引用（本批补 en-US）', 1, now(), now()),
 ('MsgSiteSettingsTitle', 'en-US', 'Site settings', 200, 'ui', 'internal/module/project/inbound/http/site_settings_admin_pages.go:36: 站点设置页面标题（本批补 en-US）', 1, now(), now()),

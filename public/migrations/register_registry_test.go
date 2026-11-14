@@ -260,9 +260,15 @@ var retainedSQLArchives = map[string]struct {
 		"929e33a7d528e2ad8af38ce1b19154918b39bcb89b98401bb40fc671f8d5b195",
 	},
 	"058_i18n_seed_enums.sql": {
-		"747a_current_058_i18n_seed_enums.sql",
+		"758a_current_058_i18n_seed_enums.sql",
 		"eec75d7fd3a811becc60d93f8b189814730741e7bc5949af9c870e8ab97bdceb",
+		"534766839be158346c3256af3a3dd65c31233ab6d667d8ddfae5e386f1f839fb",
+	},
+	// 747a 是 058 的前一版现行源，随 758a 的出现转为精确归档。
+	"747a_current_058_i18n_seed_enums.sql": {
+		"758a_current_058_i18n_seed_enums.sql",
 		"4de2cbe08715ca17c17642897fa091f3330d5651968ef673c9fadabe50f94b2c",
+		"534766839be158346c3256af3a3dd65c31233ab6d667d8ddfae5e386f1f839fb",
 	},
 	"738_shared_error_short_keys_i18n.sql": {
 		"747_shared_feedback_short_keys_i18n.sql",
@@ -398,6 +404,12 @@ var retainedSQLArchives = map[string]struct {
 		"723w_current_449_i18n_product_inventory_go_texts.sql",
 		"ef3c503fb78a000a7f3207c95a742f5a519474b55e8cf04f0220782389ac3e1b",
 		"110b4768cda8501e6a5d47f618a48a8c11669a4844a1bcdf330f4347b1145a36",
+	},
+	// 750a 的历史版本播种点分长 key；现行执行版本改为短 key，旧文件只留档不执行。
+	"750a_article_imported_i18n.sql": {
+		"750a_article_imported_short_keys_i18n.sql",
+		"f25c7e62beb54e7c548e8a0f4b685c20d248461dee6760fdc7b5446d09d3a58a",
+		"a979185443b400b9c7a360901cc26a186504a9b909d1eceb8c5bdf82702a88ee",
 	},
 }
 

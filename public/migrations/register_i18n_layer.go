@@ -242,7 +242,6 @@ func registerI18nDataLayer() {
     ('ErrVariantStorageNotLocal', 'zh-CN'),
     ('ErrVersionRegress', 'zh-CN'),
     ('MsgAdminGenericFailed', 'zh-CN'),
-    ('MsgAdministratorsTitle', 'zh-CN'),
     ('MsgArtifactFound', 'zh-CN'),
     ('MsgArtifactSaved', 'zh-CN'),
     ('MsgBadRequest', 'zh-CN'),
@@ -253,10 +252,8 @@ func registerI18nDataLayer() {
     ('MsgCompileFailed', 'zh-CN'),
     ('MsgCreateSuccess', 'zh-CN'),
     ('MsgDashboardTitle', 'zh-CN'),
-    ('MsgDatarulesTitle', 'zh-CN'),
     ('MsgDeactivated', 'zh-CN'),
     ('MsgDeleteSuccess', 'zh-CN'),
-    ('MsgDepartmentsTitle', 'zh-CN'),
     ('MsgDetailSuccess', 'zh-CN'),
     ('MsgDraftSaved', 'zh-CN'),
     ('MsgFieldRequired', 'zh-CN'),
@@ -269,7 +266,6 @@ func registerI18nDataLayer() {
     ('MsgPageDeleted', 'zh-CN'),
     ('MsgPageDetail', 'zh-CN'),
     ('MsgPagesTitle', 'zh-CN'),
-    ('MsgPermissionsTitle', 'zh-CN'),
     ('MsgProjectCreated', 'zh-CN'),
     ('MsgProjectUpdated', 'zh-CN'),
     ('MsgPublishSuccess', 'zh-CN'),
@@ -306,7 +302,7 @@ func registerI18nDataLayer() {
         'ErrRequestEntityTooLarge', 'msg_operation_success', 'msg_delete_confirm'
     ))
 THEN 1 ELSE 0 END`,
-		SQL: mustSQL("747a_current_058_i18n_seed_enums.sql"),
+		SQL: mustSQL("758a_current_058_i18n_seed_enums.sql"),
 	})
 
 	registerSeed(Seed{

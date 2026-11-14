@@ -164,8 +164,10 @@ func TestSharedFeedback058GuardMatchesExactPairs(t *testing.T) {
 
 	sqlPairs := regexp.MustCompile(`(?m)^\('([^']+)', '([^']+)',`).FindAllStringSubmatch(seed.SQL, -1)
 	condPairs := regexp.MustCompile(`\('([^']+)', '([^']+)'\)`).FindAllStringSubmatch(seed.ConditionSQL, -1)
-	if len(sqlPairs) != 263 {
-		t.Fatalf("058 现行 SQL 的语言对数量改变：%d（应为 263）", len(sqlPairs))
+	// 263 → 259：735 把四个页面标题迁成短 key 后，058 的现行执行源（758a）
+	// 不再播种它们的 zh-CN 行（否则每次启动都会造回单侧 key）。
+	if len(sqlPairs) != 259 {
+		t.Fatalf("058 现行 SQL 的语言对数量改变：%d（应为 259）", len(sqlPairs))
 	}
 	if len(condPairs) != len(sqlPairs) {
 		t.Fatalf("058 守门语言对数 %d 与 SQL 行数 %d 不一致", len(condPairs), len(sqlPairs))

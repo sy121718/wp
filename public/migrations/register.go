@@ -328,4 +328,10 @@ func init() {
 	registerFileCategoryI18n()
 
 	registerPageMissingErrorI18n()
+
+	registerWorkbenchGlobalSaveFailedI18n()
+
+	registerSysconfigErrorI18n()
+
+	registerProductTitleRetiredKeyCleanup()
 }
