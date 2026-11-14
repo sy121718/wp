@@ -1,8 +1,9 @@
 package pagehttp
 
 import (
+	"net/http"
+
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 	"go_wp/internal/middleware/builtin"
 	artifactcontract "go_wp/internal/module/artifact/contract"
 	blockcontract "go_wp/internal/module/block/contract"
@@ -18,6 +19,7 @@ import (
 	"go_wp/pkg/builder/core"
 	mw "go_wp/pkg/middleware"
 	pageview "go_wp/pkg/view"
+	"gorm.io/gorm"
 )
 
 const RedirectPageTemplate = "admin/page/page_redirects.html"
@@ -50,7 +52,7 @@ func SetupPageRoutes(rg *mw.RouteGroup, db *gorm.DB,
 
 	g := rg.Group("/page", builtin.SessionAuthMiddleware())
 
-	registerPageRoutes(g, pages, workbenchPages, handle, adminHandle, svc, projectService)
+	registerPageRoutes(rg.Registry(), g, pages, workbenchPages, handle, adminHandle, svc, projectService)
 
 	pageservice.StartPageRetentionScheduler(svc)
 
@@ -58,7 +60,7 @@ func SetupPageRoutes(rg *mw.RouteGroup, db *gorm.DB,
 	return svc
 }
 
-func registerPageRoutes(g *mw.RouteGroup, pages, workbenchPages *gin.RouterGroup,
+func registerPageRoutes(reg *mw.Registry, g *mw.RouteGroup, pages, workbenchPages *gin.RouterGroup,
 	handle *Handle, adminHandle *pagesAdminHandle,
 	svc pagecontract.PageService, projects projectcontract.ProjectService) {
 
@@ -87,30 +89,63 @@ func registerPageRoutes(g *mw.RouteGroup, pages, workbenchPages *gin.RouterGroup
 	}
 	pages.GET("/pages", mw.PageAuthz("/api/page/list"),
 		pageview.UseRenderer(pageview.RenderPage), adminHandle.PagesList)
+	mw.DeclarePageGetOn(reg, "/admin/pages", "/api/page/list")
 	pages.POST("/pages/create", builtin.CasbinMiddlewareForPath("/api/page/create"), pageview.HTMLFragment, adminHandle.CreatePage)
+	if reg != nil {
+		reg.DeclarePageWrite(http.MethodPost, "/admin/pages/create", "/api/page/create", http.MethodPost)
+	}
 
 	pages.POST("/pages/delete", builtin.CasbinMiddlewareForPath("/api/page/delete"), pageview.HTMLFragment, adminHandle.DeletePage)
+	if reg != nil {
+		reg.DeclarePageWrite(http.MethodPost, "/admin/pages/delete", "/api/page/delete", http.MethodPost)
+	}
 	pages.POST("/pages/bulk-delete", builtin.CasbinMiddlewareForPath("/api/page/delete"), pageview.HTMLFragment, adminHandle.PagesBulkDelete)
+	if reg != nil {
+		reg.DeclarePageWrite(http.MethodPost, "/admin/pages/bulk-delete", "/api/page/delete", http.MethodPost)
+	}
 
 	pages.POST("/projects/create", builtin.CasbinMiddlewareForPath("/api/project/create"), pageview.HTMLFragment, adminHandle.CreateProject)
+	if reg != nil {
+		reg.DeclarePageWrite(http.MethodPost, "/admin/projects/create", "/api/project/create", http.MethodPost)
+	}
 
 	if workbenchPages != nil {
-		workbenchPages.POST("/workbench/history",
+		workbenchPages.POST("/workbench/history", builtin.CasbinMiddlewareForPath("/api/page/draft/save"),
 			pageview.UseRenderer(pageview.RenderBare), adminHandle.HistoryPanel)
+		if reg != nil {
+			reg.DeclarePageWrite(http.MethodPost, "/workbench/history", "/api/page/draft/save", http.MethodPost)
+		}
 		workbenchPages.POST("/workbench/history/restore", builtin.CasbinMiddlewareForPath("/api/page/draft/save"), adminHandle.HistoryRestore)
+		if reg != nil {
+			reg.DeclarePageWrite(http.MethodPost, "/workbench/history/restore", "/api/page/draft/save", http.MethodPost)
+		}
 	}
 
 	pages.POST("/page-langs/exclude", builtin.CasbinMiddlewareForPath("/api/page/publish"), pageview.HTMLFragment, adminHandle.PageLangExclude)
+	if reg != nil {
+		reg.DeclarePageWrite(http.MethodPost, "/admin/page-langs/exclude", "/api/page/publish", http.MethodPost)
+	}
 	pages.POST("/page-langs/restore", builtin.CasbinMiddlewareForPath("/api/page/publish"), pageview.HTMLFragment, adminHandle.PageLangRestore)
+	if reg != nil {
+		reg.DeclarePageWrite(http.MethodPost, "/admin/page-langs/restore", "/api/page/publish", http.MethodPost)
+	}
 
 	pages.POST("/page-langs/republish", builtin.CasbinMiddlewareForPath("/api/page/publish"), pageview.HTMLFragment, adminHandle.PageLangRepublish)
+	if reg != nil {
+		reg.DeclarePageWrite(http.MethodPost, "/admin/page-langs/republish", "/api/page/publish", http.MethodPost)
+	}
 
 	pages.GET("/pages/translations", mw.PageAuthz("/api/page/list"),
 		pageview.UseRenderer(pageview.RenderPage), adminHandle.PageTranslations)
+	mw.DeclarePageGetOn(reg, "/admin/pages/translations", "/api/page/list")
 
 	pages.GET("/page-translation-misses", builtin.CasbinMiddlewareForPath("/api/page/list"),
 		pageview.UseRenderer(pageview.RenderPage), adminHandle.TranslationMissesPage)
+	mw.DeclarePageGetOn(reg, "/admin/page-translation-misses", "/api/page/list")
 	pages.POST("/page-translation-misses/cancel", builtin.CasbinMiddlewareForPath("/api/page/publish"), pageview.HTMLFragment, adminHandle.TranslationMissCancel)
+	if reg != nil {
+		reg.DeclarePageWrite(http.MethodPost, "/admin/page-translation-misses/cancel", "/api/page/publish", http.MethodPost)
+	}
 
 	g.GET("/redirect",
 		pageenums.PageRedirectView,
@@ -120,5 +155,8 @@ func registerPageRoutes(g *mw.RouteGroup, pages, workbenchPages *gin.RouterGroup
 	g.POST("/redirect/delete", pageenums.PageRedirectDelete, pageview.HTMLFragment, handle.RedirectDelete)
 	g.POST("/redirect/merge", pageenums.PageRedirectMerge, pageview.HTMLFragment, handle.RedirectMerge)
 	pages.POST("/page-redirects/bulk-delete", builtin.CasbinMiddlewareForPath("/api/page/redirect/delete"), pageview.HTMLFragment, handle.RedirectBulkDelete)
+	if reg != nil {
+		reg.DeclarePageWrite(http.MethodPost, "/admin/page-redirects/bulk-delete", "/api/page/redirect/delete", http.MethodPost)
+	}
 
 }

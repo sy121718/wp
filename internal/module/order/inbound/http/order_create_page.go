@@ -10,6 +10,7 @@ import (
 	"go_wp/internal/middleware/builtin"
 
 	"github.com/gin-gonic/gin"
+	ginbinding "github.com/gin-gonic/gin/binding"
 
 	ordercontract "go_wp/internal/module/order/contract"
 	orderdto "go_wp/internal/module/order/dto"
@@ -32,8 +33,6 @@ const (
 	orderCreateDefaultRows = 2
 
 	orderCreateMaxRows = 20
-
-	orderCreateParseLimit = 500
 )
 
 type orderCreateItemRow struct {
@@ -113,8 +112,15 @@ func orderCreatedBackURL(projectID string, res *orderdto.CreateOrderResp) string
 
 func (h *orderCreatePageHandle) OrderCreateSubmit(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	form := orderCreateFormFromPost(c)
-	req, fieldErrs := orderCreateReqFromForm(c, form)
+	// 代客建单是普通表单写：Gin 原生 FormPost 只读 body，失败交本域 HTML 出口；
+	// 扁平地址前缀与明细行的装配由 DTO 的 Normalize 显式完成。
+	var form orderdto.AdminOrderCreateFormReq
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		orderWriteBadInput(c, orderenums.ErrInvalidParam)
+		return
+	}
+	form.Normalize()
+	req, fieldErrs := orderCreateReqFromForm(c, &form)
 	if len(fieldErrs) > 0 {
 		orderWriteFail(c, createFormFieldError(fieldErrs))
 		return
@@ -376,123 +382,54 @@ func orderCreateRowCount(raw string) int {
 	return n
 }
 
-func orderCreateFormFromPost(c *gin.Context) orderCreateForm {
-	form := orderCreateForm{
-		ProjectID:        strings.TrimSpace(c.PostForm("project")),
-		CandidateKeyword: strings.TrimSpace(c.PostForm("candidateKeyword")),
-		Email:            strings.TrimSpace(c.PostForm("customerEmail")),
-		CustomerName:     strings.TrimSpace(c.PostForm("customerName")),
-		CustomerPhone:    strings.TrimSpace(c.PostForm("customerPhone")),
-		PayMethod:        strings.TrimSpace(c.PostForm("paymentMethod")),
-		PayTitle:         strings.TrimSpace(c.PostForm("paymentMethodTitle")),
-		Currency:         strings.ToUpper(strings.TrimSpace(c.PostForm("currency"))),
-		ShippingTotal:    strings.TrimSpace(c.PostForm("shippingTotal")),
-		CouponCode:       strings.TrimSpace(c.PostForm("couponCode")),
-		Remark:           strings.TrimSpace(c.PostForm("remark")),
-		AdminNote:        strings.TrimSpace(c.PostForm("adminNote")),
-		RequestID:        strings.TrimSpace(c.PostForm("requestId")),
-
-		ProvisionAccount: c.PostForm("provisionGuestAccount") != "",
-		SameBilling:      c.PostForm("sameBilling") != "",
-		Ship: orderdto.OrderAddress{
-			Name:     strings.TrimSpace(c.PostForm("shipName")),
-			Phone:    strings.TrimSpace(c.PostForm("shipPhone")),
-			Country:  orderdto.NormalizeCountryCode(c.PostForm("shipCountry")),
-			Province: strings.TrimSpace(c.PostForm("shipProvince")),
-			City:     strings.TrimSpace(c.PostForm("shipCity")),
-			District: strings.TrimSpace(c.PostForm("shipDistrict")),
-			Address:  strings.TrimSpace(c.PostForm("shipAddress")),
-			Zip:      strings.TrimSpace(c.PostForm("shipZip")),
-		},
-		Bill: orderdto.OrderAddress{
-			Name:     strings.TrimSpace(c.PostForm("billName")),
-			Phone:    strings.TrimSpace(c.PostForm("billPhone")),
-			Country:  orderdto.NormalizeCountryCode(c.PostForm("billCountry")),
-			Province: strings.TrimSpace(c.PostForm("billProvince")),
-			City:     strings.TrimSpace(c.PostForm("billCity")),
-			District: strings.TrimSpace(c.PostForm("billDistrict")),
-			Address:  strings.TrimSpace(c.PostForm("billAddress")),
-			Zip:      strings.TrimSpace(c.PostForm("billZip")),
-		},
-	}
-	form.Items, form.ItemsTooMany = orderCreateItemRowsFromPost(c)
-	if form.RequestID == "" {
-		form.RequestID = utils.NewTimeOrderedID()
-	}
-	return form
-}
-
-func orderCreateItemRowsFromPost(c *gin.Context) (rows []orderCreateItemRow, tooMany bool) {
-	ids := c.PostFormArray("variantId")
-	quantities := c.PostFormArray("quantity")
-	if len(ids) > orderCreateParseLimit {
-		return []orderCreateItemRow{{}}, true
-	}
-	rows = make([]orderCreateItemRow, 0, len(ids))
-	for i, raw := range ids {
-		qty := ""
-		if i < len(quantities) {
-			qty = strings.TrimSpace(quantities[i])
-		}
-		rows = append(rows, orderCreateItemRow{VariantID: strings.TrimSpace(raw), Quantity: qty})
-	}
-	if len(rows) == 0 {
-		rows = append(rows, orderCreateItemRow{})
-	}
-	return rows, false
-}
-
-func orderCreateReqFromForm(c *gin.Context, form orderCreateForm) (*orderdto.CreateOrderReq, map[string]string) {
+// orderCreateReqFromForm 把已绑定的表单投影成 service 请求，并收集字段级错误。
+// 字段级错误的词条按请求语言取词，所以留在控制器；service 侧的业务校验不重复。
+func orderCreateReqFromForm(c *gin.Context, form *orderdto.AdminOrderCreateFormReq) (*orderdto.CreateOrderReq, map[string]string) {
 	fieldErrs := map[string]string{}
 	tr := orderTr(c)
 
-	if form.Email == "" {
+	if form.CustomerEmail == "" {
 		fieldErrs["customerEmail"] = tr(orderenums.ErrCustomerEmailRequired, orderenums.ErrCustomerEmailRequired)
-	} else if !strings.Contains(form.Email, "@") || len(form.Email) < 3 {
+	} else if !strings.Contains(form.CustomerEmail, "@") || len(form.CustomerEmail) < 3 {
 		fieldErrs["customerEmail"] = tr(orderenums.ErrCustomerEmailInvalid, orderenums.ErrCustomerEmailInvalid)
 	}
 
-	items := make([]orderdto.OrderItemReq, 0, len(form.Items))
-	for _, row := range form.Items {
-		if row.VariantID == "" {
-
-			continue
-		}
-		qty, _ := strconv.Atoi(row.Quantity)
-		items = append(items, orderdto.OrderItemReq{VariantID: row.VariantID, Quantity: qty})
-	}
 	if form.ItemsTooMany {
-
 		fieldErrs["items"] = tr(orderenums.ErrItemLimitExceeded, orderenums.ErrItemLimitExceeded)
-	} else if len(items) == 0 {
+	} else if len(form.Items) == 0 {
 		fieldErrs["items"] = tr(orderenums.ErrItemsRequired, orderenums.ErrItemsRequired)
 	}
 
-	shippingTotal, _ := strconv.ParseInt(strings.TrimSpace(form.ShippingTotal), 10, 64)
+	shippingTotal, _ := strconv.ParseInt(form.ShippingTotal, 10, 64)
 
-	billing := form.Bill
-	if form.SameBilling {
-		billing = form.Ship
+	billing := form.Billing
+	if form.CopyShippingToBilling() {
+		billing = form.Shipping
 	}
 
-	provision := form.ProvisionAccount
+	provision := form.ProvisionAccount()
+
+	requestID := form.RequestID
+	if requestID == "" {
+		requestID = utils.NewTimeOrderedID()
+	}
 
 	return &orderdto.CreateOrderReq{
 		ProjectID:             form.ProjectID,
-		CustomerEmail:         form.Email,
+		CustomerEmail:         form.CustomerEmail,
 		CustomerName:          form.CustomerName,
 		CustomerPhone:         form.CustomerPhone,
-		Items:                 items,
-		Shipping:              form.Ship,
+		Items:                 form.Items,
+		Shipping:              form.Shipping,
 		Billing:               billing,
-		PaymentMethod:         form.PayMethod,
-		PaymentMethodTitle:    form.PayTitle,
+		PaymentMethod:         form.PaymentMethod,
+		PaymentMethodTitle:    form.PaymentMethodTitle,
 		Currency:              form.Currency,
 		ShippingTotal:         shippingTotal,
 		CouponCode:            form.CouponCode,
 		Remark:                form.Remark,
 		AdminNote:             form.AdminNote,
-		RequestID:             form.RequestID,
+		RequestID:             requestID,
 		ProvisionGuestAccount: &provision,
 	}, fieldErrs
 }

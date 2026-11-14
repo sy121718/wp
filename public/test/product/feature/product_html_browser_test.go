@@ -31,6 +31,15 @@ func TestProductHTMLRealBrowser(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = auth.Close() })
+	// 该夹具不走 routers 装配，需接入同一页面事实端口，令牌仍由真实会话签发。
+	pageview.SetAdminPort(pageview.AdminPort{CSRFToken: func(c *gin.Context) string {
+		token, err := builtin.EnsureCSRFToken(c)
+		if err != nil {
+			t.Errorf("签发浏览器 CSRF 令牌失败：%v", err)
+		}
+		return token
+	}})
+	t.Cleanup(func() { pageview.SetAdminPort(pageview.AdminPort{}) })
 	engine, f := newCreateFlowEngine(t, builtin.CSRFMiddleware(), func(c *gin.Context) {
 		if c.Request.Method == "POST" && c.GetHeader("X-Product-Test-Delay") == "1" {
 			time.Sleep(350 * time.Millisecond)

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	ginbinding "github.com/gin-gonic/gin/binding"
 
 	orderdto "go_wp/internal/module/order/dto"
 	orderenums "go_wp/internal/module/order/enums"
@@ -26,15 +27,17 @@ func runOrderBulkWrite[F, T any](c *gin.Context,
 	build func(*gin.Context, *F, []string) ([]*T, bool),
 	call func(context.Context, []*T) error,
 	message string) {
-	form := bindOrderForm[F](c)
-	if form == nil {
+	var form F
+	c.Header("Cache-Control", "no-store")
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		orderWriteBadInput(c, orderenums.ErrInvalidParam)
 		return
 	}
-	ids, ok := orderNormalizeBulkIDs(c, idsOf(form))
+	ids, ok := orderNormalizeBulkIDs(c, idsOf(&form))
 	if !ok {
 		return
 	}
-	reqs, ok := build(c, form, ids)
+	reqs, ok := build(c, &form, ids)
 	if !ok {
 		return
 	}

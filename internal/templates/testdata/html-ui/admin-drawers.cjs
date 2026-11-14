@@ -1,6 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const puppeteer = require(process.env.GOWP_PUPPETEER_MODULE || 'puppeteer-core');
+const { tabTo, activate } = require('./input-matrix.cjs');
 
 // 不替换 fetch、不注入响应 HTML；所有片段都由真实 Controller 与 Jet 返回。
 test('菜单与权限编辑抽屉的真实 HTML 闭环', async t => {
@@ -107,6 +108,46 @@ test('菜单与权限编辑抽屉的真实 HTML 闭环', async t => {
                 assert.deepEqual(errors, []);
                 await page.close();
             });
+        }
+        for (const [width, height] of [[1440, 900], [768, 1024], [375, 812]]) {
+            for (const input of ['mouse', 'wheel', 'touch', 'keyboard']) {
+                await t.test(`生产后台 ${width}px · ${input}：共享抽屉真实滚动与失败保留`, async t => {
+                    const page = await browser.newPage();
+                    t.after(() => page.close());
+                    page.setDefaultTimeout(6000);
+                    await page.setViewport({ width, height, hasTouch: true });
+                    const errors = [];
+                    page.on('pageerror', error => errors.push(error.message));
+                    await page.goto(origin + '/production', { waitUntil: 'networkidle0' });
+                    assert.ok(await page.$('.admin-layout'));
+                    assert.ok(await page.$('link[href="/static/css/theme.css"]'));
+                    if (input === 'keyboard') {
+                        await tabTo(page, '#menu');
+                        await page.keyboard.press('Enter');
+                    } else if (input === 'touch') await page.tap('#menu');
+                    else await page.click('#menu');
+                    const form = '#admin-drawer-body form';
+                    const title = form + ' [name=title]';
+                    const submit = form + ' [type=submit]';
+                    await page.waitForSelector(title, { visible: true });
+                    await page.waitForFunction(() => getComputedStyle(document.querySelector('[data-drawer]')).transform === 'matrix(1, 0, 0, 1, 0, 0)');
+                    if (input === 'keyboard') await tabTo(page, title);
+                    else await page.click(title);
+                    await page.keyboard.type(`未保存-${width}-${input}`);
+                    await page.$eval(form + ' [name=remark]', node => { node.value = 'reject'; });
+                    const before = await page.$eval(title, node => node.value);
+                    const rejected = page.waitForResponse(response => response.url() === origin + '/admin/menus/update');
+                    await activate(page, submit, input, t);
+                    const response = await rejected;
+                    assert.equal(response.status(), 400);
+                    assert.equal(new URLSearchParams(response.request().postData()).get('title'), before);
+                    await page.waitForSelector(form + ' [data-write-status] [data-ui-error]');
+                    assert.equal(await page.$eval(title, node => node.value), before);
+                    assert.equal(await page.$eval('[data-drawer]', node => node.hidden), false);
+                    await page.waitForSelector(submit + ':not([disabled])');
+                    assert.deepEqual(errors, []);
+                });
+            }
         }
     } finally { await browser.close(); }
 });

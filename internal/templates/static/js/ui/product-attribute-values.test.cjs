@@ -77,19 +77,24 @@ function setup() {
     class FakeFormData {
         get(name) { return ({projectId: 'p1', id: 'attr-1'})[name] ?? null; }
     }
-    let builder = null;
+    // 同一个脚本注册两个 provider（值行 / 属性组）：按名字取，不能用「最后一次注册」
+    // 冒充其中一个，否则两个 provider 的语义会互相覆盖测试。
+    const builders = {};
     const sandbox = {
-        window: {WBUI: {writeBase: {registerPayloadBuilder(name, fn) { builder = fn; }}}},
+        window: {WBUI: {writeBase: {registerPayloadBuilder(name, fn) { builders[name] = fn; }}}},
         document: {addEventListener: listen('document')},
         FormData: FakeFormData,
         console,
     };
     vm.createContext(sandbox);
     vm.runInContext(fs.readFileSync(path.join(UI_SRC, 'product-attribute-values.js'), 'utf8'), sandbox);
-    assert.equal(typeof builder, 'function', '脚本必须注册请求对象提供器');
+    assert.equal(typeof builders['product-attribute-values'], 'function', '脚本必须注册值行 provider');
+    assert.equal(typeof builders['product-attribute-group'], 'function', '脚本必须注册属性组 provider');
     return {
         rows, form, fire,
-        payload() { return JSON.parse(JSON.stringify(builder(form))); },
+        payload(name = 'product-attribute-values') {
+            return JSON.parse(JSON.stringify(builders[name](form)));
+        },
         add() {
             fire('click', {closest: selector => selector === '[data-attribute-add]' ? {closest: () => host} : null});
         },
@@ -127,4 +132,14 @@ test('删光属性值后提交空数组，不省略字段', () => {
     const body = s.payload();
     assert.ok(Array.isArray(body.values));
     assert.equal(body.values.length, 0);
+});
+
+// 属性组编辑走 /api/product/attribute/update：DTO 不含 values，编辑抽屉也没有值行。
+// 提交空 values 只会多一个服务端不认识的键，所以没有行时不带它。
+test('属性组编辑没有值行时不提交 values', () => {
+    const s = setup();
+    for (const r of [...s.rows]) s.remove(r);
+    const body = s.payload('product-attribute-group');
+    assert.equal(body.values, undefined);
+    assert.equal(body.id, 'attr-1');
 });

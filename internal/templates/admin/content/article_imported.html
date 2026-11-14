@@ -1,0 +1,6 @@
+{* admin/content/article_imported.html — 文章正文导入画布成功的结论片段。
+
+   与文章新建同一形态：结论由 Jet 取词，工作台入口由新建页面的实体事实生成，
+   发起表单用 data-write-nav="[data-article-imported-link]" 声明下一步。
+   不在后端发 302 —— 界面导航只由发起模板声明。 *}
+<p role="status">{{t("artImportOk", "页面草稿已创建。")}} <a data-article-imported-link href="{{queryURL("/workbench", "id", .PageID)}}">{{t("artVisualOpen", "打开可视化编辑器")}}</a></p>

@@ -11,7 +11,6 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 	sysconfigdto "go_wp/internal/module/sysconfig/dto"
 	sysconfighttp "go_wp/internal/module/sysconfig/inbound/http"
 	sysconfigmodel "go_wp/internal/module/sysconfig/model"
@@ -21,6 +20,7 @@ import (
 	text "go_wp/pkg/view/jet"
 	"go_wp/public/migrations"
 	"go_wp/public/test/support"
+	"gorm.io/gorm"
 )
 
 func newSystemPageEnv(t *testing.T) (*sysconfighttp.AdminHandle, *sysconfigservice.Service, *gorm.DB) {

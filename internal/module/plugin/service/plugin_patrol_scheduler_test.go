@@ -9,8 +9,8 @@ import (
 
 func TestPluginPatrolLoopFirstRunImmediately(t *testing.T) {
 	calls := make(chan struct{}, 8)
-	stop := runPluginPatrolLoop(func() { calls <- struct{}{} }, time.Hour)
-	defer stop()
+	stop, wait := runPluginPatrolLoop(context.Background(), func(context.Context) { calls <- struct{}{} }, time.Hour)
+	defer func() { stop(); wait() }()
 
 	select {
 	case <-calls:
@@ -26,8 +26,8 @@ func TestPluginPatrolLoopFirstRunImmediately(t *testing.T) {
 
 func TestPluginPatrolLoopIntervalDrives(t *testing.T) {
 	var calls atomic.Int32
-	stop := runPluginPatrolLoop(func() { calls.Add(1) }, 10*time.Millisecond)
-	defer stop()
+	stop, wait := runPluginPatrolLoop(context.Background(), func(context.Context) { calls.Add(1) }, 10*time.Millisecond)
+	defer func() { stop(); wait() }()
 
 	time.Sleep(150 * time.Millisecond)
 	if n := calls.Load(); n < 3 {
@@ -38,14 +38,14 @@ func TestPluginPatrolLoopIntervalDrives(t *testing.T) {
 func TestPluginPatrolLoopPanicDoesNotKillLoop(t *testing.T) {
 	var calls atomic.Int32
 	var panicked atomic.Bool
-	stop := runPluginPatrolLoop(func() {
+	stop, wait := runPluginPatrolLoop(context.Background(), func(context.Context) {
 		calls.Add(1)
 
 		if panicked.CompareAndSwap(false, true) {
 			panic("模拟目标方法内部 panic")
 		}
 	}, 10*time.Millisecond)
-	defer stop()
+	defer func() { stop(); wait() }()
 
 	time.Sleep(150 * time.Millisecond)
 	if n := calls.Load(); n < 3 {
@@ -81,6 +81,37 @@ func TestPluginPatrolSchedulerNilService(t *testing.T) {
 			t.Fatalf("nil service 不该 panic：%v", r)
 		}
 	}()
-	StartPluginPatrolSchedulerWithInterval(nil, time.Millisecond)
-	StartPluginPatrolScheduler(nil)
+	StartPluginPatrolSchedulerWithInterval(context.Background(), nil, time.Millisecond)()
+	StartPluginPatrolScheduler(context.Background(), nil)()
+}
+
+// stop 必须等到在途一轮结束（wait 返回）才允许关闭数据库。
+func TestPluginPatrolLoopWaitsInFlightRound(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	stop, wait := runPluginPatrolLoop(context.Background(), func(context.Context) {
+		select {
+		case <-started:
+			return
+		default:
+			close(started)
+		}
+		<-release
+	}, time.Hour)
+
+	<-started
+	stop()
+	done := make(chan struct{})
+	go func() { wait(); close(done) }()
+	select {
+	case <-done:
+		t.Fatal("在途一轮尚未结束时 wait 就返回了 —— 关闭数据库会与巡检并发")
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(release)
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("在途一轮结束后 wait 仍未返回")
+	}
 }

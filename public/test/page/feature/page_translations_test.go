@@ -64,6 +64,8 @@ func newTranslationEnv(t *testing.T) (*gin.Engine, *pagehttp.PagesAdminHandle, *
 
 	router := gin.New()
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
+	router.Use(pageview.UseSuccess(pageview.NewSuccessWriter()))
+	router.Use(pageview.UseRenderer(pageview.RenderFragment))
 	router.Use(pageview.FailureMiddleware(pageview.RenderFailure))
 	router.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	router.GET("/admin/pages/translations", pageview.Slot(pagehttp.PageTranslationsTemplate, pageview.RenderPage), handle.PageTranslations)

@@ -61,9 +61,10 @@ type ModelRowResp struct {
 	InputTypes      []string `json:"inputTypes"`
 }
 
+// ProviderCardBase 是卡片的请求级事实（CSRF、权限集合与按钮）与业务实体的组合输入。
+// 取词不走这里：共享渲染已按请求注入全局 t / tf / tn，模板不再从 data 读翻译函数。
 type ProviderCardBase struct {
 	CSRFToken string
-	T         any
 	PermSet   any
 
 	Buttons any
@@ -78,7 +79,6 @@ type ProviderCardResp struct {
 
 	CSRFToken string `view:"csrf_token"`
 
-	T       any `view:"t"`
 	PermSet any `view:"PermSet"`
 	// Buttons 是权限按钮集合，模板用 isset(.Buttons["ai.provider_save"]) 判控件可见性。
 	// 卡片没透传它，isset 恒为假 —— 所有写控件（保存/启停/删除/模型区）都会被 hidden 掉。

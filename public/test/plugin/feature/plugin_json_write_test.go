@@ -46,7 +46,9 @@ func (s *writeService) Uninstall(_ context.Context, req *plugindto.UninstallReq)
 func pluginWriteTranslations(t *testing.T) {
 	t.Helper()
 	values := map[string]map[string]string{}
-	rowRE := regexp.MustCompile(`(?m)^\('([^']+)', '([^']+)', '((?:[^']|'')*)',`)
+	// 宽松解析：历史 seed 里偶有全角标点混进 SQL（如 uiOpSuccess 的 en-US 行），
+	// 夹具按「前三个单引号字段」取 key/lang/译文即可，不为某一行改生产迁移。
+	rowRE := regexp.MustCompile(`(?m)^\('([^']+)'[,，]\s*'([^']+)'[,，]\s*'((?:[^']|'')*)'`)
 	for _, seed := range migrations.AllSeeds() {
 		for _, row := range rowRE.FindAllStringSubmatch(seed.SQL, -1) {
 			if values[row[1]] == nil {
@@ -55,6 +57,13 @@ func pluginWriteTranslations(t *testing.T) {
 			values[row[1]][row[2]] = strings.ReplaceAll(row[3], "''", "'")
 		}
 	}
+	// 共享成功提示由现行 747 播种（738 已退役，SQL 仍在但不在执行集合里），
+	// 夹具按现行来源补这两条，避免依赖已退役 seed 的文本。
+	if values["uiOpSuccess"] == nil {
+		values["uiOpSuccess"] = map[string]string{}
+	}
+	values["uiOpSuccess"]["zh-CN"] = "操作成功"
+	values["uiOpSuccess"]["en-US"] = "Operation successful"
 	i18n.InjectForTest(values, nil)
 	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
 }
@@ -101,6 +110,9 @@ func TestPluginHTMLWriteContract(t *testing.T) {
 			r.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "internal", "templates"), true)
 			r.Use(pageview.FailureMiddleware(pageview.RenderFailure))
 			r.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
+			// 生产装配里成功出口由 routers 装一次；最小引擎必须同样装配，
+			// 否则 Success() 会按「出口未装配」落成 500。
+			r.Use(pageview.UseSuccess(pageview.NewSuccessWriter()))
 			r.POST("/api/plugin/toggle", pageview.HTMLFragment, h.Toggle)
 			r.POST("/api/plugin/uninstall", pageview.HTMLFragment, h.Uninstall)
 			rec := httptest.NewRecorder()
@@ -150,6 +162,7 @@ func TestPluginHTMLWriteLocalizedReceipts(t *testing.T) {
 			r.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "internal", "templates"), true)
 			r.Use(pageview.FailureMiddleware(pageview.RenderFailure))
 			r.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
+			r.Use(pageview.UseSuccess(pageview.NewSuccessWriter()))
 			r.POST("/api/plugin/toggle", pageview.HTMLFragment, h.Toggle)
 			r.POST("/api/plugin/uninstall", pageview.HTMLFragment, h.Uninstall)
 			req := httptest.NewRequest("POST", "/api/plugin/"+tc.path, strings.NewReader("id=marketing&enabled=false"))
@@ -178,6 +191,7 @@ func TestPluginJSONWriteServiceChain(t *testing.T) {
 	r := gin.New()
 	r.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "internal", "templates"), true)
 	r.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
+	r.Use(pageview.UseSuccess(pageview.NewSuccessWriter()))
 	r.POST("/api/plugin/toggle", h.Toggle)
 	r.POST("/api/plugin/uninstall", h.Uninstall)
 	for _, path := range []string{"toggle", "uninstall"} {
@@ -203,14 +217,14 @@ func TestPluginJSONWriteServiceChain(t *testing.T) {
 
 func TestPluginPageWritesUseExistingRegisteredAPI(t *testing.T) {
 	r := gin.New()
-	pluginhttp.SetupPluginPages(r.Group("/admin"), nil)
+	pluginhttp.SetupPluginPages(nil, r.Group("/admin"), nil)
 	for _, route := range r.Routes() {
 		if route.Path == "/admin/plugins/toggle" || route.Path == "/admin/plugins/uninstall" {
 			t.Fatalf("obsolete page POST registered: %s", route.Path)
 		}
 	}
 
-	pluginhttp.SetupPluginRoutes(mw.NewRouteGroup(r.Group("/api"), mw.RouteProtected), nil, nil)
+	pluginhttp.SetupPluginRoutes(context.Background(), mw.NewRouteGroup(r.Group("/api"), mw.RouteProtected), nil, nil)
 	for _, tc := range []struct {
 		path string
 		perm string

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	json "go_wp/pkg/jsonx"
-	"html"
 	"net/http"
 	"net/url"
 	"os"
@@ -19,11 +18,10 @@ import (
 	maildto "go_wp/internal/module/mail/dto"
 	mailenums "go_wp/internal/module/mail/enums"
 	mailmodel "go_wp/internal/module/mail/model"
-	"go_wp/internal/templates"
+	"go_wp/pkg/binding"
 	"go_wp/pkg/builder/core"
 	"go_wp/pkg/facing"
 	"go_wp/pkg/pagination"
-	"go_wp/pkg/binding"
 	"go_wp/pkg/reqparams"
 	"go_wp/pkg/response"
 	"go_wp/pkg/utils"
@@ -65,13 +63,11 @@ const mailAutomationPageSize = 50
 
 type mailTr func(key, fallback string) string
 
-// mailTranslate 是邮件后台页面/片段的取词闭包。
+// mailTranslate 取**本请求**的取词闭包，与模板里的 t/tf 同源。
 //
-// 它是模板渲染的取词口：页面与片段都经 Jet 的请求作用域，语言取值与模板 t/tf 同源，
-// 因此用 templates.TranslateFunc（Jet 适配层的正式入口），不另造 i18n 直连闭包。
-func mailTranslate(c *gin.Context) mailTr {
-	return templates.TranslateFunc(response.RequestLanguage(c))
-}
+// 它只用于编辑器等结构化数据里必须携带显示名的字段；页面界面句一律留在模板。
+// 不再按语言字符串自建闭包（那会绕过 Jet 的请求作用域，语言取值与模板脱钩）。
+func mailTranslate(c *gin.Context) mailTr { return pageview.ScopeTranslate(c) }
 
 func mailLabel(tr mailTr, pair mailenums.LabelPair) string {
 	if strings.TrimSpace(pair.Key) == "" {
@@ -99,7 +95,7 @@ func (h *mailPageHandle) MailAutomationPage(c *gin.Context) {
 	}
 	if err != nil {
 
-		view.Err = mailErrPageText(c, err)
+		view.Err = mailErrMsg(c, err)
 		pageview.RenderTemplate(c, AutomationPageTemplate, view)
 		return
 	}
@@ -202,7 +198,7 @@ func (h *mailPageHandle) MailAutomationRunDetail(c *gin.Context) {
 
 	mailRunDetailTexts(mailTranslate(c), detail)
 	pageview.RenderTemplate(c, AutomationRunPageTemplate, &AutomationRunPageResp{
-		D:     detail,
+		D: detail,
 	})
 }
 
@@ -282,7 +278,7 @@ func (h *mailPageHandle) MailAutomationRunsPage(c *gin.Context) {
 	}
 	if err != nil {
 
-		view.Err = mailErrPageText(c, err)
+		view.Err = mailErrMsg(c, err)
 		pageview.RenderTemplate(c, AutomationRunsPageTemplate, view)
 		return
 	}
@@ -364,7 +360,7 @@ func (h *mailPageHandle) MailCampaignsPage(c *gin.Context) {
 
 func mailCampaignsErrData(c *gin.Context, err error) *CampaignsPageResp {
 	return &CampaignsPageResp{
-		Err:       mailErrPageText(c, err),
+		Err:       mailErrMsg(c, err),
 		Campaigns: []any{},
 		Accounts:  []any{},
 		Templates: []any{},
@@ -451,8 +447,8 @@ func (h *mailPageHandle) MailCampaignPage(c *gin.Context) {
 		}
 	}
 	view := &CampaignReportPageResp{
-		R:     report,
-		Page:  page,
+		R:    report,
+		Page: page,
 	}
 
 	view.Pagination = pagination.Page{
@@ -583,7 +579,7 @@ func mailContactsListQuery(keyword, status, tags string, page int) string {
 
 func mailContactsErrData(c *gin.Context, err error) *ContactsPageResp {
 	return &ContactsPageResp{
-		Err:        mailErrPageText(c, err),
+		Err:        mailErrMsg(c, err),
 		Contacts:   []any{},
 		Page:       1,
 		TagOptions: []any{},
@@ -719,7 +715,7 @@ func (h *mailPageHandle) MailPage(c *gin.Context) {
 
 func mailPageErrData(c *gin.Context, err error) *AccountsPageResp {
 	return &AccountsPageResp{
-		Err:      mailErrPageText(c, err),
+		Err:      mailErrMsg(c, err),
 		Accounts: []any{},
 	}
 }
@@ -927,7 +923,7 @@ func (h *mailPageHandle) MailTemplatesPage(c *gin.Context) {
 
 func mailTemplatesErrData(c *gin.Context, err error) *TemplatesPageResp {
 	return &TemplatesPageResp{
-		Err:       mailErrPageText(c, err),
+		Err:       mailErrMsg(c, err),
 		Templates: []any{},
 	}
 }
@@ -935,9 +931,6 @@ func mailTemplatesErrData(c *gin.Context, err error) *TemplatesPageResp {
 const (
 	mailTrackLinkInvalidText       = "链接无效或已过期"
 	mailUnsubscribeLinkInvalidText = "退订链接无效或已过期"
-	mailUnsubscribeDoneTitleText   = "已退订"
-	mailUnsubscribeDoneBodyText    = "%s 不会再收到我们的营销邮件。"
-	mailUnsubscribeDoneNoteText    = "事务类邮件（如密码重置、订单通知）不受影响。"
 )
 
 type trackingHandle struct {
@@ -980,30 +973,16 @@ func (h *trackingHandle) Click(c *gin.Context) {
 func (h *trackingHandle) Unsubscribe(c *gin.Context) {
 	email, err := h.svc.UnsubscribeByToken(c.Request.Context(), c.Param("token"), c.ClientIP(), c.Request.UserAgent())
 	if err != nil {
-
 		mailVisitorLogError(c, err, "邮件退订链路处理失败")
+		// 验签/查不到联系人都是「链接无效」这一受控业务事实。
+		// 该端点与点击端点同形：访客拿到纯文本结论，不是 HTML 片段也不是 JSON。
 		c.String(http.StatusBadRequest,
 			mailVisitorText(c, mailenums.ErrUnsubscribeLinkInvalid, mailUnsubscribeLinkInvalidText))
 		return
 	}
-	c.Header("Content-Type", "text/html; charset=utf-8")
-	c.String(http.StatusOK, unsubscribeDonePage(c, email))
-}
-
-func unsubscribeDonePage(c *gin.Context, email string) string {
-	lang := response.RequestLanguage(c)
-	title := html.EscapeString(mailVisitorText(c, mailenums.MsgUnsubscribeDoneTitle, mailUnsubscribeDoneTitleText))
-	body := strings.ReplaceAll(
-		html.EscapeString(mailVisitorText(c, mailenums.MsgUnsubscribeDoneBody, mailUnsubscribeDoneBodyText)),
-		"%s", html.EscapeString(email))
-	note := html.EscapeString(mailVisitorText(c, mailenums.MsgUnsubscribeDoneNote, mailUnsubscribeDoneNoteText))
-
-	return "<!doctype html><html lang=\"" + html.EscapeString(lang) + "\"><head><meta charset=\"utf-8\">" +
-		"<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">" +
-		"<title>" + title + "</title></head><body style=\"font-family:system-ui,sans-serif;max-width:520px;margin:80px auto;padding:0 20px;line-height:1.7\">" +
-		"<h2>" + title + "</h2><p>" + body + "</p>" +
-		"<p>" + note + "</p>" +
-		"</body></html>"
+	// 退订成功是**提示类**响应：文案、结构与语言归公共成功组件与 Jet 取词，
+	// 控制器只交明确的消息事实（收件地址作为参数），不建访客专用页面、不拼 HTML。
+	pageview.SuccessMessage(c, "mailUnsubDone", "%s 不会再收到我们的营销邮件。", email)
 }
 
 const automationEntryKeyDefault = "n1"

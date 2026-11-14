@@ -1,11 +1,12 @@
 package templates
 
 import (
-	"io/fs"
 	contenttemplatedto "go_wp/internal/module/contenttemplate/dto"
 	contenttemplateenums "go_wp/internal/module/contenttemplate/enums"
 	productdto "go_wp/internal/module/product/dto"
+	"go_wp/pkg/facing"
 	"golang.org/x/net/html"
+	"io/fs"
 	"net/url"
 	"path/filepath"
 	"regexp"
@@ -361,7 +362,7 @@ func TestCouponPageRendersLabelsForNumberAndRemarkFields(t *testing.T) {
 func TestContentTemplatesPageRendersGroupedEntitySelect(t *testing.T) {
 	data := groupDData(map[string]any{
 		"Ready": true, "SelectedProject": "pr1", "Projects": groupDProjects(),
-		"EntityType": "", "Err": "", "ImpactNote": "", "ImpactAvailable": true,
+		"EntityType": "", "Err": facing.Msg{}, "ImpactNote": facing.Msg{}, "ImpactAvailable": true,
 		"LoadFailed": false, "TemplateCount": 1,
 
 		"Templates": []contenttemplatedto.TemplateListRowResp{{

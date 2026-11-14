@@ -8,8 +8,8 @@
 // 我们在原配置上补齐 heading2~heading5 与 paragraph。
 //
 // 与 h1 有关的既有约定：本项目原先的服务端白名单把 h1 降级为 h2（一页一个 H1 由页面标题承担）。
-// 本轮产品要求明确「编辑器支持 h1~h5 且白名单放行」，故 core.SanitizeRichHTML 同步改为
-// 保留 h1（见 internal/builder/core/richtext.go 的注释）。
+// 本轮产品要求明确「编辑器支持 h1~h5 且白名单放行」，故 pkg/richtext.SanitizeRichHTML 同步改为
+// 保留 h1（见 pkg/richtext/richtext.go 的白名单）。
 (function () {
     'use strict';
 

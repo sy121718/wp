@@ -8,6 +8,7 @@ import (
 	"go_wp/pkg/builder"
 	"go_wp/pkg/builder/core"
 	"go_wp/pkg/i18n"
+	"go_wp/pkg/richtext"
 )
 
 const p5cDoc = `{
@@ -116,12 +117,12 @@ func TestValidateContentTargetLength(t *testing.T) {
 	}
 
 	richSource := "<p>" + strings.Repeat("x", 100) + "</p>"
-	huge := "<p>" + strings.Repeat("y", core.MaxRichLen) + "</p>"
+	huge := "<p>" + strings.Repeat("y", richtext.MaxRichLen) + "</p>"
 	if err := builder.ValidateContentTarget("core.text.text", richSource, huge); !errors.Is(err, builder.ErrContentTargetTooLong) {
 		t.Fatalf("富文本超 MaxRichLen 应被拒，实际: %v", err)
 	}
 
-	hugePlain := strings.Repeat("z", core.MaxRichLen+1)
+	hugePlain := strings.Repeat("z", richtext.MaxRichLen+1)
 	if err := builder.ValidateContentTarget("core.table.headers", "名称", hugePlain); !errors.Is(err, builder.ErrContentTargetTooLong) {
 		t.Fatalf("嵌套字段超 MaxRichLen 应被拒，实际: %v", err)
 	}

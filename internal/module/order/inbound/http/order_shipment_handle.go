@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	ginbinding "github.com/gin-gonic/gin/binding"
 
 	orderdto "go_wp/internal/module/order/dto"
 	orderenums "go_wp/internal/module/order/enums"
@@ -23,15 +24,12 @@ func (h *Handle) ShipOrder(c *gin.Context) {
 	orderWriteOK(c, "ordShipped")
 }
 
-// shipOrderForm 绑定发货表单：普通字段走原生 binder，明细行是
-// lines[<下标>][<字段>] 的扁平键，由 ShipOrderReq.BindForm 收成结构；
+// shipOrderForm 绑定发货表单：普通字段与三个平行行数组都走显式表单入口，
+// 行数组由 ShipOrderReq.BindForm 按出现顺序配对成 []ShipLineReq；
 // 操作人身份只从会话取。
 func shipOrderForm(c *gin.Context) (*orderdto.ShipOrderReq, bool) {
-	req := bindOrderForm[orderdto.ShipOrderReq](c)
-	if req == nil {
-		return nil, false
-	}
-	if err := req.BindForm(c.Request.PostForm); err != nil {
+	req, err := binding.ParseForm[orderdto.ShipOrderReq](c)
+	if err != nil {
 		orderWriteBadInput(c, orderenums.ErrInvalidParam)
 		return nil, false
 	}
@@ -93,11 +91,13 @@ func (h *Handle) ListCarriers(c *gin.Context) {
 }
 
 func (h *Handle) CreateCarrier(c *gin.Context) {
-	req := bindOrderForm[orderdto.CarrierCreateReq](c)
-	if req == nil {
+	var req orderdto.CarrierCreateReq
+	c.Header("Cache-Control", "no-store")
+	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+		orderWriteBadInput(c, orderenums.ErrInvalidParam)
 		return
 	}
-	if _, err := h.svc.CreateCarrier(c.Request.Context(), req); err != nil {
+	if _, err := h.svc.CreateCarrier(c.Request.Context(), &req); err != nil {
 		orderWriteFail(c, err)
 		return
 	}
@@ -105,11 +105,13 @@ func (h *Handle) CreateCarrier(c *gin.Context) {
 }
 
 func (h *Handle) UpdateCarrier(c *gin.Context) {
-	req := bindOrderForm[orderdto.CarrierUpdateReq](c)
-	if req == nil {
+	var req orderdto.CarrierUpdateReq
+	c.Header("Cache-Control", "no-store")
+	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+		orderWriteBadInput(c, orderenums.ErrInvalidParam)
 		return
 	}
-	if _, err := h.svc.UpdateCarrier(c.Request.Context(), req); err != nil {
+	if _, err := h.svc.UpdateCarrier(c.Request.Context(), &req); err != nil {
 		orderWriteFail(c, err)
 		return
 	}
@@ -130,11 +132,13 @@ func (h *Handle) GetCurrencyRate(c *gin.Context) {
 }
 
 func (h *Handle) SetCurrencyRate(c *gin.Context) {
-	req := bindOrderForm[orderdto.SetRateReq](c)
-	if req == nil {
+	var req orderdto.SetRateReq
+	c.Header("Cache-Control", "no-store")
+	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+		orderWriteBadInput(c, orderenums.ErrInvalidParam)
 		return
 	}
-	res, err := h.svc.SetRate(c.Request.Context(), req)
+	res, err := h.svc.SetRate(c.Request.Context(), &req)
 	if err != nil {
 		response.ErrorAuto(c, 400, "order", err)
 		return

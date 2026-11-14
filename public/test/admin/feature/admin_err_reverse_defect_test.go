@@ -237,3 +237,20 @@ func TestAdminInternalEndpointInfraErrorStaysCollected(t *testing.T) {
 		})
 	}
 }
+
+// 后台 API 写入口已收窄为 JSON：表单编码必须被拒为 400，不能退回双协议。
+func TestAdminAPIWriteEndpointsRejectFormEncodedInput(t *testing.T) {
+	engine := newAdminErrEngine(t, nil)
+	recorder, err := support.SendRequest(engine, support.RequestOptions{
+		Method:  http.MethodPost,
+		Path:    "/api/admin/create",
+		RawBody: []byte("username=editor&email=editor@example.com&password=secret123"),
+		Headers: map[string]string{"Content-Type": "application/x-www-form-urlencoded"},
+	})
+	if err != nil {
+		t.Fatalf("请求失败: %v", err)
+	}
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("表单编码应被拒为 400，实际 %d：%s", recorder.Code, recorder.Body.String())
+	}
+}

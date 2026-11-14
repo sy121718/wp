@@ -3,9 +3,6 @@ package pagehttp
 import (
 	"context"
 	"errors"
-	"go_wp/pkg/binding"
-	json "go_wp/pkg/jsonx"
-	pageview "go_wp/pkg/view"
 	"net/http"
 	"strconv"
 	"strings"
@@ -20,11 +17,16 @@ import (
 	pageenums "go_wp/internal/module/page/enums"
 	projectcontract "go_wp/internal/module/project/contract"
 	projectenums "go_wp/internal/module/project/enums"
+	"go_wp/pkg/binding"
 	bulkids "go_wp/pkg/bulkids"
 	"go_wp/pkg/i18n"
+	json "go_wp/pkg/jsonx"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
 	"go_wp/pkg/utils"
+	pageview "go_wp/pkg/view"
+
+	ginbinding "github.com/gin-gonic/gin/binding"
 )
 
 type pagesAdminHandle struct {
@@ -266,8 +268,9 @@ func focusProjectID(projects []projectcontract.ProjectResp, want string) (id str
 }
 
 func (h *pagesAdminHandle) CreateProject(c *gin.Context) {
-	req, ok := binding.Form[pagedto.ProjectCreateFormReq](c)
-	if !ok {
+	var req pagedto.ProjectCreateFormReq
+	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, pageErrScene, pageenums.Err(pageenums.ErrInvalidParam))
 		return
 	}
 	name := strings.TrimSpace(req.Name)
@@ -287,8 +290,9 @@ func (h *pagesAdminHandle) CreateProject(c *gin.Context) {
 }
 
 func (h *pagesAdminHandle) CreatePage(c *gin.Context) {
-	req, ok := binding.Form[pagedto.PageCreateFormReq](c)
-	if !ok {
+	var req pagedto.PageCreateFormReq
+	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, pageErrScene, pageenums.Err(pageenums.ErrInvalidParam))
 		return
 	}
 	projectID := strings.TrimSpace(req.ProjectID)
@@ -322,8 +326,9 @@ func (h *pagesAdminHandle) CreatePage(c *gin.Context) {
 }
 
 func (h *pagesAdminHandle) DeletePage(c *gin.Context) {
-	req, ok := binding.Form[pagedto.PageDeleteFormReq](c)
-	if !ok {
+	var req pagedto.PageDeleteFormReq
+	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, pageErrScene, pageenums.Err(pageenums.ErrInvalidParam))
 		return
 	}
 	id := strings.TrimSpace(req.ID)
@@ -344,8 +349,9 @@ func (h *pagesAdminHandle) DeletePage(c *gin.Context) {
 // 原始 ids 原样交给 service（去重、上限、形状与引用复核都归 service），
 // 控制器不预过滤也不统计跳过数 —— 要么全成，要么整批拒绝。
 func (h *pagesAdminHandle) PagesBulkDelete(c *gin.Context) {
-	form, ok := binding.Form[pagedto.PageBulkDeleteFormReq](c)
-	if !ok {
+	var form pagedto.PageBulkDeleteFormReq
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, pageErrScene, pageenums.Err(pageenums.ErrInvalidParam))
 		return
 	}
 	if err := h.pages.BulkDelete(c.Request.Context(), &pagedto.BulkDeleteReq{IDs: form.IDs}); err != nil {
@@ -401,11 +407,12 @@ func NewHandle(svc pagecontract.PageService) *Handle {
 }
 
 func (h *Handle) Create(c *gin.Context) {
-	req, ok := binding.JSON[pagedto.CreateReq](c)
-	if !ok {
+	var req pagedto.CreateReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ParamError(c)
 		return
 	}
-	res, err := h.svc.Create(c.Request.Context(), req)
+	res, err := h.svc.Create(c.Request.Context(), &req)
 	if err != nil {
 		response.ErrorStatusAuto(c, pageErrScene, err)
 		return
@@ -440,11 +447,12 @@ func (h *Handle) List(c *gin.Context) {
 }
 
 func (h *Handle) SaveDraft(c *gin.Context) {
-	req, ok := binding.JSON[pagedto.SaveDraftReq](c)
-	if !ok {
+	var req pagedto.SaveDraftReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ParamError(c)
 		return
 	}
-	res, err := h.svc.SaveDraft(c.Request.Context(), req)
+	res, err := h.svc.SaveDraft(c.Request.Context(), &req)
 	if err != nil {
 		response.ErrorStatusAuto(c, pageErrScene, err)
 		return
@@ -453,11 +461,12 @@ func (h *Handle) SaveDraft(c *gin.Context) {
 }
 
 func (h *Handle) Build(c *gin.Context) {
-	req, ok := binding.JSON[pagedto.BuildReq](c)
-	if !ok {
+	var req pagedto.BuildReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ParamError(c)
 		return
 	}
-	res, err := h.svc.Build(c.Request.Context(), req)
+	res, err := h.svc.Build(c.Request.Context(), &req)
 	if err != nil {
 		response.ErrorStatusAuto(c, pageErrScene, err)
 		return
@@ -466,13 +475,14 @@ func (h *Handle) Build(c *gin.Context) {
 }
 
 func (h *Handle) Publish(c *gin.Context) {
-	req, ok := binding.JSON[pagedto.PublishReq](c)
-	if !ok {
+	var req pagedto.PublishReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ParamError(c)
 		return
 	}
 	if req.AllLangs {
 
-		res, err := h.svc.PublishAllLanguages(c.Request.Context(), req)
+		res, err := h.svc.PublishAllLanguages(c.Request.Context(), &req)
 		if err != nil {
 			response.ErrorStatusAuto(c, pageErrScene, err)
 			return
@@ -480,7 +490,7 @@ func (h *Handle) Publish(c *gin.Context) {
 		response.SuccessWithMessage(c, pageenums.MsgPublished, res)
 		return
 	}
-	res, err := h.svc.Publish(c.Request.Context(), req)
+	res, err := h.svc.Publish(c.Request.Context(), &req)
 	if err != nil {
 		response.ErrorStatusAuto(c, pageErrScene, err)
 		return
@@ -489,11 +499,12 @@ func (h *Handle) Publish(c *gin.Context) {
 }
 
 func (h *Handle) RebuildArtifact(c *gin.Context) {
-	req, ok := binding.JSON[pagedto.RebuildArtifactReq](c)
-	if !ok {
+	var req pagedto.RebuildArtifactReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ParamError(c)
 		return
 	}
-	res, err := h.svc.RebuildArtifact(c.Request.Context(), req)
+	res, err := h.svc.RebuildArtifact(c.Request.Context(), &req)
 	if err != nil {
 		response.ErrorStatusAuto(c, pageErrScene, err)
 		return
@@ -502,11 +513,12 @@ func (h *Handle) RebuildArtifact(c *gin.Context) {
 }
 
 func (h *Handle) GarbageCollectArtifacts(c *gin.Context) {
-	req, ok := binding.JSON[pagedto.GCArtifactsReq](c)
-	if !ok {
+	var req pagedto.GCArtifactsReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ParamError(c)
 		return
 	}
-	res, err := h.svc.GarbageCollectArtifacts(c.Request.Context(), req)
+	res, err := h.svc.GarbageCollectArtifacts(c.Request.Context(), &req)
 	if err != nil {
 		response.ErrorStatusAuto(c, pageErrScene, err)
 		return
@@ -537,11 +549,12 @@ func (h *Handle) AuditPublication(c *gin.Context) {
 }
 
 func (h *Handle) Rollback(c *gin.Context) {
-	req, ok := binding.JSON[pagedto.RollbackReq](c)
-	if !ok {
+	var req pagedto.RollbackReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ParamError(c)
 		return
 	}
-	res, err := h.svc.Rollback(c.Request.Context(), req)
+	res, err := h.svc.Rollback(c.Request.Context(), &req)
 	if err != nil {
 		response.ErrorStatusAuto(c, pageErrScene, err)
 		return
@@ -550,11 +563,12 @@ func (h *Handle) Rollback(c *gin.Context) {
 }
 
 func (h *Handle) UpdateURL(c *gin.Context) {
-	req, ok := binding.JSON[pagedto.UpdateURLReq](c)
-	if !ok {
+	var req pagedto.UpdateURLReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ParamError(c)
 		return
 	}
-	res, err := h.svc.UpdateURL(c.Request.Context(), req)
+	res, err := h.svc.UpdateURL(c.Request.Context(), &req)
 	if err != nil {
 		response.ErrorStatusAuto(c, pageErrScene, err)
 		return
@@ -563,11 +577,12 @@ func (h *Handle) UpdateURL(c *gin.Context) {
 }
 
 func (h *Handle) Delete(c *gin.Context) {
-	req, ok := binding.JSON[pagedto.DeleteReq](c)
-	if !ok {
+	var req pagedto.DeleteReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ParamError(c)
 		return
 	}
-	if err := h.svc.Delete(c.Request.Context(), req); err != nil {
+	if err := h.svc.Delete(c.Request.Context(), &req); err != nil {
 		response.ErrorStatusAuto(c, pageErrScene, err)
 		return
 	}
@@ -588,8 +603,10 @@ func (h *Handle) ListRevisions(c *gin.Context) {
 }
 
 func (h *pagesAdminHandle) HistoryPanel(c *gin.Context) {
-	req, ok := binding.Form[pagedto.PageHistoryRestoreFormReq](c)
-	if !ok {
+	// 工作台面板发的是 urlencoded 表单（app-panels/history.js），只读 body、不合并 query。
+	var req pagedto.PageHistoryRestoreFormReq
+	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, pageErrScene, err)
 		return
 	}
 	pageID := strings.TrimSpace(req.PageID)
@@ -615,8 +632,9 @@ func (h *pagesAdminHandle) HistoryPanel(c *gin.Context) {
 
 func (h *pagesAdminHandle) HistoryRestore(c *gin.Context) {
 	ctx := c.Request.Context()
-	req, ok := binding.Form[pagedto.PageHistoryRestoreFormReq](c)
-	if !ok {
+	var req pagedto.PageHistoryRestoreFormReq
+	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, pageErrScene, err)
 		return
 	}
 	pageID := strings.TrimSpace(req.PageID)

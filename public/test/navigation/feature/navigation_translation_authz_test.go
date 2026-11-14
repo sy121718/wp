@@ -135,7 +135,7 @@ func newNavTranslationAuthzEnv(t *testing.T) *navTranslationAuthzEnv {
 			blocks := blockservice.NewService(blockmodel.NewBlockModel(db), projects)
 			pages = pageservice.NewService(pagemodel.NewPageModel(db), artifacts, routes, projects, blocks,
 				nil, nil, navSvc, nil)
-			navigationhttp.SetupNavigationPages(adminPages, navSvc, projects, pages, blocks)
+			navigationhttp.SetupNavigationPages(nil, adminPages, navSvc, projects, pages, blocks)
 
 			wireNavigationTranslationWriter(t, db, navHandle, navImpl, projects)
 

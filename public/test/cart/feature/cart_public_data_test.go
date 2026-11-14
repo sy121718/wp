@@ -91,10 +91,14 @@ func TestCartPublicDataProtocol(t *testing.T) {
 	if !snapshot.Data.Empty || snapshot.Data.Total != 0 || len(snapshot.Data.Items) != 0 {
 		t.Fatalf("空车事实错误:%+v", snapshot.Data)
 	}
-	addBody := `{"projectId":"` + f.projectID + `","variantId":"` + variant + `","quantity":2,"cookie":"attacker","total":1}`
-	request(http.MethodPost, "/api/site/cart/add", "application/json", addBody, "", 403)
-	request(http.MethodPost, "/api/site/cart/add", "application/json", addBody, "admin-token", 403)
-	added := request(http.MethodPost, "/api/site/cart/add", "application/json", addBody, csrf, 200)
+	// 购物车写入口声明为表单协议（builder 组件是标准 form）；attacker 字段必须被忽略。
+	addForm := url.Values{
+		"projectId": {f.projectID}, "variantId": {variant}, "quantity": {"2"},
+		"cookie": {"attacker"}, "total": {"1"},
+	}
+	request(http.MethodPost, "/api/site/cart/add", "application/x-www-form-urlencoded", addForm.Encode(), "", 403)
+	request(http.MethodPost, "/api/site/cart/add", "application/x-www-form-urlencoded", addForm.Encode(), "admin-token", 403)
+	added := request(http.MethodPost, "/api/site/cart/add", "application/x-www-form-urlencoded", addForm.Encode(), csrf, 200)
 	if err := json.Unmarshal(added.Body.Bytes(), &snapshot); err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +109,8 @@ func TestCartPublicDataProtocol(t *testing.T) {
 	if cartCookie == nil || !cartCookie.HttpOnly || cartCookie.SameSite != http.SameSiteLaxMode || cartCookie.Path != "/" {
 		t.Fatalf("购物车cookie安全属性不正确:%+v", cartCookie)
 	}
-	request(http.MethodPost, "/api/site/cart/quantity", "application/json", `{"projectId":"`+f.projectID+`","variantId":"`+variant+`"}`, csrf, 400)
+	request(http.MethodPost, "/api/site/cart/quantity", "application/x-www-form-urlencoded",
+		url.Values{"projectId": {f.projectID}, "variantId": {variant}}.Encode(), csrf, 400)
 
 	unchanged := request(http.MethodGet, "/api/site/cart?projectId="+f.projectID, "", "", "", 200)
 	if err := json.Unmarshal(unchanged.Body.Bytes(), &snapshot); err != nil {
@@ -114,7 +119,8 @@ func TestCartPublicDataProtocol(t *testing.T) {
 	if snapshot.Data.ItemCount != 2 {
 		t.Fatal("失败请求改变了购物车")
 	}
-	request(http.MethodPost, "/api/site/cart/add", "application/json", strings.Replace(addBody, f.projectID, uuid.NewString(), 1), csrf, 404)
+	unknownProject := url.Values{"projectId": {uuid.NewString()}, "variantId": {variant}, "quantity": {"2"}}
+	request(http.MethodPost, "/api/site/cart/add", "application/x-www-form-urlencoded", unknownProject.Encode(), csrf, 404)
 
 	values := url.Values{"projectId": {f.projectID}, "email": {"json-buyer@example.com"}, "name": {"数据访客"}, "phone": {"13800000000"}, "address": {"测试地址"}, "country": {"CN"}, "requestId": {"public-data-checkout"}, "userId": {"987654321"}, "ipAddress": {"attacker"}, "cookie": {"attacker"}}
 	values.Del("address")
@@ -146,7 +152,9 @@ func TestCartPublicDataProtocol(t *testing.T) {
 		t.Fatal("支付失败不得写入付款时间")
 	}
 
-	jsonBody := `{"projectId":"` + f.projectID + `","email":"json-buyer@example.com","name":"数据访客","phone":"13800000000","shipping":{"address":"测试地址","country":"CN"},"requestId":"public-data-checkout"}`
+	// 幂等重放只接受表单编码（urlencoded / multipart 两种）；JSON 已被收窄拒绝。
+	var urlencodedBody bytes.Buffer
+	urlencodedBody.WriteString(values.Encode())
 	var multipartBody bytes.Buffer
 	writer := multipart.NewWriter(&multipartBody)
 	for key, entries := range values {
@@ -160,7 +168,7 @@ func TestCartPublicDataProtocol(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, retry := range []struct{ name, contentType, body string }{
-		{"JSON", "application/json", jsonBody},
+		{"URLencoded", "application/x-www-form-urlencoded", urlencodedBody.String()},
 		{"FormData", writer.FormDataContentType(), multipartBody.String()},
 	} {
 		cookies[cartcontract.CartCookieName] = cartCookie

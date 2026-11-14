@@ -20,7 +20,7 @@
         RULE: 'application/vnd.go-wp.rich-editor.rule+json'
     };
 
-    // 是否「像一段 HTML」：与 Go 侧 internal/builder/core.HasRichMarkup 同口径 ——
+    // 是否「像一段 HTML」：与 Go 侧 pkg/richtext.HasRichMarkup 同口径 ——
     // 出现任意标签 token 就算富文本。用于区分「存量纯文本」与「富文本」。
     var TAG_RE = /<[a-zA-Z!/?][^>]*>/;
 

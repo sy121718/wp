@@ -59,8 +59,10 @@ func TestNavigationsPageRenders(t *testing.T) {
 		`name="dir" value="up"`,
 		`name="dir" value="up"`,
 		`name="dir" value="down"`,
-		`<span data-requires-js hidden><button type="submit" form="nav-up-`,
-		`<span data-requires-js hidden><button type="submit" form="nav-down-`,
+		// 按钮属性组合随「提交期间保持禁用」的 keep-disabled 约定演进过；
+		// 这里只钉住真正要守的：独立表单关联（渲染后 ID 已展开）。
+		`form="nav-up-`,
+		`form="nav-down-`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("排序表单缺少 HTMX 写声明 %q", want)

@@ -183,15 +183,17 @@ func (h *ProductPageHandle) ProductDetailTemplatePage(c *gin.Context) {
 
 func (h *ProductPageHandle) ProductDetailTemplatePreview(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	req, ok := binding.Form[productdto.DetailTemplatePreviewReq](c)
-	if !ok {
+	var req productdto.DetailTemplatePreviewReq
+	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, productenums.Err(productenums.ErrInvalidParam))
 		return
 	}
 	res, err := productservice.PreviewProductDetailTemplate(c.Request.Context(), h.products, h.instances, req.ProjectID, req.ProductID, req.TemplateID)
 	if err != nil {
-		response.ErrorStatusAuto(c, productErrScene, err)
+		pageview.FailScene(c, productErrScene, err)
 		return
 	}
+	// 路由没有声明 HTML 协议：这是数据接口，成功仍交 JSON 结果。
 	response.Success(c, res)
 }
 

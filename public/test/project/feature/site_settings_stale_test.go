@@ -1,8 +1,9 @@
 package feature
 
 import (
-	pageview "go_wp/pkg/view"
 	"context"
+	pageview "go_wp/pkg/view"
+	text "go_wp/pkg/view/jet"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -58,12 +59,15 @@ func TestSaveSiteSettingsMarksStaleOnlyWhenChanged(t *testing.T) {
 		engine := gin.New()
 
 		engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
+		// 与生产装配一致：请求级取词作用域与统一成功出口由应用装一次。
+		engine.Use(pageview.UseSuccess(pageview.NewSuccessWriter()))
+		engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 		engine.POST("/admin/settings/save", pageview.Slot(projecthttp.SiteSettingsPageTemplate, pageview.RenderPage), h.SaveSiteSettings)
 		req := httptest.NewRequest(http.MethodPost, "/admin/settings/save", strings.NewReader(form.Encode()))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		rec := httptest.NewRecorder()
 		engine.ServeHTTP(rec, req)
-		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `data-jump-state="ok"`) {
+		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `role="status"`) {
 			t.Fatalf("保存应 200 渲染成功提示页，实际 %d（body=%s）", rec.Code, rec.Body.String())
 		}
 	}

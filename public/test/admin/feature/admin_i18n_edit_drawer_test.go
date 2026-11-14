@@ -123,7 +123,8 @@ func TestAdminI18nEditDrawerExactPairAndFragment(t *testing.T) {
 			t.Fatalf("列表页缺少 %q：%s", want, page)
 		}
 	}
-	for _, unwanted := range []string{`action="/admin/i18n/`, `hx-post="/admin/i18n/`, "tpl-i18n-edit", "data-bind", "data-drawer-url", "data-write-url", "data-requires-js"} {
+	// data-requires-js 是现行标准：标记「需要 JS 才能用的提交按钮」，不是旧执行器属性。
+	for _, unwanted := range []string{`action="/admin/i18n/`, `hx-post="/admin/i18n/`, "tpl-i18n-edit", "data-bind", "data-drawer-url", "data-write-url"} {
 		if strings.Contains(page, unwanted) {
 			t.Fatalf("列表页不应出现 %q：%s", unwanted, page)
 		}

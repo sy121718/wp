@@ -686,8 +686,10 @@ func TestSourcePermissionsAndMenuSeeded(t *testing.T) {
 		t.Fatalf("查询 inventory 权限点失败: %v", err)
 	}
 
-	if n != 28 {
-		t.Fatalf("inventory 模块应有 28 个权限点（104 已从 10 收到 6），实际 %d", n)
+	// 104 把库存权限从 10 收到 6 之后，采购域 727 等迁移又往同一模块追加了
+	// purchase_* / reason_* / transfer_* 等权限点；现行目录口径是 38。
+	if n != 38 {
+		t.Fatalf("inventory 模块应有 38 个权限点（104 收敛后的 6 个 + 采购/调拨/原因等后续迁移），实际 %d", n)
 	}
 	if err := f.db.Raw("SELECT COUNT(*) FROM sys_menus WHERE type = 2 AND title = '货源管理' AND deleted_at IS NULL").Scan(&n).Error; err != nil {
 		t.Fatalf("查询菜单失败: %v", err)
@@ -725,6 +727,7 @@ func newSourcePageEngine(t *testing.T) (*gin.Engine, *purchaseFixture) {
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(templateRoot(), true)
 	engine.Use(pageview.FailureMiddleware(pageview.RenderFailure))
+	engine.Use(pageview.UseSuccess(pageview.NewSuccessWriter()))
 	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 
 	engine.Use(func(c *gin.Context) {

@@ -49,41 +49,54 @@ func contentTemplateErrMsg(c *gin.Context, err error) contentTemplateMsg {
 	return contentTemplateMsg{Key: fact.Key, Fallback: fallback}
 }
 
-func contentTemplateErrText(c *gin.Context, err error) string {
-	return response.MsgText(c, contentTemplateErrMsg(c, err))
+// contentTemplateInternalMsg 是归口错误事实：取词归模板，Go 不生产成品句。
+func contentTemplateInternalMsg() contentTemplateMsg {
+	return view.InternalMsg()
 }
 
-func contentTemplateInternalText(c *gin.Context, err error) string {
-	if err == nil {
-		return response.MsgText(c, view.InternalMsg())
-	}
-	return view.ErrorFactText(c, view.PageErrorFact(c, contentTemplateErrScene, err))
-}
-
-func sampleErrText(c *gin.Context, hint string, err error) string {
-	if h := strings.TrimSpace(hint); h != "" {
-		return h
+// sampleErrMsg 把样例实体选取失败折成错误事实：
+// 有原因事实就用它；否则用错误事实（内部错误已归口，不透出原文）。
+func sampleErrMsg(_ *gin.Context, hint facing.Msg, err error) contentTemplateMsg {
+	if !hint.Empty() {
+		return hint
 	}
 	if err == nil {
-		return ""
+		return contentTemplateMsg{}
 	}
-	return contentTemplateInternalText(c, err)
+	fact := view.PageErrorFactQuiet(nil, contentTemplateErrScene, err)
+	return contentTemplateMsg{Key: fact.Key, Fallback: fact.Fallback}
 }
 
 const (
-	contentTemplateMissingIDText      = "缺少模板 id"
-	contentTemplateNotFoundText       = "模板不存在"
-	contentTemplateSampleMissingText  = "缺少预览样例实体"
-	contentTemplateHintProductNoMod   = "商品模块未装配，无法自动选取预览样例"
-	contentTemplateHintContentNoMod   = "内容模块未装配，无法自动选取预览样例"
-	contentTemplateHintNoProduct      = "工程内还没有商品，无法预览商品详情模板"
-	contentTemplateHintNoArticle      = "工程内还没有文章，无法预览文章详情模板"
-	contentTemplateHintEntityTypeMiss = "暂不支持该实体类型的预览样例自动选取（本页只支持商品与文章）"
-
-	contentTemplateActivateDoneText = "已切换生效模板，引用它的页面与实例会重新构建。"
-
-	contentTemplateImpactUnavailableText = "引用反查能力未装配：本页无法列出引用这套模板的页面与实例，删除前请人工确认。"
+	contentTemplateMissingIDText     = "缺少模板 id"
+	contentTemplateNotFoundText      = "模板不存在"
+	contentTemplateSampleMissingText = "缺少预览样例实体"
 )
+
+var (
+	contentTemplateHintProductNoMod = facing.Msg{
+		Key: contenttemplateenums.HintProductNoMod, Fallback: "商品模块未装配，无法自动选取预览样例",
+	}
+	contentTemplateHintContentNoMod = facing.Msg{
+		Key: contenttemplateenums.HintContentNoMod, Fallback: "内容模块未装配，无法自动选取预览样例",
+	}
+	contentTemplateHintNoProduct = facing.Msg{
+		Key: contenttemplateenums.HintNoProduct, Fallback: "工程内还没有商品，无法预览商品详情模板",
+	}
+	contentTemplateHintNoArticle = facing.Msg{
+		Key: contenttemplateenums.HintNoArticle, Fallback: "工程内还没有文章，无法预览文章详情模板",
+	}
+	contentTemplateHintEntityTypeMiss = facing.Msg{
+		Key: contenttemplateenums.HintEntityTypeMiss, Fallback: "暂不支持该实体类型的预览样例自动选取（本页只支持商品与文章）",
+	}
+)
+
+const contentTemplateActivateDoneText = "已切换生效模板，引用它的页面与实例会重新构建。"
+
+var contentTemplateImpactUnavailableMsg = facing.Msg{
+	Key:      contenttemplateenums.ImpactUnavailable,
+	Fallback: "引用反查能力未装配：本页无法列出引用这套模板的页面与实例，删除前请人工确认。",
+}
 
 var (
 	contentTemplateMissingIDMsg     = contentTemplateMsg{Fallback: contentTemplateMissingIDText}
@@ -104,7 +117,10 @@ var contentTemplateImpactLoadFailedMsg = contentTemplateMsg{
 	Key: contentTemplateImpactLoadFailedKey, Fallback: contentTemplateImpactLoadFailedFallback,
 }
 
-const contentTemplateImpactUnparsableTemplate = "有 %d 份文档无法解析，影响面可能不完整（这些文档仍可能引用本模板）。"
+var contentTemplateImpactUnparsableMsg = facing.Msg{
+	Key:      contenttemplateenums.ImpactUnparsable,
+	Fallback: "有 %s 份文档无法解析，影响面可能不完整（这些文档仍可能引用本模板）。",
+}
 
 func contentTemplateJump(c *gin.Context, ok bool, msg contentTemplateMsg) {
 	// 回跳由发起页面声明；这里只交结果事实。

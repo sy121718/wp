@@ -57,6 +57,7 @@ func SetupOrderPages(reg *mw.Registry, pages *gin.RouterGroup, svc ordercontract
 		mw.PageAuthz("/api/order/list"),
 		pageview.UseRenderer(pageview.RenderPage),
 		orderPages.OrdersPage)
+	mw.DeclarePageGetOn(reg, "/admin/orders", "/api/order/list")
 
 	salesPages := NewOrderSalesPageHandle(svc, projects)
 
@@ -82,17 +83,22 @@ func SetupOrderPages(reg *mw.Registry, pages *gin.RouterGroup, svc ordercontract
 		mw.PageAuthz("/api/order/list"),
 		pageview.UseRenderer(pageview.RenderPage),
 		orderCreate.OrderCreatePage)
+	mw.DeclarePageGetOn(reg, "/admin/orders/new", "/api/order/list")
 
 	pages.POST("/orders/create",
 		builtin.CasbinMiddlewareForPath("/api/order/create"),
 		pageview.HTMLFragment,
 		orderCreate.OrderCreateSubmit)
+	if reg != nil {
+		reg.DeclarePageWrite(http.MethodPost, "/admin/orders/create", "/api/order/create", http.MethodPost)
+	}
 
 	returnPages := NewReturnPageHandle(svc, projects, warehouses, dict)
 	pages.GET("/returns",
 		mw.PageAuthz("/api/order/return/list"),
 		pageview.UseRenderer(pageview.RenderPage),
 		returnPages.ReturnsPage)
+	mw.DeclarePageGetOn(reg, "/admin/returns", "/api/order/return/list")
 
 	shipPages := NewOrderShipmentPageHandle(svc, projects)
 	pages.GET("/orders/pending-ship", mw.PageAuthz("/api/order/shipment/pending"),
@@ -100,6 +106,7 @@ func SetupOrderPages(reg *mw.Registry, pages *gin.RouterGroup, svc ordercontract
 
 	pages.GET("/orders/ship-form", builtin.CasbinMiddlewareForPathAs("/api/order/shipment/create", http.MethodPost),
 		pageview.UseRenderer(pageview.RenderBare), shipPages.ShipFormFragment)
+	mw.DeclarePageGetAsOn(reg, "/admin/orders/ship-form", "/api/order/shipment/create", http.MethodPost)
 	pages.GET("/order-carriers", mw.PageAuthz("/api/order/carrier/list"),
 		pageview.UseRenderer(pageview.RenderPage), shipPages.OrderCarriersPage)
 
@@ -119,8 +126,10 @@ func SetupOrderPages(reg *mw.Registry, pages *gin.RouterGroup, svc ordercontract
 		mw.PageAuthz("/api/order/coupon/list"),
 		pageview.UseRenderer(pageview.RenderPage),
 		couponPages.CouponsPage)
+	mw.DeclarePageGetOn(reg, "/admin/coupons", "/api/order/coupon/list")
 	pages.GET("/coupons/edit-form",
 		builtin.CasbinMiddlewareForPathAs("/api/order/coupon/update", http.MethodPost),
 		pageview.UseRenderer(pageview.RenderBare),
 		couponPages.CouponEditForm)
+	mw.DeclarePageGetAsOn(reg, "/admin/coupons/edit-form", "/api/order/coupon/update", http.MethodPost)
 }

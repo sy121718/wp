@@ -77,7 +77,7 @@
 
     // ── 装载：隐藏 input 的 HTML → 编辑器能接受的 HTML ─────────────────────────
     function hydrateValue(raw) {
-        // 纯文本走「转义 + 分段」，与 Go 侧 core.RichTextHTML 同口径。
+        // 纯文本走「转义 + 分段」，与 Go 侧 pkg/richtext.RichTextHTML 同口径。
         var html = SRE.util.safeEditorHTML(raw);
         if (!html || !SRE.util.hasRichMarkup(html) || !html.match(/<(table|details|hr)[\s/>]/i)) {
             return html;

@@ -37,3 +37,19 @@ type MailTemplateQuery struct {
 type MailAccountQuery struct {
 	AccountPage string `form:"account_page"`
 }
+
+// 邮件 API 的只读查询串入口：删除 / 默认 / 定时这几条写端点只从 URL query
+// 取标识与上限，body 不参与。声明成 DTO 后写端点契约能给出确定协议与字段表，
+// 不再逐字段手工读查询串。
+type MailIDQuery struct {
+	ID string `form:"id"`
+}
+
+type MailTemplateKeyQuery struct {
+	TemplateKey string `form:"templateKey"`
+	Locale      string `form:"locale"`
+}
+
+type MailTickQuery struct {
+	Limit int `form:"limit"`
+}

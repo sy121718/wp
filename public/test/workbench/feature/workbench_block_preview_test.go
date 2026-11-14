@@ -66,7 +66,7 @@ func TestBlockDraftPreviewReadonlyScopedAndVersioned(t *testing.T) {
 		c.Set("user_id", id)
 		c.Next()
 	})
-	workbenchhttp.SetupWorkbenchRoutes(group, pages, projects, blocks, nil, nil, nil, nil, nil, nil, nil)
+	workbenchhttp.SetupWorkbenchRoutes(nil, group, pages, projects, blocks, nil, nil, nil, nil, nil, nil, nil)
 	writes := 0
 	for name, register := range map[string]func(string, func(*gorm.DB)) error{
 		"create": db.Callback().Create().Before("gorm:create").Register,

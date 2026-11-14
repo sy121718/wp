@@ -264,8 +264,10 @@ func TestMailContactDeleteSingleAndBulk(t *testing.T) {
 		t.Fatalf("混合非法 id 应整批 400，实际 %d：%s", rec.Code, rec.Body.String())
 	}
 	body := assertMailWriteHTML(t, rec)
-	if !strings.Contains(body, "BATCH-REJECTED-EN") || strings.Contains(body, "PARAM-INVALID-EN") {
-		t.Fatalf("失败区只播报公共一句，不逐条拼明细：%s", body)
+	// 整批拒绝要能定位具体对象：公共一句之外，逐条 id/原因必须在**本响应**里渲染。
+	// HTML 页面没有另一份 JSON data，把明细藏起来等于让用户无从修正输入。
+	if !strings.Contains(body, "BATCH-REJECTED-EN") || !strings.Contains(body, "PARAM-INVALID-EN") {
+		t.Fatalf("整批拒绝应同时给出公共原因与可定位明细：%s", body)
 	}
 	if len(stub.deleted) != before {
 		t.Fatalf("非法批次不该进 service，实际多调用 %d 次", len(stub.deleted)-before)
@@ -288,7 +290,7 @@ func TestMailContactDeleteMissingRowIsNotReportedAsSuccess(t *testing.T) {
 		t.Fatalf("真实删除 0 行却报了成功：%s", body)
 	}
 	if !strings.Contains(body, "NOT-FOUND-EN") {
-		t.Fatalf("单项拒绝应给具体业务原因，逐条明细仍只进 data.items：%s", body)
+		t.Fatalf("单项拒绝应给具体业务原因（HTML 里就要取到词）：%s", body)
 	}
 }
 

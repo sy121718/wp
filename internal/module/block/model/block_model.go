@@ -123,8 +123,18 @@ func (m *Model) GetByID(ctx context.Context, id string, projectID string) (e *Bl
 	return e, nil
 }
 
-func (m *Model) UpdateDocumentTx(ctx context.Context, projectID, id string, expectedVersion uint64,
+// UpdateDocumentTx 在调用方事务内按版本号更新块文档。
+//
+// 事务句柄必须由调用方传入：引用复核、工程内容锁与这次写入要在**同一个事务、
+// 同一条连接**上。此前这里自己开 rls.InProjectScope，内层事务跑在另一条连接，
+// 既看不到外层 set_config('app.project_id')，也让「复核通过到提交之间」重新出现
+// 竞态窗口；连接池上限为 1 时还会直接死锁。名字里的 Tx 就是这个约定，
+// 与 DeleteTx / LockByIDsTx / ListBlockDocumentRefsTx 一致。
+func (m *Model) UpdateDocumentTx(ctx context.Context, tx *gorm.DB, projectID, id string, expectedVersion uint64,
 	name, kind, category, reuseMode string, document json.RawMessage, updatedAt time.Time) (affected int64, err error) {
+	if tx == nil {
+		return 0, rls.ErrNotInTransaction
+	}
 	updates := map[string]any{
 		"name": name, "kind": kind, "category": category, "reuse_mode": reuseMode,
 		"document": document, "update_time": updatedAt,
@@ -133,19 +143,10 @@ func (m *Model) UpdateDocumentTx(ctx context.Context, projectID, id string, expe
 		return 0, gorm.ErrInvalidData
 	}
 	updates["version"] = gorm.Expr("version + 1")
-	apply := func(db *gorm.DB) error {
-		q := db.Model(&BlockEntity{}).Where("id = ?", id)
-		q = q.Where("version = ?", expectedVersion)
-		res := q.Updates(updates)
-		affected, err = res.RowsAffected, res.Error
-		return res.Error
-	}
-	if strings.TrimSpace(projectID) == "" {
-		err = apply(m.DB(ctx))
-		return affected, err
-	}
-	err = rls.InProjectScope(ctx, m.db, projectID, apply)
-	return affected, err
+	q := tx.WithContext(ctx).Model(&BlockEntity{}).Where("id = ? AND project_id = ?", id, projectID)
+	q = q.Where("version = ?", expectedVersion)
+	res := q.Updates(updates)
+	return res.RowsAffected, res.Error
 }
 
 type BlockDocRefRow struct {

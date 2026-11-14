@@ -1,6 +1,7 @@
 package mailservice
 
 import (
+	"context"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -38,7 +39,7 @@ func TestMailAutomationTickIntervalWithinShortestDelay(t *testing.T) {
 func TestRunMailAutomationTickLoopFirstRunThenInterval(t *testing.T) {
 
 	var first int32
-	stopFirst := runMailAutomationTickLoop(func() { atomic.AddInt32(&first, 1) }, 2*time.Second)
+	stopFirst := runMailAutomationTickLoop(context.Background(), func(context.Context) { atomic.AddInt32(&first, 1) }, 2*time.Second)
 	defer stopFirst()
 	deadline := time.Now().Add(300 * time.Millisecond)
 	for atomic.LoadInt32(&first) == 0 && time.Now().Before(deadline) {
@@ -50,7 +51,7 @@ func TestRunMailAutomationTickLoopFirstRunThenInterval(t *testing.T) {
 	stopFirst()
 
 	var count int32
-	stop := runMailAutomationTickLoop(func() { atomic.AddInt32(&count, 1) }, 20*time.Millisecond)
+	stop := runMailAutomationTickLoop(context.Background(), func(context.Context) { atomic.AddInt32(&count, 1) }, 20*time.Millisecond)
 	defer stop()
 	deadline = time.Now().Add(3 * time.Second)
 	for atomic.LoadInt32(&count) < 3 && time.Now().Before(deadline) {
@@ -74,8 +75,39 @@ func TestStartMailAutomationSchedulerSkippedInTestProcess(t *testing.T) {
 		t.Fatal("前提不成立：测试进程应当被 utils.IsTestProcess() 识别")
 	}
 
-	StartMailAutomationScheduler(nil)
-	StartMailAutomationScheduler(&Service{})
+	StartMailAutomationScheduler(context.Background(), nil)
+	StartMailAutomationScheduler(context.Background(), &Service{})
 
-	StartMailAutomationSchedulerWithInterval(nil, time.Millisecond)
+	StartMailAutomationSchedulerWithInterval(context.Background(), nil, time.Millisecond)
+}
+
+// 关键出口：先 cancel 再 stop 时，stop 必须等在途一轮结束（关闭数据库不能抢跑）。
+func TestMailAutomationStopWaitsInFlightRound(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	ctx, cancel := context.WithCancel(context.Background())
+	stop := runMailAutomationTickLoop(ctx, func(context.Context) {
+		close(started)
+		<-release
+	}, time.Hour)
+	<-started
+	cancel()
+	done := make(chan struct{})
+	go func() { stop(); close(done) }()
+	select {
+	case <-done:
+		t.Fatal("在途一轮未结束时 stop 就返回了")
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(release)
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("在途一轮结束后 stop 仍未返回")
+	}
+}
+
+// 邮件保留期清理同样接应用 ctx：nil service 不应启动或 panic。
+func TestMailRetentionSchedulerNilService(t *testing.T) {
+	StartMailRetentionSchedulerWithInterval(context.Background(), nil, time.Millisecond)()
 }

@@ -24,11 +24,11 @@
         · {{form.CustomerName}} · {{tr("admin.order.shipForm.total", "金额")}} {{form.Total}}
     </p>
 
-    {* data-transfer-lines-name 是给写表单契约扫描器的纯声明：控件名是
-       lines[{{l.OrderItemID}}][…] 这种动态形状，扫描器遇到含 {{ 的 name 会跳过，
-       看不到表单其实会交一个叫 lines 的顶层字段。这个属性不激活任何 JS
-       （动态增删行认的是 data-transfer-lines），只是把字段名报给门禁。 *}
-    <div class="table-wrap" data-transfer-lines-name="lines">
+    {* 明细行用三个**不带动态下标**的平行键（lines[][orderItemId] /
+       lines[][quantity] / lines[][warehouseId]）：同一个键按控件出现顺序保留
+       多个值，BindForm 按顺序配对。每行必须同时提交这三个控件（两个 hidden
+       常驻提交），删掉其中一个会让数组长度不一致、整单被拒 —— 不会串行发货。 *}
+    <div class="table-wrap">
     <table class="data-table">
         <thead>
         <tr>
@@ -50,15 +50,15 @@
             <td>{{l.Shipped}}</td>
             <td>{{l.Remaining}}</td>
             <td>
-                <input type="hidden" name="lines[{{l.OrderItemID}}][orderItemId]" value="{{l.OrderItemID}}">
+                <input type="hidden" name="lines[][orderItemId]" value="{{l.OrderItemID}}">
                 {* max = Remaining（service 算好的剩余）：超量会在服务端被
                    ErrShipQuantityExceeded 打回，前端这道只是当场提示。 *}
-                <input type="number" class="form-input stock-qty" name="lines[{{l.OrderItemID}}][quantity]"
+                <input type="number" class="form-input stock-qty" name="lines[][quantity]"
                        inputmode="numeric" step="1" min="0" max="{{l.Remaining}}"
                        placeholder="0" aria-label="{{tr("admin.order.shipForm.col.thisTime", "本次")}}">
             </td>
             <td>
-                <input type="hidden" name="lines[{{l.OrderItemID}}][warehouseId]" value="{{l.WarehouseID}}">
+                <input type="hidden" name="lines[][warehouseId]" value="{{l.WarehouseID}}">
                 {{if l.WarehouseName != ""}}{{l.WarehouseName}}{{else}}{{tr("admin.order.shipForm.warehouseMissing", "（下单时没定仓，需指定）")}}{{end}}
             </td>
         </tr>

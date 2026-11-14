@@ -20,6 +20,7 @@ import (
 	"go_wp/pkg/response"
 
 	"github.com/gin-gonic/gin"
+	ginbinding "github.com/gin-gonic/gin/binding"
 )
 
 type Handle struct {
@@ -31,17 +32,12 @@ func NewHandle(svc mediacontract.MediaService) *Handle {
 }
 
 func (h *Handle) Upload(c *gin.Context) {
-	file, err := c.FormFile("file")
-	if err != nil {
+	var form mediadto.UploadReq
+	if err := c.ShouldBindWith(&form, ginbinding.FormMultipart); err != nil || form.File == nil {
 		response.ParamError(c, mediaenums.ErrUploadEmpty)
 		return
 	}
-
-	form, ok := binding.Form[mediadto.UploadReq](c)
-	if !ok {
-		return
-	}
-	att, err := h.svc.Upload(c.Request.Context(), file, form.CategoryIDValue())
+	att, err := h.svc.Upload(c.Request.Context(), form.File, form.CategoryIDValue())
 	if err != nil {
 		response.ErrorStatusAuto(c, "media", err)
 		return
@@ -78,12 +74,13 @@ func (h *Handle) Detail(c *gin.Context) {
 }
 
 func (h *Handle) Delete(c *gin.Context) {
-	req, ok := binding.JSON[mediadto.DeleteReq](c)
-	if !ok {
+	var req mediadto.DeleteReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ParamError(c)
 		return
 	}
 
-	if err := h.svc.Delete(c.Request.Context(), req); err != nil {
+	if err := h.svc.Delete(c.Request.Context(), &req); err != nil {
 		response.ErrorStatusAuto(c, "media", err)
 		return
 	}
@@ -91,20 +88,22 @@ func (h *Handle) Delete(c *gin.Context) {
 }
 
 func (h *Handle) Replace(c *gin.Context) {
-	form, ok := binding.Form[mediadto.ReplaceReq](c)
-	if !ok {
+	// 替换是明确的 multipart 上传：文件头与 id 一起绑定，只解析一次请求体。
+	var form mediadto.ReplaceReq
+	if err := c.ShouldBindWith(&form, ginbinding.FormMultipart); err != nil {
+		response.ParamError(c, mediaenums.MsgBadRequest)
 		return
 	}
 	if form.ID == 0 {
 		response.ParamError(c, mediaenums.MsgBadRequest)
 		return
 	}
-	id := form.ID
-	file, err := c.FormFile("file")
-	if err != nil {
+	if form.File == nil {
 		response.ParamError(c, mediaenums.ErrUploadEmpty)
 		return
 	}
+	id := form.ID
+	file := form.File
 	att, err := h.svc.Replace(c.Request.Context(), id, file)
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "media", err)
@@ -137,11 +136,12 @@ func (h *Handle) CategoryTree(c *gin.Context) {
 }
 
 func (h *Handle) CategoryCreate(c *gin.Context) {
-	req, ok := binding.JSON[mediadto.CategoryCreateReq](c)
-	if !ok {
+	var req mediadto.CategoryCreateReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ParamError(c)
 		return
 	}
-	res, err := h.svc.CreateCategory(c.Request.Context(), req)
+	res, err := h.svc.CreateCategory(c.Request.Context(), &req)
 	if err != nil {
 		response.ErrorStatusAuto(c, "media", err)
 		return
@@ -150,11 +150,12 @@ func (h *Handle) CategoryCreate(c *gin.Context) {
 }
 
 func (h *Handle) CategoryUpdate(c *gin.Context) {
-	req, ok := binding.JSON[mediadto.CategoryUpdateReq](c)
-	if !ok {
+	var req mediadto.CategoryUpdateReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ParamError(c)
 		return
 	}
-	if err := h.svc.UpdateCategory(c.Request.Context(), req); err != nil {
+	if err := h.svc.UpdateCategory(c.Request.Context(), &req); err != nil {
 		response.ErrorStatusAuto(c, "media", err)
 		return
 	}
@@ -162,11 +163,12 @@ func (h *Handle) CategoryUpdate(c *gin.Context) {
 }
 
 func (h *Handle) CategoryDelete(c *gin.Context) {
-	req, ok := binding.JSON[mediadto.CategoryDeleteReq](c)
-	if !ok {
+	var req mediadto.CategoryDeleteReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ParamError(c)
 		return
 	}
-	if err := h.svc.DeleteCategory(c.Request.Context(), req); err != nil {
+	if err := h.svc.DeleteCategory(c.Request.Context(), &req); err != nil {
 		response.ErrorStatusAuto(c, "media", err)
 		return
 	}
@@ -174,11 +176,12 @@ func (h *Handle) CategoryDelete(c *gin.Context) {
 }
 
 func (h *Handle) UpdateAttachment(c *gin.Context) {
-	req, ok := binding.JSON[mediadto.AttachmentUpdateReq](c)
-	if !ok {
+	var req mediadto.AttachmentUpdateReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ParamError(c)
 		return
 	}
-	if err := h.svc.UpdateAttachment(c.Request.Context(), req); err != nil {
+	if err := h.svc.UpdateAttachment(c.Request.Context(), &req); err != nil {
 		response.ErrorStatusAuto(c, "media", err)
 		return
 	}
@@ -186,8 +189,9 @@ func (h *Handle) UpdateAttachment(c *gin.Context) {
 }
 
 func (h *Handle) GenerateVariants(c *gin.Context) {
-	req, ok := binding.JSON[mediadto.VariantsGenerateReq](c)
-	if !ok {
+	var req mediadto.VariantsGenerateReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ParamError(c)
 		return
 	}
 	variants, err := h.svc.GenerateVariants(c.Request.Context(), req.ID)

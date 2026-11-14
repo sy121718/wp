@@ -2,6 +2,7 @@ package feature
 
 import (
 	"context"
+	json "go_wp/pkg/jsonx"
 	"strings"
 	"testing"
 
@@ -71,22 +72,14 @@ func TestPageStructureSlotTemplateCrossProjectFailsPublish(t *testing.T) {
 	}
 
 	bindThemeStructure(t, db, projectID, map[string]any{"headerTemplateId": foreign.ID})
-	pageID, _, templateID := createPageAndReadStructure(t, svc, projectID, "/slot-cross-project")
-	if templateID != foreign.ID {
-		t.Fatalf("settings.structure 应保留模板绑定: %s", templateID)
-	}
-
-	_, err = svc.Build(ctx, &pagedto.BuildReq{ID: pageID})
-	if err == nil {
-		t.Fatal("绑定了别的工程的结构模板时发布必须失败")
-	}
-	if !strings.Contains(err.Error(), "结构槽位 header") || !strings.Contains(err.Error(), foreign.ID) {
-		t.Fatalf("失败原因必须能定位到槽位与那份模板，实际: %v", err)
-	}
-
-	preview := previewOf(t, svc, projectID, pageID, "/slot-cross-project")
-	if !containsBytes([]byte(preview), []byte(`data-sky-degrade="ref_template_unavailable"`)) {
-		t.Fatalf("预览应输出归因到结构模板的占位: %s", preview[:min(len(preview), 800)])
+	// 跨工程模板在写入事务内按工程作用域复核：本工程看不到它，页面创建必须拒绝，
+	// 而不是先落一份跨工程引用、等到发布才失败。
+	_, createErr := svc.Create(ctx, &pagedto.CreateReq{
+		ProjectID: projectID, Kind: "home", ContentTargetType: "none",
+		DraftPath: "/slot-cross-project", DraftDocument: json.RawMessage(pageDocument),
+	})
+	if createErr == nil {
+		t.Fatal("绑定别的工程的结构模板时页面创建必须失败")
 	}
 }
 

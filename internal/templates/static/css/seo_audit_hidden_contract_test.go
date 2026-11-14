@@ -8,22 +8,27 @@ import (
 	"testing"
 )
 
+// readCSSDir 读**所有样式源**：公共 UI 资产（pkg/view/ui/assets/css）与应用专用
+// 样式（本目录）。资产搬迁后只看本目录会漏掉 theme.css，让这条断言变成永远读不到
+// 规则的空检查 —— 它守的是「作用域复位存在」，不是「它在本目录」。
 func readCSSDir(t *testing.T) map[string]string {
 	t.Helper()
 	out := map[string]string{}
-	entries, err := os.ReadDir(".")
-	if err != nil {
-		t.Fatalf("读样式目录失败: %v", err)
-	}
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".css") {
-			continue
-		}
-		b, err := os.ReadFile(filepath.Join(".", e.Name()))
+	for _, dir := range []string{".", "../../../../pkg/view/ui/assets/css"} {
+		entries, err := os.ReadDir(dir)
 		if err != nil {
-			t.Fatalf("读 %s 失败: %v", e.Name(), err)
+			t.Fatalf("读样式目录 %s 失败: %v", dir, err)
 		}
-		out[e.Name()] = string(b)
+		for _, e := range entries {
+			if e.IsDir() || !strings.HasSuffix(e.Name(), ".css") {
+				continue
+			}
+			b, err := os.ReadFile(filepath.Join(dir, e.Name()))
+			if err != nil {
+				t.Fatalf("读 %s 失败: %v", filepath.Join(dir, e.Name()), err)
+			}
+			out[filepath.Join(dir, e.Name())] = string(b)
+		}
 	}
 	if len(out) == 0 {
 		t.Fatal("样式目录下没有 .css 文件（相对路径不对？）")

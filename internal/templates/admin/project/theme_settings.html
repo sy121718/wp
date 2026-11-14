@@ -213,9 +213,12 @@
             <input type="hidden" name="structureTemplateFields" value="1">
             {* 其余槽位的模板绑定（当前是公告条等）仍只做原样回传：这些槽位在本页没有下拉，
                清空它们等于丢掉别处配好的绑定。 *}
-            {{if isset(.SlotTemplates)}}{{range slot, id := .SlotTemplates}}
-            <input type="hidden" name="slotTemplates.{{slot}}" value="{{id}}">
-            {{end}}{{end}}
+            {{if isset(.SlotTemplates)}}
+              {{range slot, id := .SlotTemplates}}
+            <input type="hidden" name="slotTemplateSlot" value="{{slot}}">
+            <input type="hidden" name="slotTemplateID" value="{{id}}">
+              {{end}}
+            {{end}}
 
             <div class="form-inline theme-actions">
                 <button type="submit" class="btn btn-primary">{{ .["t"]("admin.theme_settings.save", "保存并应用到该主题页面") }}</button>

@@ -33,6 +33,7 @@ func newPurchasePageEngine(t *testing.T) (*gin.Engine, *purchaseFixture) {
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(templateRoot(), true)
 	engine.Use(pageview.FailureMiddleware(pageview.RenderFailure))
+	engine.Use(pageview.UseSuccess(pageview.NewSuccessWriter()))
 	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 
 	engine.Use(func(c *gin.Context) {
@@ -292,7 +293,7 @@ func TestPurchasePageMultiDeviceContract(t *testing.T) {
 		t.Fatalf("工程切换 + 采购单筛选都用 GET，模板里有 %d 处", got)
 	}
 
-	raw, err := os.ReadFile(templateRoot() + "/static/css/theme.css")
+	raw, err := os.ReadFile("../../../../pkg/view/ui/assets/css/theme.css")
 	if err != nil {
 		t.Fatalf("读样式表失败: %v", err)
 	}

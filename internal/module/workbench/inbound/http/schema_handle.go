@@ -6,8 +6,8 @@ import (
 
 	json "go_wp/pkg/jsonx"
 
-	"go_wp/pkg/builder"
 	plugincontract "go_wp/internal/module/plugin/contract"
+	"go_wp/pkg/builder"
 )
 
 var componentSchemaSnapshot = sync.OnceValues(func() (map[string]json.RawMessage, error) {

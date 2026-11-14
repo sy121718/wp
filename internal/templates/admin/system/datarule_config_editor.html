@@ -22,7 +22,7 @@
             <fieldset class="datarule-group" data-datarule-group>
                 <div class="datarule-group-head">
                     <span class="datarule-group-title">{{.["t"]("admin.datarules.editor.group", "条件组")}} <span data-group-index>{{gi}}</span></span>
-                    <select class="form-select datarule-logic" data-group-logic name="groups[{{gi}}].logic">
+                    <select class="form-select datarule-logic" data-group-logic name="groupLogic">
                         <option value="AND"{{if g.Logic == "AND"}} selected{{end}}>{{.["t"]("admin.datarules.editor.logic_and", "组内全部满足（AND）")}}</option>
                         <option value="OR"{{if g.Logic == "OR"}} selected{{end}}>{{.["t"]("admin.datarules.editor.logic_or", "组内任一满足（OR）")}}</option>
                     </select>
@@ -31,9 +31,10 @@
                 <div data-group-rows>
                 {{range ri, r := g.Conditions}}
                     <div class="datarule-row" data-datarule-row>
-                        <select class="form-select" data-row-field name="groups[{{gi}}].conditions[{{ri}}].field" data-initial-field="{{r.Field}}"></select>
-                        <select class="form-select" data-row-op name="groups[{{gi}}].conditions[{{ri}}].op" data-initial-op="{{r.Op}}"></select>
-                        <input type="text" class="form-input" data-row-value name="groups[{{gi}}].conditions[{{ri}}].value" value="{{r.Value}}" placeholder="{{.["t"]("admin.datarules.editor.value_placeholder", "条件值｜支持 dept.scope:SELF")}}" autocomplete="off">
+                        <input type="hidden" name="condGroup" data-cond-group data-group-value="{{gi}}">
+                        <select class="form-select" data-row-field name="condField" data-cond-field data-initial-field="{{r.Field}}"></select>
+                        <select class="form-select" data-row-op name="condOp" data-cond-op data-initial-op="{{r.Op}}"></select>
+                        <input type="text" class="form-input" data-row-value name="condValue" data-cond-value value="{{r.Value}}" placeholder="{{.["t"]("admin.datarules.editor.value_placeholder", "条件值｜支持 dept.scope:SELF")}}" autocomplete="off">
                         <button type="button" class="btn btn-sm" data-rule-action="del-row">{{.["t"]("admin.datarules.editor.del_row", "删除")}}</button>
                     </div>
                 {{end}}
@@ -53,6 +54,7 @@
     <template data-rule-label-template><span data-schema-label></span>{{.["t"]("admin.datarules.paren_open", "（")}}<span data-schema-field></span>{{.["t"]("admin.datarules.paren_close", "）")}}</template>
     <template data-rule-row-template>
         <div class="datarule-row" data-datarule-row>
+            <input type="hidden" name="condGroup" data-cond-group>
             <select class="form-select" data-row-field></select>
             <select class="form-select" data-row-op></select>
             <input type="text" class="form-input" data-row-value placeholder="{{.["t"]("admin.datarules.editor.value_placeholder", "条件值｜支持 dept.scope:SELF")}}" autocomplete="off">

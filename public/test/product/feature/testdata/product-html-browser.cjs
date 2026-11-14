@@ -1,6 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const puppeteer = require(process.env.GOWP_PUPPETEER_MODULE || 'puppeteer-core');
+const { tabTo, activate } = require('../../../../../internal/templates/testdata/html-ui/input-matrix.cjs');
 
 // 使用真实页面、嵌入资产、HTTP 与数据库，不拦截或伪造业务响应。
 test('商品创建、主体编辑与列表删除的真实 HTML 链路', async t => {
@@ -330,11 +331,11 @@ test('商品创建、主体编辑与列表删除的真实 HTML 链路', async t 
                 const rejectedBulk = page.waitForResponse(response => response.url() === `${origin}/api/product/bulk-delete`);
                 await page.click(bulkButton);
                 assert.equal((await rejectedBulk).status(), 409);
-                // 共享失败出口只播报一句拒绝原因；逐条 id/名称属于响应数据，
-                // 不再渲染成 DOM 列表（见 1bdde422 / 279f15bb 的语义收口）。
+                // 共享失败模板必须显示本次拒绝的逐条事实，HTML 不存在另一份未发送的 JSON 明细。
                 await page.waitForSelector('[data-list-bulk] [data-write-status] [data-ui-error]');
                 assert.match(await page.$eval('[data-list-bulk] [data-write-status]', node => node.textContent), /批量操作被拒绝/);
-                assert.equal(await page.$$eval('[data-list-bulk] [data-ui-error] li', nodes => nodes.length), 0);
+                assert.equal(await page.$$eval('[data-list-bulk] [data-ui-error] li', nodes => nodes.length), 1);
+                assert.match(await page.$eval('[data-list-bulk] [data-ui-error] li', node => node.textContent), /11111111-1111-4111-8111-111111111111/);
                 assert.equal(await page.$$eval('[data-check-item]:checked', nodes => nodes.length), 2);
                 assert.equal(await page.$$eval('[data-write-host] > [data-write-status]:not([hidden])', nodes => nodes.length), 0);
                 await page.$eval('[data-check-item][value="11111111-1111-4111-8111-111111111111"]', (node, id) => { node.value = id; }, checks[1]);
@@ -348,6 +349,51 @@ test('商品创建、主体编辑与列表删除的真实 HTML 链路', async t 
                 assert.deepEqual(errors, []);
                 stage = '全部完成';
             });
+        }
+        for (const [width, height] of [[1440, 900], [768, 1024], [375, 812]]) {
+            for (const input of ['mouse', 'wheel', 'touch', 'keyboard']) {
+                await t.test(`生产商品 ${width}px · ${input}：原生表单提交与冲突保留`, async t => {
+                    const page = await browser.newPage();
+                    t.after(() => page.close());
+                    page.setDefaultTimeout(6000);
+                    await page.setViewport({ width, height, hasTouch: true });
+                    await page.setExtraHTTPHeaders({ 'Accept-Language': 'zh-CN' });
+                    const errors = [];
+                    page.on('pageerror', error => errors.push(error.message));
+                    await page.goto(`${origin}/admin/products/new?project=${project}`, { waitUntil: 'networkidle0' });
+                    const form = '#product-create-form';
+                    const name = form + ' [name=name]';
+                    const slug = form + ' [name=slug]';
+                    const submit = form + ' button[type=submit]';
+                    await page.waitForSelector(form + '[data-sku-enhanced="1"]');
+                    assert.ok(await page.$('.admin-layout'));
+                    assert.ok(await page.$('link[href="/static/css/theme.css"]'));
+                    if (input === 'keyboard') await tabTo(page, name);
+                    else await page.click(name);
+                    const value = `matrix-${width}-${input}`;
+                    await page.keyboard.type(value);
+                    if (input === 'keyboard') await tabTo(page, slug);
+                    else await page.click(slug);
+                    await page.keyboard.press('Home');
+                    await page.keyboard.down('Shift');
+                    await page.keyboard.press('End');
+                    await page.keyboard.up('Shift');
+                    await page.keyboard.type('browser-conflict');
+                    const rejected = page.waitForResponse(response => response.url() === origin + '/api/product/create');
+                    await activate(page, submit, input, t);
+                    const response = await rejected;
+                    assert.equal(response.status(), 409);
+                    const sent = new URLSearchParams(response.request().postData());
+                    assert.equal(sent.get('name'), value);
+                    assert.equal(sent.get('slug'), 'browser-conflict');
+                    assert.ok(response.request().headers()['x-csrf-token']);
+                    await page.waitForSelector(form + ' [data-write-status] [data-ui-error]');
+                    assert.equal(await page.$eval(name, node => node.value), value);
+                    assert.equal(new URL(page.url()).pathname, '/admin/products/new');
+                    await page.waitForSelector(submit + ':not([disabled])');
+                    assert.deepEqual(errors, []);
+                });
+            }
         }
     } finally { await browser.close(); }
 });

@@ -10,7 +10,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"go_wp/pkg/builder"
 	contentcontract "go_wp/internal/module/content/contract"
 	contentdto "go_wp/internal/module/content/dto"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
@@ -20,9 +19,10 @@ import (
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
 	projectcontract "go_wp/internal/module/project/contract"
-	pageview "go_wp/pkg/view"
+	"go_wp/pkg/builder"
 	"go_wp/pkg/facing"
 	"go_wp/pkg/response"
+	pageview "go_wp/pkg/view"
 )
 
 const contentTemplatesListPath = "/admin/content-templates"
@@ -70,7 +70,7 @@ func (h *contentTemplatePageHandle) ContentTemplatesPage(c *gin.Context) {
 		Projects: projects, SelectedProject: selected,
 		EntityType: entityType,
 
-		Err:   "",
+		Err:   facing.Msg{},
 		Ready: true,
 	}
 	if h.templates == nil {
@@ -91,24 +91,37 @@ func (h *contentTemplatePageHandle) ContentTemplatesPage(c *gin.Context) {
 		return
 	}
 
-	refsByTemplate := contentTemplateRefsByTemplate(c, impact)
+	view.Templates = h.templateRows(c, list, contentTemplateRefsByTemplate(c, impact), selected)
+	view.TemplateCount = len(view.Templates)
+	view.Ready = true
+
+	view.ImpactAvailable = impact.Available
+	view.ImpactNote = contentTemplateImpactNote(impact, impactErr)
+
+	pageview.Render(c, view)
+}
+
+// templateRows 把模板实体与引用面折成列表行：逐行映射归控制器，
+// 但取词只交事实（LabelPair / Msg），成品句由模板按请求语言生成。
+func (h *contentTemplatePageHandle) templateRows(c *gin.Context,
+	list []*contenttemplatedto.TemplateResp,
+	refsByTemplate map[string]*contentTemplateImpactRow, projectID string) []contenttemplatedto.TemplateListRowResp {
 	rows := make([]contenttemplatedto.TemplateListRowResp, 0, len(list))
 	for _, t := range list {
-
 		isStructure := contenttemplatemodel.IsStructureTemplateType(t.EntityType)
-		editURL, sampleNote := "", ""
+		editURL := ""
+		var sampleNote facing.Msg
 		if isStructure {
-			editURL = workbenchTemplateURL(t.ID, t.EntityType, "", selected)
+			editURL = workbenchTemplateURL(t.ID, t.EntityType, "", projectID)
 		} else {
-			sampleID, sampleHint, sampleErr := h.sampleEntityID(ctx, selected, t.EntityType)
-			if sampleErr == nil && strings.TrimSpace(sampleHint) == "" && sampleID != "" {
-				editURL = workbenchTemplateURL(t.ID, t.EntityType, sampleID, selected)
+			sampleID, sampleHint, sampleErr := h.sampleEntityID(c.Request.Context(), projectID, t.EntityType)
+			if sampleErr == nil && strings.TrimSpace(sampleHint.Key) == "" && sampleID != "" {
+				editURL = workbenchTemplateURL(t.ID, t.EntityType, sampleID, projectID)
 			}
-			sampleNote = sampleErrText(c, sampleHint, sampleErr)
+			sampleNote = sampleErrMsg(c, sampleHint, sampleErr)
 		}
 		refs := refsByTemplate[t.ID]
 		if refs == nil {
-
 			refs = &contentTemplateImpactRow{Pages: []contentTemplatePageRef{}, Instances: []contentTemplateInstanceRef{}}
 		}
 		rows = append(rows, contenttemplatedto.TemplateListRowResp{
@@ -120,7 +133,7 @@ func (h *contentTemplatePageHandle) ContentTemplatesPage(c *gin.Context) {
 			Role:        contenttemplateenums.TemplateRoleLabel(t.TemplateRole),
 			IsDefault:   t.IsDefault,
 
-			EditURL: editURL, SampleErr: sampleNote,
+			EditURL: editURL, SampleNote: sampleNote,
 
 			RefPages:         toTemplatePageRefs(refs.Pages),
 			RefInstances:     toTemplateInstanceRefs(refs.Instances),
@@ -129,14 +142,7 @@ func (h *contentTemplatePageHandle) ContentTemplatesPage(c *gin.Context) {
 			RefInstanceCount: len(refs.Instances),
 		})
 	}
-	view.Templates = rows
-	view.TemplateCount = len(rows)
-	view.Ready = true
-
-	view.ImpactAvailable = impact.Available
-	view.ImpactNote = contentTemplateImpactNote(c, impact, impactErr)
-
-	pageview.Render(c, view)
+	return rows
 }
 
 func (h *contentTemplatePageHandle) ContentTemplateEditPage(c *gin.Context) {
@@ -166,9 +172,8 @@ func (h *contentTemplatePageHandle) ContentTemplateEditPage(c *gin.Context) {
 		}
 		if entityID == "" {
 			sampleID, hint, serr := h.sampleEntityID(c.Request.Context(), projectID, entityType)
-			if serr != nil || strings.TrimSpace(hint) != "" {
-
-				contentTemplateJump(c, false, contentTemplateMsg{Fallback: sampleErrText(c, hint, serr)})
+			if serr != nil || strings.TrimSpace(hint.Key) != "" {
+				contentTemplateJump(c, false, sampleErrMsg(c, hint, serr))
 				return
 			}
 			entityID = sampleID
@@ -196,7 +201,9 @@ func workbenchTemplateURL(templateID, entityType, entityID, projectID string) st
 	return "/workbench?" + q.Encode()
 }
 
-func (h *contentTemplatePageHandle) sampleEntityID(ctx context.Context, projectID, entityType string) (id, hint string, err error) {
+// sampleEntityID 返回可用于预览的样例实体；取不到时给出**原因事实**（key + 兜底），
+// 不在这里拼成品句 —— 页面与回跳提示都由各自的取词出口处理。
+func (h *contentTemplatePageHandle) sampleEntityID(ctx context.Context, projectID, entityType string) (id string, hint facing.Msg, err error) {
 	switch entityType {
 	case "product":
 		if h.products == nil {
@@ -204,26 +211,25 @@ func (h *contentTemplatePageHandle) sampleEntityID(ctx context.Context, projectI
 		}
 		list, lerr := h.products.List(ctx, &productdto.ListReq{ProjectID: projectID, Page: 1, Size: 1})
 		if lerr != nil {
-			return "", "", lerr
+			return "", facing.Msg{}, lerr
 		}
 		if len(list) == 0 {
 			return "", contentTemplateHintNoProduct, nil
 		}
-		return list[0].ID, "", nil
+		return list[0].ID, facing.Msg{}, nil
 	case "article":
 		if h.contents == nil {
 			return "", contentTemplateHintContentNoMod, nil
 		}
 		list, lerr := h.contents.List(ctx, &contentdto.ListReq{EntityType: "article", Limit: 1})
 		if lerr != nil {
-			return "", "", lerr
+			return "", facing.Msg{}, lerr
 		}
 		if len(list) == 0 {
 			return "", contentTemplateHintNoArticle, nil
 		}
-		return list[0].ID, "", nil
+		return list[0].ID, facing.Msg{}, nil
 	default:
-
 		return "", contentTemplateHintEntityTypeMiss, nil
 	}
 }
@@ -238,7 +244,7 @@ func contentTemplateLabel(c *gin.Context, pair contenttemplateenums.LabelPair) s
 type contentTemplatePageRef struct {
 	Label string
 	Path  string
-	Slots string
+	Slots []contenttemplateenums.LabelPair
 	URL   string
 }
 
@@ -246,7 +252,7 @@ type contentTemplateInstanceRef struct {
 	Label  string
 	Entity string
 	Path   string
-	Slots  string
+	Slots  []contenttemplateenums.LabelPair
 }
 
 type contentTemplateImpactRow struct {
@@ -266,7 +272,7 @@ func contentTemplateRefsByTemplate(c *gin.Context, impact *contenttemplatedto.Im
 			row = &contentTemplateImpactRow{Pages: []contentTemplatePageRef{}, Instances: []contentTemplateInstanceRef{}}
 			out[ref.TemplateID] = row
 		}
-		slots := contentTemplateSlotsLabel(c, ref.Slots)
+		slots := contentTemplateSlotsLabel(ref.Slots)
 		switch ref.Kind {
 		case contenttemplatedto.ReferenceKindPage:
 			label := strings.TrimSpace(ref.PageTitle)
@@ -298,24 +304,25 @@ func contentTemplateRefsByTemplate(c *gin.Context, impact *contenttemplatedto.Im
 	return out
 }
 
-func contentTemplateSlotsLabel(c *gin.Context, slots []string) string {
+// contentTemplateSlotsLabel 把槽位名折成 LabelPair 列表：取词归模板，
+// 控制器只交「这是哪个槽位」的事实。未知槽位用原值作兜底。
+func contentTemplateSlotsLabel(slots []string) []contenttemplateenums.LabelPair {
 	if len(slots) == 0 {
-		return ""
+		return nil
 	}
-	labels := make([]string, 0, len(slots))
+	out := make([]contenttemplateenums.LabelPair, 0, len(slots))
 	for _, slot := range slots {
 		switch slot {
 		case builder.SlotHeader:
-			labels = append(labels, contentTemplateLabel(c, contenttemplateenums.LabelSlotHeader))
+			out = append(out, contenttemplateenums.LabelSlotHeader)
 		case builder.SlotFooter:
-			labels = append(labels, contentTemplateLabel(c, contenttemplateenums.LabelSlotFooter))
+			out = append(out, contenttemplateenums.LabelSlotFooter)
 		default:
-
-			labels = append(labels, slot)
+			out = append(out, contenttemplateenums.LabelPair{Fallback: slot})
 		}
 	}
-	sort.Strings(labels)
-	return strings.Join(labels, " / ")
+	sort.Slice(out, func(i, j int) bool { return out[i].Fallback < out[j].Fallback })
+	return out
 }
 
 func contentTemplateTypeLabel(c *gin.Context, entityType string) string {
@@ -326,17 +333,21 @@ func contentTemplateRoleLabel(c *gin.Context, role string) string {
 	return contentTemplateLabel(c, contenttemplateenums.TemplateRoleLabel(role))
 }
 
-func contentTemplateImpactNote(c *gin.Context, impact *contenttemplatedto.ImpactResp, err error) string {
+// contentTemplateImpactNote 返回引用面提示的**事实**（key + 兜底 + 参数）；
+// 取词归模板，Go 不拼成品句。
+func contentTemplateImpactNote(impact *contenttemplatedto.ImpactResp, err error) contentTemplateMsg {
 	if err != nil {
-		return contentTemplateInternalText(c, err)
+		return contentTemplateInternalMsg()
 	}
 	if impact == nil || !impact.Available {
-		return contentTemplateImpactUnavailableText
+		return contentTemplateImpactUnavailableMsg
 	}
 	if impact.Unparsable > 0 {
-		return fmt.Sprintf(contentTemplateImpactUnparsableTemplate, impact.Unparsable)
+		msg := contentTemplateImpactUnparsableMsg
+		msg.Args = []string{fmt.Sprint(impact.Unparsable)}
+		return msg
 	}
-	return ""
+	return contentTemplateMsg{}
 }
 
 func toTemplatePageRefs(in []contentTemplatePageRef) []contenttemplatedto.TemplatePageRefResp {

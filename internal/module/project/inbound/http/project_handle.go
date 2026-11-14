@@ -24,11 +24,12 @@ func NewHandle(svc projectcontract.ProjectService) *Handle {
 }
 
 func (h *Handle) Create(c *gin.Context) {
-	req, ok := binding.JSON[projectdto.CreateReq](c)
-	if !ok {
+	var req projectdto.CreateReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ParamError(c)
 		return
 	}
-	res, err := h.svc.Create(c.Request.Context(), req)
+	res, err := h.svc.Create(c.Request.Context(), &req)
 	if err != nil {
 		projectError(c, err)
 		return
@@ -59,11 +60,12 @@ func (h *Handle) Detail(c *gin.Context) {
 }
 
 func (h *Handle) Update(c *gin.Context) {
-	req, ok := binding.JSON[projectdto.UpdateReq](c)
-	if !ok {
+	var req projectdto.UpdateReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ParamError(c)
 		return
 	}
-	res, err := h.svc.Update(c.Request.Context(), req)
+	res, err := h.svc.Update(c.Request.Context(), &req)
 	if err != nil {
 		projectError(c, err)
 		return
@@ -113,11 +115,12 @@ func (h *ThemeHandle) List(c *gin.Context) {
 }
 
 func (h *ThemeHandle) Create(c *gin.Context) {
-	req, ok := binding.JSON[projectdto.ThemeCreateReq](c)
-	if !ok {
+	var req projectdto.ThemeCreateReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ParamError(c)
 		return
 	}
-	res, err := h.svc.CreateTheme(c.Request.Context(), req)
+	res, err := h.svc.CreateTheme(c.Request.Context(), &req)
 	if err != nil {
 		themeError(c, err)
 		return
@@ -126,11 +129,12 @@ func (h *ThemeHandle) Create(c *gin.Context) {
 }
 
 func (h *ThemeHandle) Update(c *gin.Context) {
-	req, ok := binding.JSON[projectdto.ThemeUpdateReq](c)
-	if !ok {
+	var req projectdto.ThemeUpdateReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ParamError(c)
 		return
 	}
-	res, err := h.svc.UpdateTheme(c.Request.Context(), req)
+	res, err := h.svc.UpdateTheme(c.Request.Context(), &req)
 	if err != nil {
 		themeError(c, err)
 		return
@@ -139,11 +143,12 @@ func (h *ThemeHandle) Update(c *gin.Context) {
 }
 
 func (h *ThemeHandle) Activate(c *gin.Context) {
-	req, ok := binding.JSON[projectdto.ThemeActivateReq](c)
-	if !ok {
+	var req projectdto.ThemeActivateReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ParamError(c)
 		return
 	}
-	if err := h.svc.ActivateTheme(c.Request.Context(), req); err != nil {
+	if err := h.svc.ActivateTheme(c.Request.Context(), &req); err != nil {
 		themeError(c, err)
 		return
 	}
@@ -151,8 +156,9 @@ func (h *ThemeHandle) Activate(c *gin.Context) {
 }
 
 func (h *ThemeHandle) Delete(c *gin.Context) {
-	req, ok := binding.JSON[projectdto.ThemeActivateReq](c)
-	if !ok {
+	var req projectdto.ThemeActivateReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ParamError(c)
 		return
 	}
 	if err := h.svc.DeleteTheme(c.Request.Context(), req.ID); err != nil {

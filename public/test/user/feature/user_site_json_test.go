@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -14,12 +15,34 @@ import (
 	"go_wp/pkg/upload"
 )
 
-func siteJSON(t *testing.T, env *userHTTPEnv, path, body, csrf string, cookies []*http.Cookie, userAgent ...string) *httptest.ResponseRecorder {
+// siteForm 是站点写入口的提交形状：标准 form 编码（协议唯一，JSON 会被拒）。
+func siteForm(t *testing.T, env *userHTTPEnv, path string, form map[string]string, csrf string, cookies []*http.Cookie, userAgent ...string) *httptest.ResponseRecorder {
 	t.Helper()
-	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+	values := url.Values{}
+	for k, v := range form {
+		values.Set(k, v)
+	}
+	if csrf != "" {
+		values.Set("csrf_token", csrf)
+	}
+	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(values.Encode()))
 	if len(userAgent) > 0 {
 		req.Header.Set("User-Agent", userAgent[0])
 	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
+	for _, cookie := range cookies {
+		req.AddCookie(cookie)
+	}
+	rec := httptest.NewRecorder()
+	env.router.ServeHTTP(rec, req)
+	return rec
+}
+
+// siteJSONBody 发 JSON 编码，用于证明写入口已收窄、不再接受双协议。
+func siteJSONBody(t *testing.T, env *userHTTPEnv, path, body, csrf string, cookies []*http.Cookie) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 	if csrf != "" {
@@ -94,14 +117,14 @@ func TestSiteUserJSONVisitorIsolationAndInputErrors(t *testing.T) {
 			t.Fatal("未登录错误没有稳定JSON文案")
 		}
 	}
-	missing := siteJSON(t, env, "/api/site/user/login", `{"account":"siteuser","password":"password123"}`, "", cookies)
+	missing := siteForm(t, env, "/api/site/user/login", map[string]string{"account":"siteuser","password":"password123"}, "", cookies)
 	siteData(t, missing, http.StatusForbidden)
-	wrong := siteJSON(t, env, "/api/site/user/login", `{"account":"siteuser","password":"incorrect-password"}`, csrf, cookies)
+	wrong := siteForm(t, env, "/api/site/user/login", map[string]string{"account":"siteuser","password":"incorrect-password"}, csrf, cookies)
 	bad := siteData(t, wrong, http.StatusUnauthorized)
 	if bad["message"] == "" || strings.Contains(wrong.Body.String(), "bcrypt") || strings.Contains(wrong.Body.String(), "password123") {
 		t.Fatal("凭据错误泄漏内部信息")
 	}
-	login := siteJSON(t, env, "/api/site/user/login", `{"account":"siteuser","password":"password123","remember":true}`, csrf, cookies)
+	login := siteForm(t, env, "/api/site/user/login", map[string]string{"account":"siteuser","password":"password123","remember":"1"}, csrf, cookies)
 	got := siteData(t, login, http.StatusOK)
 	if got["data"].(map[string]any)["authenticated"] != true {
 		t.Fatal("正常登录未建立访客会话")
@@ -145,12 +168,12 @@ func TestSiteUserJSONVisitorIsolationAndInputErrors(t *testing.T) {
 	if currentCount != 1 {
 		t.Fatalf("当前设备标记应恰好1，实际%d", currentCount)
 	}
-	revoke := siteJSON(t, env, "/api/site/user/sessions/revoke", `{"id":"`+device["id"].(string)+`"}`, rotated, cookies)
+	revoke := siteForm(t, env, "/api/site/user/sessions/revoke", map[string]string{"id": device["id"].(string)}, rotated, cookies)
 	siteData(t, revoke, http.StatusNotFound)
 
 	secondGuest := env.get(t, "/api/site/user/session", nil)
 	secondCookies := siteCookies(nil, secondGuest)
-	secondLogin := siteJSON(t, env, "/api/site/user/login", `{"account":"siteuser","password":"password123"}`, secondGuest.Header().Get("X-CSRF-Token"), secondCookies, "SiteDeviceRevokeProbe")
+	secondLogin := siteForm(t, env, "/api/site/user/login", map[string]string{"account":"siteuser","password":"password123"}, secondGuest.Header().Get("X-CSRF-Token"), secondCookies, "SiteDeviceRevokeProbe")
 	siteData(t, secondLogin, http.StatusOK)
 	secondCookies = siteCookies(secondCookies, secondLogin)
 	refreshed := siteData(t, env.get(t, "/api/site/user/sessions", cookies), http.StatusOK)["data"].([]any)
@@ -167,7 +190,7 @@ func TestSiteUserJSONVisitorIsolationAndInputErrors(t *testing.T) {
 	if otherID == "" {
 		t.Fatal("真实新会话没有进入设备事实")
 	}
-	siteData(t, siteJSON(t, env, "/api/site/user/sessions/revoke", `{"id":"`+otherID+`"}`, rotated, cookies), http.StatusOK)
+	siteData(t, siteForm(t, env, "/api/site/user/sessions/revoke", map[string]string{"id": otherID}, rotated, cookies), http.StatusOK)
 	if siteData(t, env.get(t, "/api/site/user/session", secondCookies), http.StatusOK)["data"].(map[string]any)["authenticated"] != false {
 		t.Fatal("撤销不透明设备句柄后另一设备仍有效")
 	}
@@ -190,7 +213,7 @@ func TestSiteUserJSONVisitorIsolationAndInputErrors(t *testing.T) {
 	if siteData(t, isolated, http.StatusOK)["data"].(map[string]any)["authenticated"] != false {
 		t.Fatal("后台cookie被当作访客身份")
 	}
-	logout := siteJSON(t, env, "/api/site/user/logout", `{}`, rotated, cookies)
+	logout := siteForm(t, env, "/api/site/user/logout", map[string]string{}, rotated, cookies)
 	siteData(t, logout, http.StatusOK)
 	after := env.get(t, "/api/site/user/session", siteCookies(cookies, logout))
 	if siteData(t, after, http.StatusOK)["data"].(map[string]any)["authenticated"] != false {
@@ -198,7 +221,7 @@ func TestSiteUserJSONVisitorIsolationAndInputErrors(t *testing.T) {
 	}
 }
 
-func TestSiteUserJSONAndFormDataShareServiceAndTrustedIdentity(t *testing.T) {
+func TestSiteUserFormDataAndTrustedIdentity(t *testing.T) {
 	env := newUserHTTPEnv(t)
 	seedActiveUser(t, env.db, "profilejson", "profile-json@example.com", "password123")
 	other := seedActiveUser(t, env.db, "otherjson", "other-json@example.com", "password123")
@@ -206,26 +229,22 @@ func TestSiteUserJSONAndFormDataShareServiceAndTrustedIdentity(t *testing.T) {
 	state := env.get(t, "/api/site/user/session", cookies)
 	cookies = siteCookies(cookies, state)
 	csrf := state.Header().Get("X-CSRF-Token")
-	profileBody, err := json.Marshal(map[string]any{"userId": other.ID, "nickname": "自己的昵称", "firstName": "Sky", "locale": "en-US", "timezone": "Asia/Shanghai", "gender": 2})
-	if err != nil {
-		t.Fatal(err)
-	}
-	save := siteJSON(t, env, "/api/site/user/account/profile", string(profileBody), csrf, cookies)
+	// 资料保存走标准表单；userId 是客户端伪造的可信字段，服务端必须忽略。
+	save := siteForm(t, env, "/api/site/user/account/profile", map[string]string{
+		"userId": strconv.FormatUint(other.ID, 10), "nickname": "自己的昵称", "firstName": "Sky",
+		"locale": "en-US", "timezone": "Asia/Shanghai", "gender": "2",
+	}, csrf, cookies)
 	siteData(t, save, http.StatusOK)
 	account := siteData(t, env.get(t, "/api/site/user/account", cookies), http.StatusOK)["data"].(map[string]any)
 	if account["username"] != "profilejson" || account["nickname"] != "自己的昵称" || account["gender"] != float64(2) || account["profileLocale"] != "en-US" {
-		t.Fatalf("JSON资料写读链不一致: %+v", account)
+		t.Fatalf("表单资料写读链不一致: %+v", account)
 	}
 
-	form := url.Values{"csrf_token": {csrf}, "pageSize": {"37"}, "profileVisibility": {"private"}, "timezone": {"Asia/Tokyo"}, "locale": {"zh-CN"}, "theme": {"dark"}, "emailNotify": {"1"}}
-	req := httptest.NewRequest(http.MethodPost, "/api/site/user/account/preference", strings.NewReader(form.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	for _, cookie := range cookies {
-		req.AddCookie(cookie)
-	}
-	rec := httptest.NewRecorder()
-	env.router.ServeHTTP(rec, req)
-	siteData(t, rec, http.StatusOK)
+	preference := siteForm(t, env, "/api/site/user/account/preference", map[string]string{
+		"pageSize": "37", "profileVisibility": "private", "timezone": "Asia/Tokyo",
+		"locale": "zh-CN", "theme": "dark", "emailNotify": "1",
+	}, csrf, cookies)
+	siteData(t, preference, http.StatusOK)
 	data := siteData(t, env.get(t, "/api/site/user/account", cookies), http.StatusOK)["data"].(map[string]any)
 	if data["pageSize"] != float64(37) || data["profileVisibility"] != "private" || data["theme"] != "dark" || data["emailNotify"] != true || data["smsNotify"] != false {
 		t.Fatalf("FormData与服务事实不一致: %+v", data)
@@ -269,8 +288,10 @@ func TestSiteUserAvatarUsesTrustedMediaOrigin(t *testing.T) {
 	readAvatar("javascript:alert(1)", "")
 }
 
-func TestSiteUserCodeFlowJSONAndFormData(t *testing.T) {
-	for _, encoding := range []string{"json", "multipart"} {
+// 站点写入口协议唯一：urlencoded 与 multipart 两种表单编码都必须走通
+// （ParseForm 按 Content-Type 在 FormPost / FormMultipart 间选择）。
+func TestSiteUserCodeFlowFormEncodings(t *testing.T) {
+	for _, encoding := range []string{"urlencoded", "multipart"} {
 		t.Run(encoding, func(t *testing.T) {
 			env := newUserHTTPEnv(t)
 			guest := env.get(t, "/api/site/user/session", nil)
@@ -279,13 +300,13 @@ func TestSiteUserCodeFlowJSONAndFormData(t *testing.T) {
 			post := func(path string, values map[string]string, withCSRF bool) *httptest.ResponseRecorder {
 				t.Helper()
 				var req *http.Request
-				if encoding == "json" {
-					body, err := json.Marshal(values)
-					if err != nil {
-						t.Fatal(err)
+				if encoding == "urlencoded" {
+					form := url.Values{}
+					for key, value := range values {
+						form.Set(key, value)
 					}
-					req = httptest.NewRequest(http.MethodPost, path, bytes.NewReader(body))
-					req.Header.Set("Content-Type", "application/json")
+					req = httptest.NewRequest(http.MethodPost, path, strings.NewReader(form.Encode()))
+					req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 				} else {
 					var body bytes.Buffer
 					writer := multipart.NewWriter(&body)
@@ -373,5 +394,26 @@ func TestSiteUserCodeFlowJSONAndFormData(t *testing.T) {
 				t.Fatal("重置后新密码不能登录")
 			}
 		})
+	}
+}
+
+// 站点写入口已收窄为显式表单：JSON 编码必须被拒，不能退回双协议。
+func TestSiteUserWriteEndpointsRejectJSONBody(t *testing.T) {
+	env := newUserHTTPEnv(t)
+	seedActiveUser(t, env.db, "jsonreject", "json-reject@example.com", "password123")
+	guest := env.get(t, "/api/site/user/session", nil)
+	cookies := siteCookies(nil, guest)
+	csrf := guest.Header().Get("X-CSRF-Token")
+
+	rec := siteJSONBody(t, env, "/api/site/user/login",
+		`{"account":"jsonreject","password":"password123"}`, csrf, cookies)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("JSON 登录应被拒为 400，实际 %d：%s", rec.Code, head(rec.Body.String()))
+	}
+
+	rec = siteJSONBody(t, env, "/api/site/user/register",
+		`{"username":"jsonreg","email":"jsonreg@example.com","password":"password123"}`, csrf, cookies)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("JSON 注册应被拒为 400，实际 %d：%s", rec.Code, head(rec.Body.String()))
 	}
 }

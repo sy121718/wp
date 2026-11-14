@@ -13,6 +13,7 @@
 {{selectedProject := .SelectedProject}}
 {* range 内 . 指向元素（且模板项变量名就是 t），故先存成变量 tr，在 range 内用它取词。 *}
 {{tr := .["t"]}}
+{{csrf := .["csrf_token"]}}
 <div class="stack">
     <header class="page-head">
         <div class="page-head-main">
@@ -26,9 +27,9 @@
         </div>
     </header>
 
-    {{if .Err != ""}}
-    <p class="badge badge-warning" role="alert">{{ .["t"]("admin.content.templates.errorLead", "提示：") }}{{.Err}}</p>
-    {{end}}
+    {{if isset(.Err)}}{{if !.Err.Empty()}}
+    <p class="badge badge-warning" role="alert">{{ .["t"]("admin.content.templates.errorLead", "提示：") }}{{if len(.Err.Args) > 0}}{{ .["tf"](.Err.Key, .Err.Fallback, .Err.Args)}}{{else}}{{ .["t"](.Err.Key, .Err.Fallback)}}{{end}}</p>
+    {{end}}{{end}}
     {* 写动作的结论不在本页回显（走 shell.RenderJump 提示页，见 content_template_err.go），
        提示条只由「列表取数失败」填充（见上面的降级分支）。 *}
     {{if !.Ready}}
@@ -38,9 +39,9 @@
     {{if .Ready}}
     {* 影响面状态：只在「查不出来 / 可能不完整」时出现。它不能与「没有引用」长得一样 ——
        后者会让人拿一个空白引用列表当证据去删模板。 *}
-    {{if .ImpactNote != ""}}
-    <p class="badge badge-warning" role="alert">{{.ImpactNote}}</p>
-    {{end}}
+    {{if isset(.ImpactNote)}}{{if !.ImpactNote.Empty()}}
+    <p class="badge badge-warning" role="alert">{{if len(.ImpactNote.Args) > 0}}{{ .["tf"](.ImpactNote.Key, .ImpactNote.Fallback, .ImpactNote.Args)}}{{else}}{{ .["t"](.ImpactNote.Key, .ImpactNote.Fallback)}}{{end}}</p>
+    {{end}}{{end}}
     <section class="card list-card">
         <div class="filter-bar">
             <form method="get" action="/admin/content-templates" class="filter-fields">
@@ -83,8 +84,16 @@
             <strong>{{ .["t"]("admin.content.templates.listHeading", "模板列表（") }}{{.TemplateCount}}{{ .["t"]("admin.content.templates.listHeadingClose", "）") }}</strong>
         </div>
         {{end}}
-        {* 批量删除与行内启用共用表单，按钮声明覆盖 API 与写模式；成功刷新保留筛选参数。 *}
-        <form data-write hx-post="/api/contenttemplate/delete" hx-target="find [data-write-result]" hx-swap="innerHTML"
+        {* 「设为生效」是独立端点按钮：按模板规则用 type="button" + hx-post +
+           hx-sync="closest form:drop"，字段由 hx-vals 显式给。它 MUST NOT 位于任何
+           表单内 —— htmx 提交时用 new FormData(最近的表单)，混在批量删除表单里就会
+           把勾选行的 ids 一起带上，而 ActivateReq 只认 id。下面那张批量删除表单因此
+           只包批量条，勾选框用 form 属性关联过来。 *}
+        {* 批量删除表单只包「结果区 + 批量条」：勾选框在下面的表格里，用 form 属性关联过来。
+           这样表格内的「设为生效」按钮不属于任何表单，激活请求不会混入勾选行的 ids
+           （htmx 提交时用 new FormData(最近的表单)）。 *}
+        <form id="ct-bulk-form" data-write hx-post="/api/contenttemplate/delete"
+              hx-target="find [data-write-result]" hx-swap="innerHTML"
               hx-sync="this:drop" hx-disable="findAll button:not(:disabled)" data-list-bulk data-write-reload>
         <div data-write-result></div>
         <p data-write-status role="status" aria-live="polite" hidden></p>
@@ -96,12 +105,13 @@
             <button type="submit" class="btn btn-sm btn-danger" data-requires-js hidden hx-confirm="{{tr("admin.content.templates.bulkDeleteConfirm", "删除选中的模板？删除会连带清掉它的历史版本；被页面、实例或其它模板引用的模板不会被删除。")}}">{{tr("admin.common.bulk.delete", "批量删除")}}</button>
         {{yield bulkBarClose()}}
         {{end}}
+        </form>
         <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.content.templates.tableAria", "内容模板列表") }}">
             <table class="data-table data-table-wide">
                 <thead>
                 <tr>
                     <th class="col-check">
-                        <input type="checkbox" data-check-all aria-label="{{ .["t"]("admin.common.bulk.selectAll", "全选") }}">
+                        <input type="checkbox" data-check-all form="ct-bulk-form" aria-label="{{ .["t"]("admin.common.bulk.selectAll", "全选") }}">
                     </th>
                     <th>{{ .["t"]("admin.content.templates.colName", "名称") }}</th>
                     <th>{{ .["t"]("admin.content.templates.colType", "类型") }}</th>
@@ -133,7 +143,7 @@
                 {{range _, t := .Templates}}
                 <tr>
                     <td class="col-check">
-                        <input type="checkbox" name="ids" value="{{t.ID}}" data-check-item aria-label="{{tr("admin.common.bulk.selectRow", "选择该行") }}">
+                        <input type="checkbox" name="ids" value="{{t.ID}}" form="ct-bulk-form" data-check-item aria-label="{{tr("admin.common.bulk.selectRow", "选择该行") }}">
                     </td>
                     {* 名称列限宽：标题是用户自由文本，不限宽时长标题会把整张表撑到必须横滚，
                        而这一页真正要看的是「哪套生效 / 引用在哪」两列（项目多端规范：宽度写 min(100%, …)）。 *}
@@ -152,9 +162,12 @@
                         {{else}}
                         {* 同一（工程, 类型）下只允许一套生效：切换是 POST，与 JSON 接口共用权限点
                            contenttemplate:activate（页面入口经 CasbinMiddlewareForPath 映射）。 *}
-                        <button type="submit" data-requires-js hidden class="btn btn-sm" hx-post="/api/contenttemplate/activate"
-                                hx-target="find [data-write-result]" hx-swap="innerHTML" hx-sync="this:drop"
-                                name="id" value="{{t.ID}}">{{tr("admin.content.templates.activate", "设为生效")}}</button>
+                        <button type="button" data-requires-js hidden class="btn btn-sm"
+                                data-write hx-post="/api/contenttemplate/activate"
+                                hx-target="next .ct-activate-result" hx-swap="innerHTML"
+                                hx-sync="closest form:drop"
+                                hx-vals='{"id":"{{t.ID}}"}'>{{tr("admin.content.templates.activate", "设为生效")}}</button>
+                        <p class="ct-activate-result form-hint" data-write-status role="status" aria-live="polite" hidden></p>
                         {{end}}
                     </td>
                     <td>
@@ -164,10 +177,10 @@
                                 <summary class="text-sm">{{tr("admin.content.templates.refPages", "页面")}} {{t.RefPageCount}} · {{tr("admin.content.templates.refInstances", "实例")}} {{t.RefInstanceCount}}</summary>
                                 <ul class="text-sm">
                                     {{range _, p := t.RefPages}}
-                                    <li><a href="{{p.URL}}">{{p.Label}}</a>{{if p.Slots != ""}} <span class="badge badge-mute">{{p.Slots}}</span>{{end}}{{if p.Path != ""}} <code>{{p.Path}}</code>{{end}}</li>
+                                    <li><a href="{{p.URL}}">{{p.Label}}</a>{{if len(p.Slots) > 0}} <span class="badge badge-mute">{{range i, sl := p.Slots}}{{if i > 0}} · {{end}}{{if sl.Key}}{{tr(sl.Key, sl.Fallback)}}{{else}}{{sl.Fallback}}{{end}}{{end}}</span>{{end}}{{if p.Path != ""}} <code>{{p.Path}}</code>{{end}}</li>
                                     {{end}}
                                     {{range _, i := t.RefInstances}}
-                                    <li>{{i.Entity}} <code>{{i.Path}}</code>{{if i.Slots != ""}} <span class="badge badge-mute">{{i.Slots}}</span>{{end}}</li>
+                                    <li>{{i.Entity}} <code>{{i.Path}}</code>{{if len(i.Slots) > 0}} <span class="badge badge-mute">{{range k, sl := i.Slots}}{{if k > 0}} · {{end}}{{if sl.Key}}{{tr(sl.Key, sl.Fallback)}}{{else}}{{sl.Fallback}}{{end}}{{end}}</span>{{end}}</li>
                                     {{end}}
                                 </ul>
                             </details>
@@ -186,7 +199,7 @@
                         {{else}}
                         {* 没有编辑入口时只给一句短话 + 悬停看原因：完整说明（缺样例实体）铺在单元格里
                            会把操作列撑成整表最宽的一列，反而挤掉了「状态 / 引用」两列。 *}
-                        <span class="text-mute text-sm" title="{{t.SampleErr}}">{{tr("admin.content.templates.noVisualEdit", "无可视化编辑入口")}}</span>
+                        <span class="text-mute text-sm" title="{{if t.SampleNote.Key}}{{tr(t.SampleNote.Key, t.SampleNote.Fallback)}}{{end}}">{{tr("admin.content.templates.noVisualEdit", "无可视化编辑入口")}}</span>
                         {{end}}
                     </td>
                 </tr>

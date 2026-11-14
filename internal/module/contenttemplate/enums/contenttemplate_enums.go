@@ -61,6 +61,20 @@ func ErrDetail(key, detail string) error {
 const (
 	ImpactLoadFailed = "admin.content.templates.impact.loadFailed"
 
+	// 引用面提示的其余两类事实：能力未装配、部分文档无法解析。
+	// 它们与 ImpactLoadFailed 一样是**页面提示句**，key 归词库、兜底是消息事实；
+	// 模板按 key 取词，Go 侧不再拼成品句。
+	ImpactUnavailable = "ctImpUnavail"
+
+	ImpactUnparsable = "ctImpUnpars"
+
+	// 样例实体选取失败的原因事实（商品/内容模块未装配、工程内没有样例等）。
+	HintProductNoMod   = "ctHintProdMod"
+	HintContentNoMod   = "ctHintCntMod"
+	HintNoProduct      = "ctHintNoProd"
+	HintNoArticle      = "ctHintNoArt"
+	HintEntityTypeMiss = "ctHintEntMiss"
+
 	Heading = "admin.content.templates.heading"
 )
 

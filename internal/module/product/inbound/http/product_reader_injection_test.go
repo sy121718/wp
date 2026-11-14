@@ -42,11 +42,12 @@ func TestSetupProductRoutesReturnsReader(t *testing.T) {
 		t.Fatalf("第 3 个返回值应为实例注入目标 %v，实际 %v", want, got)
 	}
 	pages := reflect.TypeOf(SetupProductPages)
-	if pages.NumIn() < 6 {
-		t.Fatalf("SetupProductPages 形参不足（pages / api / writeHandle / products / reader / projects …），实际 %d 个", pages.NumIn())
+	// 形参顺序：reg / pages / api / writeHandle / products / reader / projects …
+	if pages.NumIn() < 7 {
+		t.Fatalf("SetupProductPages 形参不足（reg / pages / api / writeHandle / products / reader / projects …），实际 %d 个", pages.NumIn())
 	}
-	if got, want := pages.In(4), readerIfaceType(); got != want {
-		t.Fatalf("SetupProductPages 第 5 个形参应为读模型 %v，实际 %v", want, got)
+	if got, want := pages.In(5), readerIfaceType(); got != want {
+		t.Fatalf("SetupProductPages 第 6 个形参应为读模型 %v，实际 %v", want, got)
 	}
 }
 

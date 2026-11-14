@@ -2,9 +2,12 @@ package workbenchhttp
 
 import (
 	"context"
+	"net/http"
 
-	"go_wp/pkg/builder/core"
+	mw "go_wp/pkg/middleware"
+
 	"go_wp/internal/middleware/builtin"
+	"go_wp/pkg/builder/core"
 	pageview "go_wp/pkg/view"
 
 	blockcontract "go_wp/internal/module/block/contract"
@@ -68,7 +71,7 @@ func New(pages pagecontract.PageService, projects projectcontract.ProjectService
 		templatePreview: templatePreview, svc: svc}
 }
 
-func SetupWorkbenchRoutes(workbenchPages *gin.RouterGroup,
+func SetupWorkbenchRoutes(reg *mw.Registry, workbenchPages *gin.RouterGroup,
 	pages pagecontract.PageService,
 	projects projectcontract.ProjectService,
 	blocks blockcontract.BlockService,
@@ -92,28 +95,39 @@ func SetupWorkbenchRoutes(workbenchPages *gin.RouterGroup,
 
 	g := workbenchPages
 
-	g.GET("/admin", pageview.UseRenderer(pageview.RenderPage), h.Dashboard)
+	registerWorkbenchShellPages(reg, g, h)
 
-	g.GET("/workbench", pageview.UseRenderer(pageview.RenderPage), h.Workbench)
+	g.GET("/workbench/preview", builtin.CasbinMiddlewareForPathAs("/api/page/draft/save", http.MethodPost), previewContext, h.Preview)
+	mw.DeclarePageGetAsOn(reg, "/workbench/preview", "/api/page/draft/save", http.MethodPost)
+	g.POST("/workbench/preview", builtin.CasbinMiddlewareForPath("/api/page/draft/save"), previewContext, h.PreviewDraft)
+	mw.DeclarePageWriteOn(reg, http.MethodPost, "/workbench/preview", "/api/page/draft/save", http.MethodPost)
 
-	g.GET("/workbench/preview", previewContext, h.Preview)
-	g.POST("/workbench/preview", previewContext, h.PreviewDraft)
+	g.POST("/workbench/inspector", builtin.CasbinMiddlewareForPath("/api/page/draft/save"),
+		pageview.UseRenderer(pageview.RenderBare), h.InspectorPanel)
+	mw.DeclarePageWriteOn(reg, http.MethodPost, "/workbench/inspector", "/api/page/draft/save", http.MethodPost)
 
-	g.POST("/workbench/inspector", pageview.UseRenderer(pageview.RenderBare), h.InspectorPanel)
+	g.POST("/workbench/outline", builtin.CasbinMiddlewareForPath("/api/page/draft/save"),
+		pageview.UseRenderer(pageview.RenderBare), h.OutlineTree)
+	mw.DeclarePageWriteOn(reg, http.MethodPost, "/workbench/outline", "/api/page/draft/save", http.MethodPost)
 
-	g.POST("/workbench/outline", pageview.UseRenderer(pageview.RenderBare), h.OutlineTree)
+	g.POST("/workbench/seo-score", builtin.CasbinMiddlewareForPath("/api/page/draft/save"), h.SEOScore)
+	mw.DeclarePageWriteOn(reg, http.MethodPost, "/workbench/seo-score", "/api/page/draft/save", http.MethodPost)
 
-	g.POST("/workbench/seo-score", h.SEOScore)
-
-	g.GET("/workbench/block/preview", previewContext, h.BlockPreview)
+	g.GET("/workbench/block/preview", builtin.CasbinMiddlewareForPathAs("/api/block/update", http.MethodPost), previewContext, h.BlockPreview)
+	mw.DeclarePageGetAsOn(reg, "/workbench/block/preview", "/api/block/update", http.MethodPost)
 	g.POST("/workbench/block/preview", builtin.CasbinMiddlewareForPath("/api/block/update"), previewContext, h.BlockPreviewDraft)
+	mw.DeclarePageWriteOn(reg, http.MethodPost, "/workbench/block/preview", "/api/block/update", http.MethodPost)
 
-	g.GET("/workbench/template/preview", previewContext, h.TemplatePreview)
-	g.POST("/workbench/template/preview", previewContext, h.TemplatePreviewDraft)
+	g.GET("/workbench/template/preview", builtin.CasbinMiddlewareForPathAs("/api/contenttemplate/update", http.MethodPost), previewContext, h.TemplatePreview)
+	mw.DeclarePageGetAsOn(reg, "/workbench/template/preview", "/api/contenttemplate/update", http.MethodPost)
+	g.POST("/workbench/template/preview", builtin.CasbinMiddlewareForPath("/api/contenttemplate/update"), previewContext, h.TemplatePreviewDraft)
+	mw.DeclarePageWriteOn(reg, http.MethodPost, "/workbench/template/preview", "/api/contenttemplate/update", http.MethodPost)
 
 	g.POST("/workbench/instance/save", builtin.CasbinMiddlewareForPath("/api/presentation/rebuild"), h.InstanceSave)
+	mw.DeclarePageWriteOn(reg, http.MethodPost, "/workbench/instance/save", "/api/presentation/rebuild", http.MethodPost)
 
 	g.POST("/workbench/navigation/create", builtin.CasbinMiddlewareForPath("/api/navigation/create"), h.InspectorNavigationCreate)
+	mw.DeclarePageWriteOn(reg, http.MethodPost, "/workbench/navigation/create", "/api/navigation/create", http.MethodPost)
 	return h
 }
 
@@ -125,3 +139,20 @@ const (
 	InspectorPanelTemplate = "fragments/inspector_panel"
 	OutlineTreeTemplate    = "fragments/outline_tree"
 )
+
+// registerWorkbenchShellPages 注册首页与工作台两个后台页面 GET。
+// 鉴权对象取页面列表：这是后台入口的最小读取权限，不读业务数据。
+func registerWorkbenchShellPages(reg *mw.Registry, g *gin.RouterGroup, h *Handle) {
+	shell := []struct {
+		path    string
+		handler gin.HandlerFunc
+	}{
+		{"/admin", h.Dashboard},
+		{"/workbench", h.Workbench},
+	}
+	for _, page := range shell {
+		g.GET(page.path, builtin.CasbinMiddlewareForPath("/api/page/list"),
+			pageview.UseRenderer(pageview.RenderPage), page.handler)
+		mw.DeclarePageGetOn(reg, page.path, "/api/page/list")
+	}
+}

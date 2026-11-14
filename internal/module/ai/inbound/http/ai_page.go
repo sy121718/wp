@@ -264,7 +264,6 @@ func cardData(base aidto.ProviderCardBase, provider aidto.Provider, defaultBaseU
 		BuiltinKeys:     builtinProviderKeys(),
 
 		CSRFToken: base.CSRFToken,
-		T:         base.T,
 		PermSet:   base.PermSet,
 		// 透传权限按钮集合：漏了它，卡片里所有 isset(.Buttons[...]) 都是假，
 		// 保存/启停/删除/模型区整片隐藏 —— 页面上看着像「没有权限」。
@@ -498,7 +497,7 @@ func (h *SessionPageHandle) attachSessionsBlocks(c *gin.Context, ctx context.Con
 
 	// 请求事实由 adminctx 提供，这里只取不派生。
 	facts := pageview.PageFacts(c)
-	v.CSRFToken, v.T, v.PermSet, v.Buttons = facts.CSRFToken, facts.T, facts.PermSet, facts.Buttons
+	v.CSRFToken, v.PermSet, v.Buttons = facts.CSRFToken, facts.PermSet, facts.Buttons
 
 	if err := h.attachSessionDetail(c, ctx, v); err != nil {
 		return err
@@ -603,7 +602,7 @@ func (h *SessionPageHandle) attachProviders(c *gin.Context, ctx context.Context,
 	cards := make([]any, 0, len(list))
 	for i := range list {
 		cards = append(cards, pageview.ViewMap(cardData(aidto.ProviderCardBase{
-			CSRFToken: v.CSRFToken, T: v.T, PermSet: v.PermSet, Buttons: v.Buttons,
+			CSRFToken: v.CSRFToken, PermSet: v.PermSet, Buttons: v.Buttons,
 		}, list[i], aiservice.BuiltinBaseURL(list[i].ProviderKey))))
 	}
 	v.ProviderCards = cards

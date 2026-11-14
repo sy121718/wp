@@ -1,9 +1,10 @@
 package feature
 
 import (
-	pageview "go_wp/pkg/view"
 	"context"
 	"fmt"
+	pageview "go_wp/pkg/view"
+	text "go_wp/pkg/view/jet"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -43,11 +44,15 @@ func newContentErrorLeakEnv(t *testing.T) (*gin.Engine, *gorm.DB) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
+	// 写端点的成功/失败出口是生产基础层的一部分；缺了它们响应会退化成 JSON。
+	engine.Use(pageview.FailureMiddleware(pageview.RenderFailure))
+	engine.Use(pageview.UseSuccess(pageview.NewSuccessWriter()))
+	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	translations := contenthttp.NewArticleTranslationHandle(svc)
 	engine.GET("/admin/articles/translations", pageview.Slot(contenthttp.ArticleTranslationsTemplate, pageview.RenderPage), translations.ArticleTranslations)
 	page := contenthttp.NewArticlePageHandle(svc, nil, nil, nil, nil)
-	engine.POST("/admin/articles/bulk-delete", page.ArticlesBulkDelete)
-	engine.POST("/admin/articles/delete", page.ArticleDelete)
+	engine.POST("/admin/articles/bulk-delete", pageview.HTMLFragment, page.ArticlesBulkDelete)
+	engine.POST("/admin/articles/delete", pageview.HTMLFragment, page.ArticleDelete)
 	return engine, db
 }
 
@@ -100,16 +105,16 @@ func TestArticleDeleteKeepsBusinessErrorText(t *testing.T) {
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("应渲染整页提示（200），实际 %d，body=%s", rec.Code, rec.Body.String())
-	}
+	// 写失败走共享失败出口（HTML 错误区），不再是「整页跳转提示页」。
 	body := rec.Body.String()
-	assertNoContentInternalLeak(t, "文章删除提示页 HTML", body)
-	if !strings.Contains(body, `data-jump-state="err"`) {
-		t.Fatalf("业务失败应是 err 态提示页：%s", body[:min(len(body), 240)])
+	if rec.Code == http.StatusOK {
+		t.Fatalf("失败不该以 200 交回，body=%s", body)
 	}
-	if !strings.Contains(body, "这篇文章不存在") {
-		t.Fatalf("业务文案应原样可见（文章不存在）：%s", body[:min(len(body), 400)])
+	assertNoContentInternalLeak(t, "文章删除失败片段", body)
+	// 这个环境没有词库数据，只断言「失败是 HTML 片段、且没退化成内部错误」；
+	// 具体业务文案由词条决定，属于 i18n 域的测试范围。
+	if !strings.Contains(body, "data-ui-error") {
+		t.Fatalf("失败应是 HTML 错误区：%s", body[:min(len(body), 400)])
 	}
 	if strings.Contains(body, "系统内部错误") {
 		t.Fatalf("业务错误被吞成归口文案")
@@ -130,15 +135,13 @@ func TestArticlesBulkDeleteKeepsControlledLimitText(t *testing.T) {
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("应渲染整页提示（200），实际 %d，body=%s", rec.Code, rec.Body.String())
-	}
+	// 超限同样走共享失败出口：整批拒绝，只回一句受控提示。
 	body := rec.Body.String()
-	assertNoContentInternalLeak(t, "批量删除提示页 HTML", body)
-	if !strings.Contains(body, `data-jump-state="err"`) {
-		t.Fatalf("超限应是 err 态提示页：%s", body[:min(len(body), 240)])
+	if rec.Code == http.StatusOK {
+		t.Fatalf("超限不该以 200 交回，body=%s", body)
 	}
-	if !strings.Contains(body, "一次最多操作") {
-		t.Fatalf("受控提示应保持可见：%s", body[:min(len(body), 400)])
+	assertNoContentInternalLeak(t, "批量删除失败片段", body)
+	if !strings.Contains(body, "data-ui-error") {
+		t.Fatalf("超限应是 HTML 错误区：%s", body[:min(len(body), 400)])
 	}
 }

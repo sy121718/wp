@@ -1,8 +1,9 @@
 package feature
 
 import (
-	pageview "go_wp/pkg/view"
 	"fmt"
+	pageview "go_wp/pkg/view"
+	text "go_wp/pkg/view/jet"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -35,6 +36,9 @@ func mailSplitEngine(t *testing.T) *gin.Engine {
 		}
 	})
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
+	// 生产装配里请求级取词作用域由 routers 装一次；最小引擎同样要装，
+	// 否则模板里的全局 t/tf 不可用（这正是本轮把取词收回共享接线的目标）。
+	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	return engine
 }
 

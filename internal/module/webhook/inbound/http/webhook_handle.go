@@ -30,8 +30,9 @@ func (h *Handle) EndpointList(c *gin.Context) {
 }
 
 func (h *Handle) EndpointSave(c *gin.Context) {
-	req, ok := binding.JSON[webhookdto.SaveEndpointReq](c)
-	if !ok {
+	var req webhookdto.SaveEndpointReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ParamError(c)
 		return
 	}
 	var (
@@ -39,9 +40,9 @@ func (h *Handle) EndpointSave(c *gin.Context) {
 		err  error
 	)
 	if req.ID > 0 {
-		item, err = h.svc.UpdateEndpoint(c.Request.Context(), req)
+		item, err = h.svc.UpdateEndpoint(c.Request.Context(), &req)
 	} else {
-		item, err = h.svc.CreateEndpoint(c.Request.Context(), req)
+		item, err = h.svc.CreateEndpoint(c.Request.Context(), &req)
 	}
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "webhook", err)
@@ -51,7 +52,12 @@ func (h *Handle) EndpointSave(c *gin.Context) {
 }
 
 func (h *Handle) EndpointDelete(c *gin.Context) {
-	id := parseID(c.Query("id"))
+	var query webhookdto.EndpointIDQuery
+	if err := c.ShouldBindQuery(&query); err != nil {
+		response.ParamError(c)
+		return
+	}
+	id := parseID(query.ID)
 	if id == 0 {
 		response.ErrorWithMessage(c, http.StatusBadRequest, webhookenums.ErrInvalidParam)
 		return
@@ -64,8 +70,9 @@ func (h *Handle) EndpointDelete(c *gin.Context) {
 }
 
 func (h *Handle) EndpointStatus(c *gin.Context) {
-	req, ok := binding.JSON[webhookdto.SetEndpointStatusReq](c)
-	if !ok {
+	var req webhookdto.SetEndpointStatusReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ParamError(c)
 		return
 	}
 	if req.ID == 0 {
@@ -96,7 +103,12 @@ func (h *Handle) DeliveryList(c *gin.Context) {
 }
 
 func (h *Handle) DeliveryRetry(c *gin.Context) {
-	id := parseID(c.Query("id"))
+	var query webhookdto.EndpointIDQuery
+	if err := c.ShouldBindQuery(&query); err != nil {
+		response.ParamError(c)
+		return
+	}
+	id := parseID(query.ID)
 	if id == 0 {
 		response.ErrorWithMessage(c, http.StatusBadRequest, webhookenums.ErrInvalidParam)
 		return

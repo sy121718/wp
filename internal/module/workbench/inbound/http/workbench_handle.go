@@ -2,8 +2,10 @@ package workbenchhttp
 
 import (
 	"context"
+
+	ginbinding "github.com/gin-gonic/gin/binding"
+
 	"go_wp/internal/middleware/builtin"
-	"go_wp/pkg/binding"
 	json "go_wp/pkg/jsonx"
 	"net/http"
 	"strings"
@@ -37,8 +39,10 @@ func (h *Handle) InspectorNavigationCreate(c *gin.Context) {
 		response.ErrorWithMessage(c, http.StatusServiceUnavailable, response.InternalText(c))
 		return
 	}
-	req, ok := binding.Form[workbenchdto.NavigationCreateReq](c)
-	if !ok {
+	// 检查器发起的是 urlencoded 表单（editor-app/host.js），只读 body、不合并 query。
+	var req workbenchdto.NavigationCreateReq
+	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+		response.ParamError(c)
 		return
 	}
 	projectID, title := strings.TrimSpace(req.ProjectID), strings.TrimSpace(req.Title)
@@ -63,8 +67,9 @@ func (h *Handle) InspectorNavigationCreate(c *gin.Context) {
 }
 
 func (h *Handle) SEOScore(c *gin.Context) {
-	req, ok := binding.Form[workbenchdto.SEOScoreReq](c)
-	if !ok {
+	var req workbenchdto.SEOScoreReq
+	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+		response.ParamError(c)
 		return
 	}
 	document := json.RawMessage(req.DraftDocument)

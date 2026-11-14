@@ -6,16 +6,16 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	mw "go_wp/pkg/middleware"
 	analyticscontract "go_wp/internal/module/analytics/contract"
 	projectcontract "go_wp/internal/module/project/contract"
+	mw "go_wp/pkg/middleware"
 )
 
 const SEOPageTemplate = "admin/analytics/seo.html"
 
 const AnalyticsPageTemplate = "admin/analytics/analytics.html"
 
-func setupAnalyticsPageRoutes(pages *gin.RouterGroup,
+func setupAnalyticsPageRoutes(reg *mw.Registry, pages *gin.RouterGroup,
 	analytics analyticscontract.AnalyticsService, projects projectcontract.ProjectService) {
 	if pages == nil {
 		return
@@ -25,6 +25,7 @@ func setupAnalyticsPageRoutes(pages *gin.RouterGroup,
 		mw.PageAuthz("/api/analytics/summary"),
 		pageview.Slot(AnalyticsPageTemplate, pageview.RenderPage),
 		analyticsPages.AnalyticsPage)
+	mw.DeclarePageGetOn(reg, "/admin/analytics", "/api/analytics/summary")
 
 	seoPages := NewSEOPageHandle(analytics, projects)
 
@@ -32,4 +33,5 @@ func setupAnalyticsPageRoutes(pages *gin.RouterGroup,
 		mw.PageAuthzAs("/api/seo/audit", http.MethodPost),
 		pageview.Slot(SEOPageTemplate, pageview.RenderPage),
 		seoPages.SEOPage)
+	mw.DeclarePageGetAsOn(reg, "/admin/seo", "/api/seo/audit", http.MethodPost)
 }

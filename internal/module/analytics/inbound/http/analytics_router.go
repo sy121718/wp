@@ -44,7 +44,7 @@ func SetupAnalyticsRoutes(rg *mw.RouteGroup, router *gin.Engine, db *gorm.DB,
 		g.GET("/summary", analyticsenums.AnalyticsView, handle.Summary)
 	}
 
-	setupAnalyticsPageRoutes(pages, svc, projects)
+	setupAnalyticsPageRoutes(rg.Registry(), pages, svc, projects)
 
 	return svc
 }

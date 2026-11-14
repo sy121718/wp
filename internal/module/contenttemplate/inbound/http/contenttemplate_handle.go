@@ -25,11 +25,12 @@ func NewHandle(svc contenttemplatecontract.ContentTemplateService) *Handle {
 }
 
 func (h *Handle) Create(c *gin.Context) {
-	req, ok := binding.JSON[contenttemplatedto.CreateReq](c)
-	if !ok {
+	var req contenttemplatedto.CreateReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ParamError(c)
 		return
 	}
-	res, err := h.svc.Create(c.Request.Context(), req)
+	res, err := h.svc.Create(c.Request.Context(), &req)
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "contenttemplate", err)
 		return
@@ -53,11 +54,12 @@ func (h *Handle) Activate(c *gin.Context) {
 }
 
 func (h *Handle) Update(c *gin.Context) {
-	req, ok := binding.JSON[contenttemplatedto.UpdateReq](c)
-	if !ok {
+	var req contenttemplatedto.UpdateReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ParamError(c)
 		return
 	}
-	res, err := h.svc.Update(c.Request.Context(), req)
+	res, err := h.svc.Update(c.Request.Context(), &req)
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "contenttemplate", err)
 		return

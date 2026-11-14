@@ -61,8 +61,9 @@ func TestSEOPageTemplateRendersAvailableAndMissingData(t *testing.T) {
 	for _, want := range []string{
 		"SEO 控制台", "演示站", "/guides/seo", "42", "17",
 		"data-seo-audit-action", "data-seo-audit-result",
-		`data-write="custom"`, `data-write-url="/api/publication/seo-audit"`,
-		`data-write-handler="publication.seo-audit"`, "data-write-latest",
+		// 体检入口已改 HTMX 写基座：旧 data-write="custom"/data-write-url 等执行器属性已退役。
+		`data-write`, `hx-post="/api/publication/seo-audit"`,
+		`hx-target="find [data-seo-audit-result]"`, "data-seo-audit-action",
 		"来源统计当前不可用",
 		"sitemap / feed 实时状态当前不可用", "外部搜索平台数据当前不可用",
 	} {

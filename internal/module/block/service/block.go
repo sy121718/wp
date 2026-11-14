@@ -182,7 +182,7 @@ func (s *Service) Update(ctx context.Context, req *blockdto.UpdateReq) (res *blo
 				return blockcontract.NewBlockInUseError(usages)
 			}
 		}
-		n, uerr := s.model.UpdateDocumentTx(ctx, entity.ProjectID, entity.ID, req.ExpectedVersion,
+		n, uerr := s.model.UpdateDocumentTx(ctx, tx, entity.ProjectID, entity.ID, req.ExpectedVersion,
 			name, kind, category, reuseMode, document, now)
 		affected = n
 		return uerr

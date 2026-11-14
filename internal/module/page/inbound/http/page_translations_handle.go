@@ -3,8 +3,6 @@ package pagehttp
 import (
 	"context"
 	"errors"
-	"go_wp/pkg/backpath"
-	pageview "go_wp/pkg/view"
 	"net/http"
 	"net/url"
 	"sort"
@@ -14,18 +12,23 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+
 	"go_wp/internal/middleware/builtin"
 	blockcontract "go_wp/internal/module/block/contract"
 	pagecontract "go_wp/internal/module/page/contract"
 	pagedto "go_wp/internal/module/page/dto"
 	pageenums "go_wp/internal/module/page/enums"
 	projectdto "go_wp/internal/module/project/dto"
+	"go_wp/pkg/backpath"
 	"go_wp/pkg/binding"
 	"go_wp/pkg/builder"
 	"go_wp/pkg/builder/core"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
+	pageview "go_wp/pkg/view"
+
+	ginbinding "github.com/gin-gonic/gin/binding"
 )
 
 type contentTranslationPort interface {
@@ -189,8 +192,10 @@ func (h *pagesAdminHandle) renderTranslationsFailure(c *gin.Context, status int,
 
 func (h *pagesAdminHandle) SavePageTranslations(c *gin.Context) {
 	ctx := c.Request.Context()
-	req, ok := binding.Form[pagedto.PageTranslationsSaveFormReq](c)
-	if !ok {
+	// 该 DTO 有列数组装配钩子；用 body-only 的显式表单入口，钩子在体值上执行。
+	req, err := binding.ParseForm[pagedto.PageTranslationsSaveFormReq](c)
+	if err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, pageErrScene, pageenums.Err(pageenums.ErrInvalidParam))
 		return
 	}
 	pageID := strings.TrimSpace(req.PageID)
@@ -267,7 +272,8 @@ func (h *pagesAdminHandle) SavePageTranslations(c *gin.Context) {
 		return
 	}
 	if len(items) == 0 {
-		response.SuccessMsg(c, pageTranslationsSavedMsg(0), gin.H{"written": 0})
+		// 路由声明的是 HTML 片段：成功交共享成功出口，与失败同一条协议。
+		pageTranslationsSaved(c, 0)
 		return
 	}
 
@@ -313,13 +319,22 @@ func (h *pagesAdminHandle) SavePageTranslations(c *gin.Context) {
 		}
 	}
 
-	response.SuccessMsg(c, pageTranslationsSavedMsg(written), gin.H{"written": written})
+	pageTranslationsSaved(c, written)
 }
 
+// pageTranslationsSaved 把已声明的消息事实交共享成功出口（HTML 片段）。
+func pageTranslationsSaved(c *gin.Context, written int) {
+	msg := pageTranslationsSavedMsg(written)
+	pageview.SuccessMessage(c, msg.Key, msg.Fallback, msg.Args...)
+}
+
+// renderTranslationError 渲染逐行原因片段。
+//
+// 它是**失败**响应：状态码必须是 4xx，不能以 200 交回 —— 否则写基座会当成成功。
+// 逐行原因（哪一行、什么原因）是用户要的明细，所以保留专用片段而不是压成一句归口文案。
 func (h *pagesAdminHandle) renderTranslationError(c *gin.Context, pageID, lang string, errs []TranslationRowErrorResp) {
-	pageview.RenderTemplate(c, "admin/page/page_translations_save_errors.html", &TranslationErrorsResp{
-		Errors: errs,
-	})
+	pageview.RenderFragmentStatus(c, http.StatusBadRequest, "admin/page/page_translations_save_errors.html",
+		&TranslationErrorsResp{Title: pageMsg{Key: pageenums.MsgTranslationInvalid, Fallback: translationMsgFallback[pageenums.MsgTranslationInvalid]}, Errors: errs})
 }
 
 func (h *pagesAdminHandle) buildPageTranslationsData(ctx context.Context, pageID, wantLang, filter string) (*pageTranslationsData, error) {
@@ -936,8 +951,9 @@ func (h *pagesAdminHandle) TranslationMissesPage(c *gin.Context) {
 }
 
 func (h *pagesAdminHandle) TranslationMissCancel(c *gin.Context) {
-	req, ok := binding.Form[pagedto.PageLangFormReq](c)
-	if !ok {
+	var req pagedto.PageLangFormReq
+	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, pageErrScene, pageenums.Err(pageenums.ErrInvalidParam))
 		return
 	}
 	pageID := strings.TrimSpace(req.PageID)

@@ -1,6 +1,7 @@
 package mediahttp
 
 import (
+	"context"
 	"go_wp/internal/middleware/builtin"
 	mediacontract "go_wp/internal/module/media/contract"
 	mediaenums "go_wp/internal/module/media/enums"
@@ -11,7 +12,9 @@ import (
 	"gorm.io/gorm"
 )
 
-func SetupMediaRoutes(rg *mw.RouteGroup, db *gorm.DB) mediacontract.MediaService {
+// SetupMediaRoutes 装配媒体路由；ctx 是进程级上下文，巡检循环挂在它上面。
+// 返回的 stop 取消循环并等待在途一轮结束，调用方须在关闭数据库之前调用它。
+func SetupMediaRoutes(ctx context.Context, rg *mw.RouteGroup, db *gorm.DB) (mediacontract.MediaService, func()) {
 	am := mediamodel.NewAttachmentModel(db)
 	cm := mediamodel.NewFileCategoryModel(db)
 	vm := mediamodel.NewMediaVariantModel(db)
@@ -20,7 +23,7 @@ func SetupMediaRoutes(rg *mw.RouteGroup, db *gorm.DB) mediacontract.MediaService
 
 	mediaservice.RegisterVariantTaskHandler(db)
 
-	mediaservice.StartMediaReconcileScheduler(svc)
+	stopPatrol := mediaservice.StartMediaReconcileScheduler(ctx, svc)
 
 	g := rg.Group("/media", builtin.SessionAuthMiddleware())
 	{
@@ -41,5 +44,5 @@ func SetupMediaRoutes(rg *mw.RouteGroup, db *gorm.DB) mediacontract.MediaService
 		g.GET("/download/batch", mediaenums.MediaDownloadBatch, handle.DownloadBatch)
 		g.POST("/variants/generate", mediaenums.MediaVariantsGenerate, handle.GenerateVariants)
 	}
-	return svc
+	return svc, stopPatrol
 }

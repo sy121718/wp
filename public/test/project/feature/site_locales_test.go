@@ -1,19 +1,20 @@
 package feature
 
 import (
-	pageview "go_wp/pkg/view"
 	"context"
-	"net/http"
-	"net/http/httptest"
-	"net/url"
-	"strings"
-	"testing"
 	projectdto "go_wp/internal/module/project/dto"
 	projecthttp "go_wp/internal/module/project/inbound/http"
 	projectmodel "go_wp/internal/module/project/model"
 	projectservice "go_wp/internal/module/project/service"
 	"go_wp/internal/templates"
+	pageview "go_wp/pkg/view"
+	text "go_wp/pkg/view/jet"
 	"go_wp/public/test/support"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"strings"
+	"testing"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -31,6 +32,9 @@ func newSiteLocalesEnv(t *testing.T) (*gin.Engine, *projectservice.Service, stri
 	handle := projecthttp.NewSiteSettingsAdminHandle(projects, nil, nil)
 	router := gin.New()
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
+	// 与生产装配一致：请求级取词作用域与统一成功出口由应用装一次。
+	router.Use(pageview.UseSuccess(pageview.NewSuccessWriter()))
+	router.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	router.GET("/admin/settings", pageview.Slot(projecthttp.SiteSettingsPageTemplate, pageview.RenderPage), handle.SiteSettings)
 	router.POST("/admin/settings/locales/rows", pageview.Slot(projecthttp.LocaleRowsFragmentTemplate, pageview.RenderBare), handle.LocaleRowsFragment)
 	router.POST("/admin/settings/locales/save", pageview.Slot(projecthttp.SiteSettingsPageTemplate, pageview.RenderPage), handle.SaveSiteLocales)
@@ -140,10 +144,12 @@ func TestSaveSiteLocalesPersists(t *testing.T) {
 		"enabledIndex": {"0", "1"},
 	})
 	if saved.Code != http.StatusOK {
-		t.Fatalf("保存成功应 200 渲染提示页，实际 %d：%s", saved.Code, saved.Body.String())
+		t.Fatalf("保存成功应 200 渲染成功片段，实际 %d：%s", saved.Code, saved.Body.String())
 	}
-	if !strings.Contains(saved.Body.String(), `data-jump-state="ok"`) {
-		t.Fatalf("响应不是成功提示页（缺 data-jump-state=\"ok\"）:\n%s", saved.Body.String())
+	// 整页跳转提示已清退：成功交共享出口，单根状态节点由公共组件声明。
+	body := saved.Body.String()
+	if !strings.Contains(body, `role="status"`) || !strings.Contains(body, "</p>") {
+		t.Fatalf("响应不是共享成功出口的单根状态节点：\n%s", body)
 	}
 
 	rows := localeLangs(t, projects, projectID)

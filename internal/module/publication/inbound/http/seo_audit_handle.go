@@ -31,6 +31,10 @@ func bindSeoAuditReq(c *gin.Context) (*pubdto.SeoAuditReq, bool) {
 }
 
 // SeoAudit 接收标准表单，结果由 Jet 片段渲染成结论区。
+//
+// 出口形态是**片段**（seo.html 用 hx-post + data-seo-audit-result 整块换入），
+// 失败同样走片段而非 JSON。请求侧是标准表单编码：JSON 是历史兼容入口，
+// 随 binding.JSON 的收窄一起退役，这里显式拒绝而不是静默忽略字段。
 func (h *SeoAuditHandle) SeoAudit(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
 	req, ok := bindSeoAuditReq(c)
@@ -42,7 +46,7 @@ func (h *SeoAuditHandle) SeoAudit(c *gin.Context) {
 		pageview.FailScene(c, "publication", err)
 		return
 	}
-	c.HTML(http.StatusOK, "admin/analytics/seo_audit_result.html", pageview.Objects(
+	pageview.RenderFragment(c, "admin/analytics/seo_audit_result.html", pageview.Objects(
 		pageview.Object("Result", result),
 	))
 }

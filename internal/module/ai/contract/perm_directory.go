@@ -20,4 +20,8 @@ type PermDirectory interface {
 	Exists(ctx context.Context, code string) (bool, error)
 	// List 批量取目录项；未命中的码不出现在返回里。
 	List(ctx context.Context, codes []string) ([]PermEntry, error)
+
+	// ListByPathMethod 返回该 api_path/api_method 的目录项（含被停用的）。
+	// 页面/后台写入口复用别的操作权限时没有自己的权限码，只能按鉴权对象核对。
+	ListByPathMethod(ctx context.Context, path, method string) ([]PermEntry, error)
 }

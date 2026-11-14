@@ -8,10 +8,10 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-	"sync"
 	"time"
 
 	mediamodel "go_wp/internal/module/media/model"
+	"go_wp/pkg/lifecycle"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/upload"
 	"go_wp/pkg/utils"
@@ -498,27 +498,30 @@ func catchMediaActionPanic(target *error) {
 	}
 }
 
-func runMediaReconcileLoop(round func(), interval time.Duration) (stop func()) {
+// runMediaReconcileLoop 用共享的最小周期原语启动巡检循环，返回 quit 与 wait。
+//
+// quit 停止新轮；wait 等在途的一轮结束后返回 —— 调用方必须在关闭数据库之前 wait，
+// 否则库里已关而巡检还在跑。首轮、间隔与 panic 隔离都由 pkg/lifecycle 提供。
+// 循环 ctx 从 parent 派生：应用 ctx 取消后循环退出，不再启动新轮。
+func runMediaReconcileLoop(parent context.Context, round func(context.Context), interval time.Duration) (stop func(), wait func()) {
 	if interval <= 0 {
 		interval = mediaReconcileInterval
 	}
-	done := make(chan struct{})
-	var once sync.Once
-	go func() {
-
-		safeMediaReconcileRound(round)
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ticker.C:
-				safeMediaReconcileRound(round)
-			case <-done:
-				return
-			}
-		}
-	}()
-	return func() { once.Do(func() { close(done) }) }
+	if parent == nil {
+		parent = context.Background()
+	}
+	ctx, cancel := context.WithCancel(parent)
+	task := lifecycle.PeriodicTask{
+		Interval: interval,
+		Timeout:  mediaReconcileTimeout,
+		Round:    round,
+		OnPanic: func(r any) {
+			logger.Scene("media").Error(fmt.Errorf("panic: %v", r),
+				"媒体存储巡检单轮 panic（已收敛，下一轮照常；不影响进程）")
+		},
+	}
+	waitFn := task.Start(ctx)
+	return cancel, waitFn
 }
 
 func safeMediaReconcileRound(round func()) {
@@ -531,28 +534,36 @@ func safeMediaReconcileRound(round func()) {
 	round()
 }
 
-func StartMediaReconcileScheduler(svc *Service) {
+// StartMediaReconcileScheduler 启动巡检；返回的 stop 取消循环并等待在途一轮结束。
+// ctx 是进程/装配级上下文：收尾时先 cancel，再 stop 等待，最后关数据库。
+func StartMediaReconcileScheduler(ctx context.Context, svc *Service) func() {
 	if utils.IsTestProcess() {
-		return
+		return func() {}
 	}
-	startMediaReconcileScheduler(svc, mediaReconcileInterval)
+	return startMediaReconcileScheduler(ctx, svc, mediaReconcileInterval)
 }
 
-func StartMediaReconcileSchedulerWithInterval(svc *Service, interval time.Duration) {
-	startMediaReconcileScheduler(svc, interval)
+// StartMediaReconcileSchedulerWithInterval 与上同，只是显式指定间隔（测试与运维用）。
+func StartMediaReconcileSchedulerWithInterval(ctx context.Context, svc *Service, interval time.Duration) func() {
+	return startMediaReconcileScheduler(ctx, svc, interval)
 }
 
-func startMediaReconcileScheduler(svc *Service, interval time.Duration) {
+func startMediaReconcileScheduler(ctx context.Context, svc *Service, interval time.Duration) func() {
 	if svc == nil {
-		return
+		return func() {}
 	}
-	runMediaReconcileLoop(func() {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	stop, wait := runMediaReconcileLoop(ctx, func(runCtx context.Context) {
 		start := time.Now()
-		ctx, cancel := context.WithTimeout(context.Background(), mediaReconcileTimeout)
-		defer cancel()
-		res := runMediaReconcileRound(ctx, svc)
+		res := runMediaReconcileRound(runCtx, svc)
 		logMediaReconcileRound(res, time.Since(start))
 	}, interval)
+	return func() {
+		stop()
+		wait()
+	}
 }
 
 func logMediaReconcileRound(res mediaReconcileRoundResult, cost time.Duration) {

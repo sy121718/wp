@@ -3,11 +3,11 @@ package userhttp
 import (
 	"github.com/gin-gonic/gin"
 
-	mw "go_wp/pkg/middleware"
 	membershipcontract "go_wp/internal/module/membership/contract"
 	ordercontract "go_wp/internal/module/order/contract"
 	projectcontract "go_wp/internal/module/project/contract"
 	usercontract "go_wp/internal/module/user/contract"
+	mw "go_wp/pkg/middleware"
 	pageview "go_wp/pkg/view"
 )
 
@@ -19,7 +19,7 @@ const (
 	CustomerRfmPageTemplate      = "admin/user/customer_rfm"
 )
 
-func SetupCustomerPages(pages *gin.RouterGroup,
+func SetupCustomerPages(reg *mw.Registry, pages *gin.RouterGroup,
 	users usercontract.CustomerAdminPort,
 	orders ordercontract.CustomerOrderSummaryReader,
 	projects projectcontract.ProjectService,
@@ -46,24 +46,29 @@ func SetupCustomerPages(pages *gin.RouterGroup,
 		mw.PageAuthz("/api/customer/list"),
 		pageview.UseRenderer(pageview.RenderPage),
 		h.CustomersPage)
+	mw.DeclarePageGetOn(reg, "/admin/customers", "/api/customer/list")
 
 	pages.GET("/customers/overview",
 		mw.PageAuthz("/api/customer/list"),
 		pageview.UseRenderer(pageview.RenderPage),
 		h.CustomerOverviewPage)
+	mw.DeclarePageGetOn(reg, "/admin/customers/overview", "/api/customer/list")
 
 	pages.GET("/customers/rfm",
 		mw.PageAuthz("/api/customer/list"),
 		pageview.UseRenderer(pageview.RenderPage),
 		h.CustomerRfmPage)
+	mw.DeclarePageGetOn(reg, "/admin/customers/rfm", "/api/customer/list")
 
 	pages.GET("/customers/cohort",
 		mw.PageAuthz("/api/customer/list"),
 		pageview.UseRenderer(pageview.RenderPage),
 		h.CustomerCohortPage)
+	mw.DeclarePageGetOn(reg, "/admin/customers/cohort", "/api/customer/list")
 
 	pages.GET("/customers/detail",
 		mw.PageAuthz("/api/customer/list"),
 		pageview.UseRenderer(pageview.RenderPage),
 		h.CustomerDetailPage)
+	mw.DeclarePageGetOn(reg, "/admin/customers/detail", "/api/customer/list")
 }

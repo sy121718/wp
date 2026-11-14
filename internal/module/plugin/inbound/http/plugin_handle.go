@@ -2,6 +2,7 @@ package pluginhttp
 
 import (
 	"io"
+	"mime/multipart"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -24,14 +25,15 @@ func NewHandle(svc plugincontract.PluginService) *Handle { return &Handle{svc: s
 const uploadMaxBytes = 52 << 20
 
 func (h *Handle) Install(c *gin.Context) {
-	file, _, err := c.Request.FormFile("file")
-	if err != nil {
+	// 上传是明确的 multipart 文件表单：与页面端点 /admin/plugins/install 共用
+	// InstallFormReq，避免同一动作两条入口各解析一次请求体。
+	var form plugindto.InstallFormReq
+	if err := c.ShouldBindWith(&form, ginbinding.FormMultipart); err != nil || form.File == nil {
 		response.ErrorWithMessage(c, http.StatusBadRequest, pluginenums.ErrInstallParse)
 		return
 	}
-	defer file.Close()
-	data, err := io.ReadAll(io.LimitReader(file, uploadMaxBytes+1))
-	if err != nil || len(data) == 0 || len(data) > uploadMaxBytes {
+	data, ok := readPluginUpload(form.File)
+	if !ok {
 		response.ErrorWithMessage(c, http.StatusBadRequest, pluginenums.ErrInstallParse)
 		return
 	}
@@ -41,6 +43,21 @@ func (h *Handle) Install(c *gin.Context) {
 		return
 	}
 	response.SuccessWithMessage(c, pluginenums.MsgInstallSuccess, res)
+}
+
+// readPluginUpload 读出上传文件字节并做大小/空文件校验。
+// 空文件、读取失败、超限都返回 false，由调用方给统一的安装解析失败出口。
+func readPluginUpload(header *multipart.FileHeader) ([]byte, bool) {
+	file, err := header.Open()
+	if err != nil {
+		return nil, false
+	}
+	defer file.Close()
+	data, err := io.ReadAll(io.LimitReader(file, uploadMaxBytes+1))
+	if err != nil || len(data) == 0 || len(data) > uploadMaxBytes {
+		return nil, false
+	}
+	return data, true
 }
 
 func (h *Handle) List(c *gin.Context) {

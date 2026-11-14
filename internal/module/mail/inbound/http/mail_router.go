@@ -1,6 +1,8 @@
 package mailhttp
 
 import (
+	"context"
+
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
@@ -13,7 +15,9 @@ import (
 	pageview "go_wp/pkg/view"
 )
 
-func SetupMailRoutes(rg *mw.RouteGroup, db *gorm.DB, pages *gin.RouterGroup) mailcontract.MailService {
+// SetupMailRoutes 装配邮件路由；返回的 stop 取消本模块启动的后台循环并等待在途一轮结束，
+// 调用方必须在关闭数据库之前调用它（装配层登记到停止表）。
+func SetupMailRoutes(ctx context.Context, rg *mw.RouteGroup, db *gorm.DB, pages *gin.RouterGroup) (mailcontract.MailService, func()) {
 	secret := ""
 	if v, err := config.GetViper(); err == nil && v != nil {
 		secret = v.GetString("app.secret")
@@ -28,9 +32,7 @@ func SetupMailRoutes(rg *mw.RouteGroup, db *gorm.DB, pages *gin.RouterGroup) mai
 
 	mailservice.RegisterMailAutomationTaskHandler(db, secret)
 
-	mailservice.StartMailRetentionScheduler(svc)
-
-	mailservice.StartMailAutomationScheduler(svc)
+	stop := startMailBackgroundTasks(ctx, svc)
 
 	handle := NewHandle(svc)
 	g := rg.Group("/mail")
@@ -69,7 +71,18 @@ func SetupMailRoutes(rg *mw.RouteGroup, db *gorm.DB, pages *gin.RouterGroup) mai
 
 	g.POST("/automation/tick", mailenums.MailAutomationTick, handle.AutomationTick)
 
-	setupMailPageRoutes(pages, svc)
+	setupMailPageRoutes(rg.Registry(), pages, svc)
 
-	return svc
+	return svc, stop
+}
+
+// startMailBackgroundTasks 启动邮件模块的两个周期任务并合并停止句柄。
+// 两者都接装配级 ctx：收尾时先 cancel、再等这一轮退出，最后才关数据库。
+func startMailBackgroundTasks(ctx context.Context, svc *mailservice.Service) func() {
+	stopRetention := mailservice.StartMailRetentionScheduler(ctx, svc)
+	stopAutomation := mailservice.StartMailAutomationScheduler(ctx, svc)
+	return func() {
+		stopRetention()
+		stopAutomation()
+	}
 }

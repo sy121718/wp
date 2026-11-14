@@ -40,6 +40,7 @@ func newAdminRolePermissionsEngineWithUser(t *testing.T, svc *fakeRoleService, u
 		RouteRegistrar: func(e *gin.Engine) {
 			e.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 			e.Use(view.FailureMiddleware(view.RenderFailure))
+			e.Use(view.UseSuccess(view.NewSuccessWriter()))
 			e.Use(templates.FailedRenderMiddleware(func(c *gin.Context, err error) { view.FailScene(c, "template", err) }))
 			e.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 			e.GET("/admin/roles/permissions/drawer", view.HTMLFragment, handle.RolePermissionsDrawer)
@@ -108,7 +109,9 @@ func TestAdminRolePermissionsDrawerRendersCheckedNodes(t *testing.T) {
 			t.Fatalf("节点 %d 勾选错误: %v", id, got)
 		}
 	}
-	for _, want := range []string{`data-id="3" data-parent="2" data-depth="3"`, "content:delete", `padding-left:50px`} {
+	// 缩进不再写内联 padding，改为 --perm-depth 变量（由 CSS 按深度取值）：
+	// 断言变量存在与赋值，而不是钉住某个像素值。
+	for _, want := range []string{`data-id="3" data-parent="2" data-depth="3"`, "content:delete", `--perm-depth:3`} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("权限树缺少父级、权限或缩进 %q: %s", want, body)
 		}

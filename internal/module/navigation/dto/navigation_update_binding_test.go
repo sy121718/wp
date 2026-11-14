@@ -91,14 +91,12 @@ func translationFields(rows string) [][2]string {
 
 func TestUpdateEnvelopeThroughRealBinding(t *testing.T) {
 	rowsJSON := `[{"context":"nav.header","hash":"h1","target":"Home"},{"context":"nav.footer","hash":"h2","target":""}]`
+	// 端点声明为写方法 + JSON 输入：只验 JSON 一条协议。
 	cases := []struct {
 		name string
 		req  func() *http.Request
 	}{
 		{"json", func() *http.Request { return jsonRequest(t, "application/json", translationJSON(rowsJSON)) }},
-		{"json 无 Content-Type", func() *http.Request { return jsonRequest(t, "", translationJSON(rowsJSON)) }},
-		{"urlencoded", func() *http.Request { return formRequest(t, translationForm(rowsJSON)) }},
-		{"multipart", func() *http.Request { return multipartRequest(t, translationFields(rowsJSON)) }},
 	}
 	var want *navigationdto.TranslationUpdateReq
 	for _, tc := range cases {
@@ -119,7 +117,7 @@ func TestUpdateEnvelopeThroughRealBinding(t *testing.T) {
 				return
 			}
 			if req.ProjectID != want.ProjectID || req.Lang != want.Lang || !slices.Equal(req.Rows, want.Rows) {
-				t.Fatalf("四种投放必须解出同一份入参：got=%+v want=%+v", req, want)
+				t.Fatalf("同一份 JSON 必须解出同一份入参：got=%+v want=%+v", req, want)
 			}
 		})
 	}
@@ -135,13 +133,6 @@ func TestUpdateEnvelopeBindingLegacyThroughRealBinding(t *testing.T) {
 	}{
 		{"json", func() *http.Request {
 			return jsonRequest(t, "application/json", `{"id":"n-1","title":"home","sortOrder":3,"unknownField":1}`)
-		}},
-		{"json 无 Content-Type", func() *http.Request { return jsonRequest(t, "", `{"id":"n-1","title":"home"}`) }},
-		{"urlencoded", func() *http.Request {
-			return formRequest(t, url.Values{"id": {"n-1"}, "title": {"home"}, "sortOrder": {"3"}, "unknownField": {"1"}})
-		}},
-		{"multipart", func() *http.Request {
-			return multipartRequest(t, [][2]string{{"id", "n-1"}, {"title", "home"}, {"sortOrder", "3"}, {"unknownField", "1"}})
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -167,8 +158,6 @@ func TestUpdateEnvelopeBindingLegacyThroughRealBinding(t *testing.T) {
 		req  func() *http.Request
 	}{
 		{"json 缺 id", func() *http.Request { return jsonRequest(t, "application/json", `{"title":"home"}`) }},
-		{"urlencoded 缺 id", func() *http.Request { return formRequest(t, url.Values{"title": {"home"}}) }},
-		{"multipart 缺 id", func() *http.Request { return multipartRequest(t, [][2]string{{"title", "home"}}) }},
 	}
 	for _, tc := range missing {
 		t.Run(tc.name, func(t *testing.T) {
@@ -180,8 +169,9 @@ func TestUpdateEnvelopeBindingLegacyThroughRealBinding(t *testing.T) {
 	}
 }
 
-func TestUpdateEnvelopeBindingMultipartMove(t *testing.T) {
-	r := bindThrough(t, multipartRequest(t, [][2]string{{"action", "move"}, {"id", "n-1"}, {"dir", "up"}, {"projectId", "p-1"}}))
+func TestUpdateEnvelopeBindingMove(t *testing.T) {
+	r := bindThrough(t, jsonRequest(t, "application/json",
+		`{"action":"move","id":"n-1","dir":"up","projectId":"p-1"}`))
 	if r.code != http.StatusOK || r.env == nil {
 		t.Fatalf("binding 应成功，code=%d body=%s", r.code, r.body)
 	}
@@ -206,8 +196,6 @@ func TestUpdateEnvelopeBindingTranslationUnknownKey(t *testing.T) {
 		req  *http.Request
 	}{
 		{"json 未知键", jsonRequest(t, "application/json", `{"action":"translations","project":"p-1","lang":"`+langOK()+`","rows":`+rows+`,"id":"n-1"}`)},
-		{"urlencoded 未知键", formRequest(t, bad)},
-		{"multipart 未知键", multipartRequest(t, append(translationFields(rows), [2]string{"unexpected", "x"}))},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			r := bindThrough(t, tc.req)
@@ -217,6 +205,8 @@ func TestUpdateEnvelopeBindingTranslationUnknownKey(t *testing.T) {
 		})
 	}
 
+	// 绑定走 pkg/binding 的兼容入口：JSON 与表单两种形状都接受（公开端点两种调用方都有）。
+	// 「协议不唯一」由契约生成器如实标 unknown，不在绑定层收窄。
 	ok := translationForm(rows)
 	ok.Set("csrf_token", "tok")
 	for _, tc := range []struct {
@@ -263,9 +253,9 @@ func TestUpdateEnvelopeBindingBodyLimit(t *testing.T) {
 	}
 }
 
-func TestUpdateEnvelopeBindingMultipartRowsStringIsUnwrapped(t *testing.T) {
+func TestUpdateEnvelopeBindingRowsRoundTrip(t *testing.T) {
 	rows := `[{"context":"a","hash":"h1","target":"A"},{"context":"b","hash":"h2","target":""}]`
-	r := bindThrough(t, multipartRequest(t, translationFields(rows)))
+	r := bindThrough(t, jsonRequest(t, "application/json", translationJSON(rows)))
 	if r.code != http.StatusOK || r.env == nil {
 		t.Fatalf("binding 应成功，code=%d body=%s", r.code, r.body)
 	}

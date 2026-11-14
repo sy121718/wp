@@ -9,9 +9,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 	blockcontract "go_wp/internal/module/block/contract"
-	view "go_wp/pkg/view"
 	"go_wp/pkg/facing"
 	"go_wp/pkg/response"
+	view "go_wp/pkg/view"
 
 	"gorm.io/gorm"
 )
@@ -74,32 +74,25 @@ func TestBlockErrFactKeepsBusinessKeyWithoutInternalDetail(t *testing.T) {
 	}
 }
 
-func TestBlockErrTextBusinessErrorKeepsKey(t *testing.T) {
+// 失败文案由共享出口按错误事实取词：业务错误保留自己的 key，非业务错误落归口文案，
+// 驱动原文（SQLSTATE / 表名）不得泄漏到页面。页面侧不再有私有取词包装。
+func TestBlockFailureFactUsesSharedExit(t *testing.T) {
 	c := blockErrTestContext()
-	got := blockErrText(c, blockcontract.ErrNotFound)
-	if strings.TrimSpace(got) == "" {
-		t.Fatal("业务错误必须给出一句可展示文案（空串会让失败在页面上完全不可见）")
+	business := view.PageErrorFactQuiet(c, blockErrScene, blockcontract.ErrNotFound)
+	if business.Key == "" || business.Key == view.InternalMsg().Key {
+		t.Fatalf("业务错误应保留自己的 key，实际 %+v", business)
 	}
-
-	if got == response.MsgText(c, view.InternalMsg()) {
-		t.Fatalf("业务错误被吞成归口文案：%q", got)
-	}
-}
-
-func TestBlockErrTextNonBusinessGivesInternal(t *testing.T) {
-	c := blockErrTestContext()
-	cases := []error{
+	for _, err := range []error{
 		errors.New(`pq: relation "blocks" does not exist (SQLSTATE 42P01)`),
 		gorm.ErrRecordNotFound,
-	}
-	for _, err := range cases {
-		got := blockErrText(c, err)
-		if got != response.MsgText(c, view.InternalMsg()) {
-			t.Fatalf("非业务错误应落归口文案，实际 %q（原文 %q）", got, err.Error())
+	} {
+		fact := view.PageErrorFactQuiet(c, blockErrScene, err)
+		if fact.Key != view.InternalMsg().Key {
+			t.Fatalf("非业务错误应落归口事实，实际 %+v（原文 %q）", fact, err.Error())
 		}
 		for _, leak := range []string{"pq:", "blocks", "SQLSTATE", "record not found"} {
-			if strings.Contains(got, leak) {
-				t.Fatalf("驱动原文泄漏到页面文案里（%q 出现在 %q）", leak, got)
+			if strings.Contains(fact.Key, leak) || strings.Contains(fact.Fallback, leak) {
+				t.Fatalf("驱动原文泄漏到错误事实里（%q 出现在 %+v）", leak, fact)
 			}
 		}
 	}

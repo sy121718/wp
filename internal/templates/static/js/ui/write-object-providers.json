@@ -1,0 +1,765 @@
+{
+  "POST /api/product/update": {
+    "dto": "go_wp/internal/module/product/dto.UpdateReq",
+    "provider": "product-edit",
+    "source": "internal/templates/static/js/ui/product-edit.js",
+    "sourceHash": "95e34a7672998d11",
+    "fields": [
+      "id",
+      "projectId",
+      "name",
+      "subtitle",
+      "description",
+      "slug",
+      "sku",
+      "status",
+      "unit",
+      "weight",
+      "seoTitle",
+      "seoDescription",
+      "images",
+      "imageAlts",
+      "attributeIds",
+      "categoryIds",
+      "primaryCategoryId",
+      "tagIds",
+      "relatedIds",
+      "brandId",
+      "defaultPrice",
+      "defaultImage",
+      "metadata",
+      "clearDefaultPrice",
+      "clearWeight"
+    ],
+    "fieldsHash": "26a83308c0254ed7",
+    "cases": [
+      {
+        "name": "空数值与空 SKU（清空语义）",
+        "keys": [
+          "id",
+          "projectId",
+          "name",
+          "subtitle",
+          "status",
+          "unit",
+          "defaultImage",
+          "brandId",
+          "primaryCategoryId",
+          "description",
+          "attributeIds",
+          "categoryIds",
+          "tagIds",
+          "images",
+          "imageAlts",
+          "clearDefaultPrice",
+          "clearWeight"
+        ],
+        "endpoint": "POST /api/product/update"
+      },
+      {
+        "name": "实值金额/重量/SKU/图片",
+        "keys": [
+          "id",
+          "projectId",
+          "name",
+          "subtitle",
+          "status",
+          "unit",
+          "defaultImage",
+          "brandId",
+          "primaryCategoryId",
+          "description",
+          "attributeIds",
+          "categoryIds",
+          "tagIds",
+          "images",
+          "imageAlts",
+          "sku",
+          "slug",
+          "defaultPrice",
+          "weight"
+        ],
+        "endpoint": "POST /api/product/update"
+      },
+      {
+        "name": "数值零（不清空）",
+        "keys": [
+          "id",
+          "projectId",
+          "name",
+          "subtitle",
+          "status",
+          "unit",
+          "defaultImage",
+          "brandId",
+          "primaryCategoryId",
+          "description",
+          "attributeIds",
+          "categoryIds",
+          "tagIds",
+          "images",
+          "imageAlts",
+          "defaultPrice",
+          "weight"
+        ],
+        "endpoint": "POST /api/product/update"
+      }
+    ],
+    "caseShape": "7b42c08f233ae3cb",
+    "driver": "scripts/write-object-keys.js",
+    "driverHash": "dab88a5c0ec32717",
+    "keys": [
+      "attributeIds",
+      "brandId",
+      "categoryIds",
+      "clearDefaultPrice",
+      "clearWeight",
+      "defaultImage",
+      "defaultPrice",
+      "description",
+      "id",
+      "imageAlts",
+      "images",
+      "name",
+      "primaryCategoryId",
+      "projectId",
+      "sku",
+      "slug",
+      "status",
+      "subtitle",
+      "tagIds",
+      "unit",
+      "weight"
+    ]
+  },
+  "POST /api/product/tag/create": {
+    "dto": "go_wp/internal/module/product/dto.CreateTagReq",
+    "provider": "product-tag",
+    "source": "internal/templates/static/js/ui/product-edit.js",
+    "sourceHash": "95e34a7672998d11",
+    "fields": [
+      "projectId",
+      "name",
+      "slug",
+      "kind",
+      "ruleType",
+      "ruleParams",
+      "sort"
+    ],
+    "fieldsHash": "06dc909b2f3d0db8",
+    "cases": [
+      {
+        "name": "新建手工标签",
+        "keys": [
+          "projectId",
+          "name",
+          "slug",
+          "kind",
+          "ruleType",
+          "sort",
+          "ruleParams"
+        ],
+        "endpoint": "POST /api/product/tag/create"
+      }
+    ],
+    "caseShape": "1a92ea9c6544ecdd",
+    "driver": "scripts/write-object-keys.js",
+    "driverHash": "dab88a5c0ec32717",
+    "keys": [
+      "kind",
+      "name",
+      "projectId",
+      "ruleParams",
+      "ruleType",
+      "slug",
+      "sort"
+    ]
+  },
+  "POST /api/product/tag/update": {
+    "dto": "go_wp/internal/module/product/dto.UpdateTagReq",
+    "provider": "product-tag",
+    "source": "internal/templates/static/js/ui/product-edit.js",
+    "sourceHash": "95e34a7672998d11",
+    "fields": [
+      "id",
+      "projectId",
+      "name",
+      "slug",
+      "kind",
+      "ruleType",
+      "ruleParams",
+      "sort"
+    ],
+    "fieldsHash": "dde0b3b948a2fbaa",
+    "cases": [
+      {
+        "name": "编辑规则标签带参数",
+        "keys": [
+          "projectId",
+          "name",
+          "slug",
+          "kind",
+          "ruleType",
+          "sort",
+          "id",
+          "ruleParams"
+        ],
+        "endpoint": "POST /api/product/tag/update"
+      }
+    ],
+    "caseShape": "3883cfb7db938b24",
+    "driver": "scripts/write-object-keys.js",
+    "driverHash": "dab88a5c0ec32717",
+    "keys": [
+      "id",
+      "kind",
+      "name",
+      "projectId",
+      "ruleParams",
+      "ruleType",
+      "slug",
+      "sort"
+    ]
+  },
+  "POST /api/product/category/create": {
+    "dto": "go_wp/internal/module/product/dto.CreateCategoryReq",
+    "provider": "product-category",
+    "source": "internal/templates/static/js/ui/product-edit.js",
+    "sourceHash": "95e34a7672998d11",
+    "fields": [
+      "projectId",
+      "parentId",
+      "name",
+      "slug",
+      "description",
+      "image",
+      "seoTitle",
+      "seoDescription",
+      "sort"
+    ],
+    "fieldsHash": "f522ed389f609490",
+    "cases": [
+      {
+        "name": "新建（无 id）",
+        "keys": [
+          "projectId",
+          "name",
+          "slug",
+          "parentId",
+          "sort",
+          "image",
+          "description"
+        ],
+        "endpoint": "POST /api/product/category/create"
+      }
+    ],
+    "caseShape": "073af9c3abd5ffbc",
+    "driver": "scripts/write-object-keys.js",
+    "driverHash": "dab88a5c0ec32717",
+    "keys": [
+      "description",
+      "image",
+      "name",
+      "parentId",
+      "projectId",
+      "slug",
+      "sort"
+    ]
+  },
+  "POST /api/product/category/update": {
+    "dto": "go_wp/internal/module/product/dto.UpdateCategoryReq",
+    "provider": "product-category",
+    "source": "internal/templates/static/js/ui/product-edit.js",
+    "sourceHash": "95e34a7672998d11",
+    "fields": [
+      "id",
+      "projectId",
+      "parentId",
+      "name",
+      "slug",
+      "description",
+      "image",
+      "seoTitle",
+      "seoDescription",
+      "sort"
+    ],
+    "fieldsHash": "de22d8b448f4878c",
+    "cases": [
+      {
+        "name": "编辑（有 id）",
+        "keys": [
+          "projectId",
+          "name",
+          "slug",
+          "parentId",
+          "sort",
+          "image",
+          "description",
+          "id"
+        ],
+        "endpoint": "POST /api/product/category/update"
+      }
+    ],
+    "caseShape": "db91d1273a481c1e",
+    "driver": "scripts/write-object-keys.js",
+    "driverHash": "dab88a5c0ec32717",
+    "keys": [
+      "description",
+      "id",
+      "image",
+      "name",
+      "parentId",
+      "projectId",
+      "slug",
+      "sort"
+    ]
+  },
+  "POST /api/product/bulk-pricing": {
+    "dto": "go_wp/internal/module/product/dto.BulkPricingJSONReq",
+    "provider": "product-bulk-pricing",
+    "source": "internal/templates/static/js/ui/product-edit.js",
+    "sourceHash": "95e34a7672998d11",
+    "fields": [
+      "ids",
+      "projectId",
+      "note",
+      "ruleType",
+      "multiplier",
+      "amount",
+      "margin",
+      "rounding"
+    ],
+    "fieldsHash": "8d8c26defa5c4eba",
+    "cases": [
+      {
+        "name": "无勾选商品",
+        "keys": [
+          "projectId",
+          "ids",
+          "note",
+          "ruleType",
+          "multiplier",
+          "amount",
+          "margin",
+          "rounding"
+        ],
+        "endpoint": "POST /api/product/bulk-pricing"
+      },
+      {
+        "name": "有勾选商品与全部参数",
+        "keys": [
+          "projectId",
+          "ids",
+          "note",
+          "ruleType",
+          "multiplier",
+          "amount",
+          "margin",
+          "rounding"
+        ],
+        "endpoint": "POST /api/product/bulk-pricing"
+      }
+    ],
+    "caseShape": "31e2f97973c7e033",
+    "driver": "scripts/write-object-keys.js",
+    "driverHash": "dab88a5c0ec32717",
+    "keys": [
+      "amount",
+      "ids",
+      "margin",
+      "multiplier",
+      "note",
+      "projectId",
+      "rounding",
+      "ruleType"
+    ]
+  },
+  "POST /api/inventory/transfer/create": {
+    "dto": "go_wp/internal/module/inventory/dto.CreateTransferReq",
+    "provider": "inventory-transfer",
+    "source": "internal/templates/static/js/ui/inventory_transfer.js",
+    "sourceHash": "130ba5071f1a3a04",
+    "fields": [
+      "projectId",
+      "fromWarehouseId",
+      "toWarehouseId",
+      "remark",
+      "operatorId",
+      "requestId",
+      "lines",
+      "attachmentIds"
+    ],
+    "fieldsHash": "5a85948c19146a9a",
+    "cases": [
+      {
+        "name": "无明细行",
+        "keys": [
+          "projectId",
+          "fromWarehouseId",
+          "toWarehouseId",
+          "remark",
+          "lines"
+        ],
+        "endpoint": "POST /api/inventory/transfer/create"
+      },
+      {
+        "name": "有明细行",
+        "keys": [
+          "projectId",
+          "fromWarehouseId",
+          "toWarehouseId",
+          "remark",
+          "lines"
+        ],
+        "endpoint": "POST /api/inventory/transfer/create"
+      }
+    ],
+    "caseShape": "79a12b341fc3cb70",
+    "driver": "scripts/write-object-keys.js",
+    "driverHash": "dab88a5c0ec32717",
+    "keys": [
+      "fromWarehouseId",
+      "lines",
+      "projectId",
+      "remark",
+      "toWarehouseId"
+    ]
+  },
+  "POST /api/navigation/translations": {
+    "dto": "go_wp/internal/module/navigation/dto.UpdateEnvelope",
+    "provider": "navigation-translations",
+    "source": "internal/templates/static/js/ui/navigation_translations.js",
+    "sourceHash": "30cf6413d7c61d69",
+    "fields": [
+      "action",
+      "project",
+      "lang",
+      "rows"
+    ],
+    "fieldsHash": "d33bc3825e93d252",
+    "cases": [
+      {
+        "name": "无译文行",
+        "keys": [
+          "action",
+          "lang",
+          "project",
+          "rows"
+        ],
+        "endpoint": "POST /api/navigation/translations"
+      },
+      {
+        "name": "有译文行",
+        "keys": [
+          "action",
+          "lang",
+          "project",
+          "rows"
+        ],
+        "endpoint": "POST /api/navigation/translations"
+      }
+    ],
+    "caseShape": "957fff0bfb5d36b6",
+    "driver": "scripts/write-object-keys.js",
+    "driverHash": "dab88a5c0ec32717",
+    "keys": [
+      "action",
+      "lang",
+      "project",
+      "rows"
+    ]
+  },
+  "POST /api/ai/provider/models/save": {
+    "dto": "go_wp/internal/module/ai/dto.SaveModelsReq",
+    "provider": "ai-provider-models",
+    "source": "pkg/view/ui/assets/js/ui/ai-models.js",
+    "sourceHash": "197795207a5194c9",
+    "fields": [
+      "providerId",
+      "version",
+      "models"
+    ],
+    "fieldsHash": "1f5a7e8bef23f171",
+    "cases": [
+      {
+        "name": "无模型",
+        "keys": [
+          "providerId",
+          "version",
+          "models"
+        ],
+        "endpoint": "POST /api/ai/provider/models/save"
+      },
+      {
+        "name": "有模型",
+        "keys": [
+          "providerId",
+          "version",
+          "models"
+        ],
+        "endpoint": "POST /api/ai/provider/models/save"
+      }
+    ],
+    "caseShape": "67b6a423dda837cb",
+    "driver": "scripts/write-object-keys.js",
+    "driverHash": "dab88a5c0ec32717",
+    "keys": [
+      "models",
+      "providerId",
+      "version"
+    ]
+  },
+  "POST /api/product/attribute/set-values": {
+    "dto": "go_wp/internal/module/product/dto.SetAttributeValuesReq",
+    "provider": "product-attribute-values",
+    "source": "pkg/view/ui/assets/js/ui/product-attribute-values.js",
+    "sourceHash": "56580f959bd462f0",
+    "fields": [
+      "id",
+      "projectId",
+      "values"
+    ],
+    "fieldsHash": "e6a4d9e50491ce35",
+    "cases": [
+      {
+        "name": "删光值行",
+        "keys": [
+          "projectId",
+          "id",
+          "values"
+        ],
+        "endpoint": "POST /api/product/attribute/set-values"
+      },
+      {
+        "name": "有值行",
+        "keys": [
+          "projectId",
+          "id",
+          "values"
+        ],
+        "endpoint": "POST /api/product/attribute/set-values"
+      }
+    ],
+    "caseShape": "e1345fd2a3e00e61",
+    "driver": "scripts/write-object-keys.js",
+    "driverHash": "dab88a5c0ec32717",
+    "keys": [
+      "id",
+      "projectId",
+      "values"
+    ]
+  },
+  "POST /api/product/attribute/update": {
+    "dto": "go_wp/internal/module/product/dto.UpdateAttributeReq",
+    "provider": "product-attribute-group",
+    "source": "pkg/view/ui/assets/js/ui/product-attribute-values.js",
+    "sourceHash": "56580f959bd462f0",
+    "fields": [
+      "id",
+      "projectId",
+      "key",
+      "name",
+      "isVariation",
+      "sort"
+    ],
+    "fieldsHash": "0743db3033473aae",
+    "cases": [
+      {
+        "name": "编辑（有 id、无值行）",
+        "keys": [
+          "projectId",
+          "key",
+          "name",
+          "sort",
+          "isVariation",
+          "id"
+        ],
+        "endpoint": "POST /api/product/attribute/update"
+      }
+    ],
+    "caseShape": "af114bc533816705",
+    "driver": "scripts/write-object-keys.js",
+    "driverHash": "dab88a5c0ec32717",
+    "keys": [
+      "id",
+      "isVariation",
+      "key",
+      "name",
+      "projectId",
+      "sort"
+    ]
+  },
+  "POST /api/product/attribute/create": {
+    "dto": "go_wp/internal/module/product/dto.CreateAttributeReq",
+    "provider": "product-attribute-group",
+    "source": "pkg/view/ui/assets/js/ui/product-attribute-values.js",
+    "sourceHash": "56580f959bd462f0",
+    "fields": [
+      "projectId",
+      "key",
+      "name",
+      "isVariation",
+      "sort",
+      "values"
+    ],
+    "fieldsHash": "5032bd17541ab88e",
+    "cases": [
+      {
+        "name": "新建（无 id、有值行）",
+        "keys": [
+          "projectId",
+          "key",
+          "name",
+          "sort",
+          "isVariation",
+          "values"
+        ],
+        "endpoint": "POST /api/product/attribute/create"
+      }
+    ],
+    "caseShape": "245437113a0b48c8",
+    "driver": "scripts/write-object-keys.js",
+    "driverHash": "dab88a5c0ec32717",
+    "keys": [
+      "isVariation",
+      "key",
+      "name",
+      "projectId",
+      "sort",
+      "values"
+    ]
+  },
+  "POST /workbench/settings": {
+    "dto": "go_wp/internal/module/project/dto.SettingsPanelReq",
+    "provider": "workbench-settings",
+    "source": "internal/templates/static/js/editor-app/panel-requests.js",
+    "sourceHash": "b429b5708be5f017",
+    "fields": [
+      "document",
+      "accessPassword"
+    ],
+    "fieldsHash": "e9ff9ff6e2224648",
+    "cases": [
+      {
+        "name": "页面设置面板（整份文档）",
+        "keys": [
+          "document",
+          "accessPassword"
+        ],
+        "endpoint": "POST /workbench/settings"
+      },
+      {
+        "name": "设置访问密码（隐藏域有值）",
+        "keys": [
+          "document",
+          "accessPassword"
+        ],
+        "endpoint": "POST /workbench/settings"
+      }
+    ],
+    "caseShape": "def17dfcd38aa3ce",
+    "driver": "scripts/write-object-keys.js",
+    "driverHash": "dab88a5c0ec32717",
+    "keys": [
+      "accessPassword",
+      "document"
+    ]
+  },
+  "POST /workbench/seo-score-panel": {
+    "dto": "go_wp/internal/module/project/dto.SeoScorePanelReq",
+    "provider": "workbench-seo",
+    "source": "internal/templates/static/js/editor-app/panel-requests.js",
+    "sourceHash": "b429b5708be5f017",
+    "fields": [
+      "document",
+      "url"
+    ],
+    "fieldsHash": "ef8ebd74483fa0a1",
+    "cases": [
+      {
+        "name": "评分面板（文档 + 草稿地址）",
+        "keys": [
+          "document",
+          "url"
+        ],
+        "endpoint": "POST /workbench/seo-score-panel"
+      }
+    ],
+    "caseShape": "3d1c6f031787e9e3",
+    "driver": "scripts/write-object-keys.js",
+    "driverHash": "dab88a5c0ec32717",
+    "keys": [
+      "document",
+      "url"
+    ]
+  },
+  "POST /workbench/global": {
+    "dto": "go_wp/internal/module/project/dto.GlobalPanelReq",
+    "provider": "workbench-global",
+    "source": "internal/templates/static/js/editor-app/panel-requests.js",
+    "sourceHash": "b429b5708be5f017",
+    "fields": [
+      "themeId",
+      "settings"
+    ],
+    "fieldsHash": "daa4c18dcbfffc11",
+    "cases": [
+      {
+        "name": "全局主题面板（主题设置对象）",
+        "keys": [
+          "themeId",
+          "settings"
+        ],
+        "endpoint": "POST /workbench/global"
+      }
+    ],
+    "caseShape": "51c0ab8b3a3d575e",
+    "driver": "scripts/write-object-keys.js",
+    "driverHash": "dab88a5c0ec32717",
+    "keys": [
+      "settings",
+      "themeId"
+    ]
+  },
+  "POST /api/product/variant/save": {
+    "dto": "go_wp/internal/module/product/dto.SaveVariantListReq",
+    "provider": "product-variant-rows",
+    "source": "internal/templates/static/js/ui/product_variant_write.js",
+    "sourceHash": "dd03360a15c693f1",
+    "fields": [
+      "productId",
+      "projectId",
+      "warehouseId",
+      "rows"
+    ],
+    "fieldsHash": "75f1f1a2fbde183b",
+    "cases": [
+      {
+        "name": "空行清单（保留宿主字段）",
+        "keys": [
+          "projectId",
+          "productId",
+          "rows"
+        ],
+        "endpoint": "POST /api/product/variant/save"
+      },
+      {
+        "name": "真实变体行与库存明细",
+        "keys": [
+          "projectId",
+          "productId",
+          "rows"
+        ],
+        "endpoint": "POST /api/product/variant/save"
+      }
+    ],
+    "caseShape": "0dd85d6cdec608e7",
+    "driver": "scripts/write-object-keys.js",
+    "driverHash": "dab88a5c0ec32717",
+    "keys": [
+      "productId",
+      "projectId",
+      "rows"
+    ]
+  }
+}

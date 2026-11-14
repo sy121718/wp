@@ -1,24 +1,28 @@
 package feature
 
 import (
-	"go_wp/internal/builder/extensions/presets"
 	"context"
 	"fmt"
+	"go_wp/internal/builder/extensions/presets"
 	"regexp"
 	"strings"
 	"testing"
 
-	"go_wp/pkg/builder"
-	"go_wp/pkg/builder/core"
 	blockcontract "go_wp/internal/module/block/contract"
 	blockdto "go_wp/internal/module/block/dto"
 	pagemodel "go_wp/internal/module/page/model"
 	pageservice "go_wp/internal/module/page/service"
 	projectmodel "go_wp/internal/module/project/model"
 	projectservice "go_wp/internal/module/project/service"
+	"go_wp/internal/pipeline"
+	"go_wp/pkg/builder"
+	"go_wp/pkg/builder/core"
 )
 
 func TestBusinessPresetGlobalReferencesPreviewRealContents(t *testing.T) {
+	// 业务组件（含 core.cartIcon 这类扩展组件）的视图构建必须在编译前登记：
+	// 生产装配在 buildFoundation 里做同一件事（internal/routers/assembly.go）。
+	pipeline.RegisterBusinessViews()
 	env := newRefEnv(t)
 	env.blocks.(interface {
 		SetPresetResolver(blockcontract.PresetResolver)

@@ -1,0 +1,8 @@
+{{extends "../../admin/layout.html"}}
+{{block pageTitle()}}系统编辑抽屉输入矩阵{{end}}
+{{block body()}}
+<section class="card">
+    <button id="menu" type="button" class="btn" data-drawer-open hx-get="/admin/menus/edit?id=42" hx-target="#admin-drawer-body" hx-swap="innerHTML" data-drawer-title="编辑菜单">编辑菜单</button>
+    <button id="permission" type="button" class="btn" data-drawer-open hx-get="/admin/permissions/edit?id=42" hx-target="#admin-drawer-body" hx-swap="innerHTML" data-drawer-title="编辑权限">编辑权限</button>
+</section>
+{{end}}

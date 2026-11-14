@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 	"go_wp/internal/middleware/builtin"
 	contentcontract "go_wp/internal/module/content/contract"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
@@ -23,6 +22,7 @@ import (
 	"go_wp/pkg/i18n"
 	mw "go_wp/pkg/middleware"
 	pageview "go_wp/pkg/view"
+	"gorm.io/gorm"
 )
 
 const (
@@ -158,7 +158,7 @@ func registerProductPricingAPI(g *mw.RouteGroup, handle *ProductHandle) {
 	g.GET("/pricing/adjustment", productenums.ProductPricingAdjustment, handle.GetPriceAdjustment)
 }
 
-func SetupProductPages(pages *gin.RouterGroup, api *mw.RouteGroup, writeHandle *ProductHandle,
+func SetupProductPages(reg *mw.Registry, pages *gin.RouterGroup, api *mw.RouteGroup, writeHandle *ProductHandle,
 	products productcontract.ProductService,
 	reader productcontract.ProductPageReader,
 	projects projectcontract.ProjectService,
@@ -188,12 +188,12 @@ func SetupProductPages(pages *gin.RouterGroup, api *mw.RouteGroup, writeHandle *
 	productPages.SetSeoTitleSources(pageSvc, contentSvc)
 
 	registerProductReadAPI(api.Group("/product"), productPages)
-	registerProductListPages(pages, productPages)
-	registerProductTemplatePages(pages, productPages)
-	registerProductAttributePages(pages, productPages)
-	registerProductTaxonomyPages(pages, productPages)
-	registerProductTagPages(pages, productPages)
-	registerProductPricingPages(pages, productPages)
+	registerProductListPages(reg, pages, productPages)
+	registerProductTemplatePages(reg, pages, productPages)
+	registerProductAttributePages(reg, pages, productPages)
+	registerProductTaxonomyPages(reg, pages, productPages)
+	registerProductTagPages(reg, pages, productPages)
+	registerProductPricingPages(reg, pages, productPages)
 	return productPages
 }
 
@@ -204,57 +204,73 @@ func registerProductReadAPI(g *mw.RouteGroup, handle *ProductPageHandle) {
 	g.POST("/brand/seo-score", productenums.ProductBrandSEOScore, handle.BrandSeoScore)
 }
 
-func registerProductListPages(pages *gin.RouterGroup, productPages *ProductPageHandle) {
+func registerProductListPages(reg *mw.Registry, pages *gin.RouterGroup, productPages *ProductPageHandle) {
 
 	pages.GET("/products", mw.PageAuthz("/api/product/list"), pageview.UseRenderer(pageview.RenderPage), productPages.ProductsPage)
+	mw.DeclarePageGetOn(reg, "/admin/products", "/api/product/list")
 
 	pages.GET("/products/new", mw.PageAuthzAs("/api/product/create", http.MethodPost), pageview.UseRenderer(pageview.RenderPage), productPages.ProductNewPage)
+	mw.DeclarePageGetAsOn(reg, "/admin/products/new", "/api/product/create", http.MethodPost)
 
 	pages.GET("/products/detail", mw.PageAuthz("/api/product/list"), pageview.UseRenderer(pageview.RenderPage), productPages.ProductDetailPage)
+	mw.DeclarePageGetOn(reg, "/admin/products/detail", "/api/product/list")
 
 	pages.GET("/products/edit", mw.PageAuthzAs("/api/product/update", http.MethodPost), pageview.UseRenderer(pageview.RenderPage), productPages.ProductEditPage)
+	mw.DeclarePageGetAsOn(reg, "/admin/products/edit", "/api/product/update", http.MethodPost)
 
 	pages.GET("/products/publish-records", mw.PageAuthz("/api/product/list"), pageview.UseRenderer(pageview.RenderPage), productPages.ProductPublishRecordPage)
+	mw.DeclarePageGetOn(reg, "/admin/products/publish-records", "/api/product/list")
 
 	pages.GET("/products/preview-frame", mw.PageAuthzAs("/api/presentation/preview", http.MethodPost), productPages.ProductPreviewFrame)
+	mw.DeclarePageGetAsOn(reg, "/admin/products/preview-frame", "/api/presentation/preview", http.MethodPost)
 }
 
-func registerProductTemplatePages(pages *gin.RouterGroup, productPages *ProductPageHandle) {
+func registerProductTemplatePages(reg *mw.Registry, pages *gin.RouterGroup, productPages *ProductPageHandle) {
 
 	pages.GET("/products/template", mw.PageAuthz("/api/product/get"), pageview.UseRenderer(pageview.RenderPage), productPages.ProductDetailTemplatePage)
+	mw.DeclarePageGetOn(reg, "/admin/products/template", "/api/product/get")
 	pages.POST("/products/template/preview", builtin.CasbinMiddlewareForPath("/api/presentation/preview"), productPages.ProductDetailTemplatePreview)
+	if reg != nil {
+		reg.DeclarePageWrite(http.MethodPost, "/admin/products/template/preview", "/api/presentation/preview", http.MethodPost)
+	}
 }
 
-func registerProductAttributePages(pages *gin.RouterGroup, productPages *ProductPageHandle) {
+func registerProductAttributePages(reg *mw.Registry, pages *gin.RouterGroup, productPages *ProductPageHandle) {
 
 	pages.GET("/product-attributes", mw.PageAuthz("/api/product/attribute/list"), pageview.UseRenderer(pageview.RenderPage), productPages.ProductAttributesPage)
+	mw.DeclarePageGetOn(reg, "/admin/product-attributes", "/api/product/attribute/list")
 }
 
-func registerProductTaxonomyPages(pages *gin.RouterGroup, productPages *ProductPageHandle) {
+func registerProductTaxonomyPages(reg *mw.Registry, pages *gin.RouterGroup, productPages *ProductPageHandle) {
 
 	pages.GET("/product-categories", mw.PageAuthz("/api/product/category/list"), pageview.UseRenderer(pageview.RenderPage), productPages.ProductCategoriesPage)
+	mw.DeclarePageGetOn(reg, "/admin/product-categories", "/api/product/category/list")
 
 	pages.GET("/product-brands", mw.PageAuthz("/api/product/brand/list"), pageview.UseRenderer(pageview.RenderPage), productPages.ProductBrandsPage)
+	mw.DeclarePageGetOn(reg, "/admin/product-brands", "/api/product/brand/list")
 
 }
 
-func registerProductTagPages(pages *gin.RouterGroup, productPages *ProductPageHandle) {
+func registerProductTagPages(reg *mw.Registry, pages *gin.RouterGroup, productPages *ProductPageHandle) {
 
 	pages.GET("/product-tags", mw.PageAuthz("/api/product/tag/list"), pageview.UseRenderer(pageview.RenderPage), productPages.ProductTagsPage)
+	mw.DeclarePageGetOn(reg, "/admin/product-tags", "/api/product/tag/list")
 
 }
 
-func registerProductPricingPages(pages *gin.RouterGroup, productPages *ProductPageHandle) {
+func registerProductPricingPages(reg *mw.Registry, pages *gin.RouterGroup, productPages *ProductPageHandle) {
 
 	pages.GET("/product-pricing", mw.PageAuthz("/api/product/list"), pageview.UseRenderer(pageview.RenderPage), productPages.ProductPricingPage)
+	mw.DeclarePageGetOn(reg, "/admin/product-pricing", "/api/product/list")
 
 }
 
-func SetupProductTranslationRoutes(apiRoot *mw.RouteGroup, adminPages *gin.RouterGroup,
+func SetupProductTranslationRoutes(apiRoot *mw.RouteGroup, reg *mw.Registry, adminPages *gin.RouterGroup,
 	products productcontract.ProductService, pages pagecontract.PageService,
 	instances ProductTranslationInstancePort) *ProductTranslationHandle {
 	handle := NewProductTranslationHandle(products, pages, instances)
 	adminPages.GET("/products/translations", mw.PageAuthz("/api/product/list"), pageview.UseRenderer(pageview.RenderPage), handle.ProductTranslations)
+	mw.DeclarePageGetOn(reg, "/admin/products/translations", "/api/product/list")
 
 	apiRoot.Group("/product").POST("/translations/save", productenums.ProductTranslationsSave, pageview.HTMLFragment, pageview.UseRenderer(pageview.RenderPage), handle.SaveProductTranslations)
 	return handle

@@ -25,13 +25,14 @@ type Handle struct {
 func NewHandle(svc purchasecontract.PurchaseService) *Handle { return &Handle{svc: svc} }
 
 func (h *Handle) CreateSource(c *gin.Context) {
-	req, ok := binding.JSON[purchasedto.CreateSourceReq](c)
-	if !ok {
+	var req purchasedto.CreateSourceReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ParamError(c)
 		return
 	}
 
 	req.OperatorID = operatorFromContext(c)
-	res, err := h.svc.CreateSource(c.Request.Context(), req)
+	res, err := h.svc.CreateSource(c.Request.Context(), &req)
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, purchaseErrScene, err)
 		return
@@ -40,12 +41,13 @@ func (h *Handle) CreateSource(c *gin.Context) {
 }
 
 func (h *Handle) UpdateSource(c *gin.Context) {
-	req, ok := binding.JSON[purchasedto.UpdateSourceReq](c)
-	if !ok {
+	var req purchasedto.UpdateSourceReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ParamError(c)
 		return
 	}
 	req.OperatorID = operatorFromContext(c)
-	res, err := h.svc.UpdateSource(c.Request.Context(), req)
+	res, err := h.svc.UpdateSource(c.Request.Context(), &req)
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, purchaseErrScene, err)
 		return
@@ -80,12 +82,13 @@ func (h *Handle) ListSources(c *gin.Context) {
 }
 
 func (h *Handle) DeleteSource(c *gin.Context) {
-	req, ok := binding.JSON[purchasedto.DeleteSourceReq](c)
-	if !ok {
+	var req purchasedto.DeleteSourceReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ParamError(c)
 		return
 	}
 	req.OperatorID = operatorFromContext(c)
-	if err := h.svc.DeleteSource(c.Request.Context(), req); err != nil {
+	if err := h.svc.DeleteSource(c.Request.Context(), &req); err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, purchaseErrScene, err)
 		return
 	}
@@ -106,11 +109,12 @@ func (h *Handle) SourceSummary(c *gin.Context) {
 }
 
 func (h *Handle) CreatePurchaseOrder(c *gin.Context) {
-	req, ok := binding.JSON[purchasedto.CreatePurchaseOrderReq](c)
-	if !ok {
+	var req purchasedto.CreatePurchaseOrderReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ParamError(c)
 		return
 	}
-	res, err := h.svc.CreatePurchaseOrder(c.Request.Context(), req)
+	res, err := h.svc.CreatePurchaseOrder(c.Request.Context(), &req)
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, purchaseErrScene, err)
 		return
@@ -119,11 +123,12 @@ func (h *Handle) CreatePurchaseOrder(c *gin.Context) {
 }
 
 func (h *Handle) UpdatePurchaseOrder(c *gin.Context) {
-	req, ok := binding.JSON[purchasedto.UpdatePurchaseOrderReq](c)
-	if !ok {
+	var req purchasedto.UpdatePurchaseOrderReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ParamError(c)
 		return
 	}
-	res, err := h.svc.UpdatePurchaseOrder(c.Request.Context(), req)
+	res, err := h.svc.UpdatePurchaseOrder(c.Request.Context(), &req)
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, purchaseErrScene, err)
 		return
@@ -158,11 +163,12 @@ func (h *Handle) ListPurchaseOrders(c *gin.Context) {
 }
 
 func (h *Handle) RegisterReceipt(c *gin.Context) {
-	req, ok := binding.JSON[purchasedto.RegisterReceiptReq](c)
-	if !ok {
+	var req purchasedto.RegisterReceiptReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ParamError(c)
 		return
 	}
-	res, err := h.svc.RegisterReceipt(c.Request.Context(), req)
+	res, err := h.svc.RegisterReceipt(c.Request.Context(), &req)
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, purchaseErrScene, err)
 		return
@@ -171,11 +177,12 @@ func (h *Handle) RegisterReceipt(c *gin.Context) {
 }
 
 func (h *Handle) RegisterProductionInbound(c *gin.Context) {
-	req, ok := binding.JSON[purchasedto.ProductionInboundReq](c)
-	if !ok {
+	var req purchasedto.ProductionInboundReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ParamError(c)
 		return
 	}
-	res, err := h.svc.RegisterProductionInbound(c.Request.Context(), req)
+	res, err := h.svc.RegisterProductionInbound(c.Request.Context(), &req)
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, purchaseErrScene, err)
 		return
@@ -223,7 +230,7 @@ func SetupPurchaseRoutes(rg *mw.RouteGroup, pages *gin.RouterGroup, db *gorm.DB,
 		g.POST("/purchase/production", inventoryenums.InventoryPurchaseProduction, handle.RegisterProductionInbound)
 	}
 
-	SetupPurchasePages(pages, svc, stock, project)
+	SetupPurchasePages(rg.Registry(), pages, svc, stock, project)
 
 	return svc
 }

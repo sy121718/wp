@@ -66,14 +66,15 @@ func TestMembershipJSONResolvesKeyByRequestLanguage(t *testing.T) {
 	if code != http.StatusBadRequest {
 		t.Errorf("状态码 = %d，期望 400（业务参数类）", code)
 	}
-	// 英文缺中文冒号，但当前实现用与语言无关的统一分隔符：断言前缀与定位都在。
-	if !strings.HasPrefix(msg, "EN-NO-DEFAULT-TIER") || !strings.HasSuffix(msg, "p-1") {
-		t.Errorf("[en-US] message = %q，期望前缀取英文词条、定位信息保留", msg)
+	// 失败区只播报一句：定位信息（这里是工程 id）属业务数据，随响应 data 返回，
+	// 不拼进提示句 —— 判据见 admin/errors/failure.html 的注释。
+	if msg != "EN-NO-DEFAULT-TIER" {
+		t.Errorf("[en-US] message = %q，期望取英文词条且不拼定位信息", msg)
 	}
 
 	_, zhMsg := membershipJSONRecorder(t, "zh-CN", err)
-	if zhMsg != "该工程没有默认等级：p-1" {
-		t.Errorf("[zh-CN] message = %q（中文用全角分隔符）", zhMsg)
+	if zhMsg != "该工程没有默认等级" {
+		t.Errorf("[zh-CN] message = %q，期望取中文词条且不拼定位信息", zhMsg)
 	}
 	if strings.Contains(zhMsg, membershipenums.ErrDefaultTierMissing) {
 		t.Errorf("[zh-CN] message 里出现裸 key：%q", zhMsg)

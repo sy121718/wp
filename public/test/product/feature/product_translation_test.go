@@ -31,6 +31,7 @@ import (
 	"go_wp/pkg/builder/core"
 	"go_wp/pkg/i18n"
 	text "go_wp/pkg/view/jet"
+	"go_wp/public/migrations"
 	"go_wp/public/test/support"
 )
 
@@ -56,6 +57,13 @@ func newTRFixture(t *testing.T) *trFixture {
 	if db == nil {
 		return nil
 	}
+	// 工作台模板的字段名与状态列都走 t() 取词：迁移只建表，词条由 seed 写进 sys_i18n，
+	// 不跑 seed 也不加载词库时，工作台会退成模板兜底（英文请求也只显示中文「名称」）。
+	// 同包的属性夹具是同一手法（newAttrFixture）。
+	if err := migrations.RunSeeds(db); err != nil {
+		t.Fatalf("执行种子数据失败：%v", err)
+	}
+	loadFeatureWords(t, db)
 	ctx := context.Background()
 	projects := projectservice.NewService(projectmodel.NewProjectModel(db))
 	project, err := projects.Create(ctx, &projectdto.CreateReq{Name: "商品多语言测试工程"})
@@ -609,6 +617,8 @@ func TestProductTranslationInvalidatedAfterSourceChange(t *testing.T) {
 	if strings.Contains(body, `name="rowHash" value="`+i18n.ContentHash("夏季衬衫")+`"`) {
 		t.Fatalf("工作台不应再列出旧原文的指纹 %s", body)
 	}
+	// 状态列在模板里按**请求语言**取词（trStateMiss），本次请求 ?lang=en-US，
+	// 词库已加载，所以是英文的 Missing（缺词时才会回落模板兜底「缺失」）。
 	if !strings.Contains(body, "Missing") {
 		t.Fatalf("旧译文失效后工作台应显示「缺失」状态 %s", body)
 	}

@@ -4,7 +4,6 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	ginbinding "github.com/gin-gonic/gin/binding"
 
 	orderdto "go_wp/internal/module/order/dto"
 	orderenums "go_wp/internal/module/order/enums"
@@ -61,17 +60,6 @@ func orderWriteFail(c *gin.Context, err error) {
 func orderBulkFail(c *gin.Context, items []facing.BlockedItem) {
 	pageview.FailStatus(c, http.StatusConflict, orderErrScene,
 		&orderBulkRejectedError{items: items})
-}
-
-// bindOrderForm 绑定订单写表单；失败已由这里写出 400。
-func bindOrderForm[T any](c *gin.Context) *T {
-	c.Header("Cache-Control", "no-store")
-	var req T
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
-		orderWriteBadInput(c, orderenums.ErrInvalidParam)
-		return nil
-	}
-	return &req
 }
 
 // orderWriteFailure 记录内部原因后走公共失败出口。

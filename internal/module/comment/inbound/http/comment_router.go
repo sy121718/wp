@@ -26,7 +26,7 @@ func SetupCommentRoutes(rg *mw.RouteGroup, pages *gin.RouterGroup, db *gorm.DB,
 
 	g.POST("/review", commentenums.CommentReview, pageview.HTMLFragment, handle.Review)
 
-	SetupCommentPages(pages, svc, projects)
+	SetupCommentPages(rg.Registry(), pages, svc, projects)
 
 	return svc
 }

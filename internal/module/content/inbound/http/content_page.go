@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	ginbinding "github.com/gin-gonic/gin/binding"
 	blockenums "go_wp/internal/module/block/enums"
 	contentcontract "go_wp/internal/module/content/contract"
 	contentdto "go_wp/internal/module/content/dto"
@@ -25,7 +26,6 @@ import (
 	presentationenums "go_wp/internal/module/presentation/enums"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/internal/siteurl"
-	"go_wp/pkg/binding"
 	"go_wp/pkg/builder/core"
 	"go_wp/pkg/builder/richdoc"
 	bulkids "go_wp/pkg/bulkids"
@@ -212,37 +212,20 @@ type articleCreatedView struct {
 	ID string
 }
 
-// bindArticleForm 绑定文章写表单；失败已由这里写出 400 片段。
-func bindArticleForm(c *gin.Context) (*contentdto.ArticleFormReq, bool) {
-	form, err := binding.ParseForm[contentdto.ArticleFormReq](c)
-	if err != nil {
+func (h *articlePageHandle) ArticleCreate(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	var form contentdto.ArticleFormReq
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, articleErrScene, contentenums.Err(contentenums.ErrInvalidParam))
-		return nil, false
+		return
 	}
-	return form, true
-}
-
-// bindArticleCreateForm 绑定并校验新建表单；失败已由这里写出 400 片段。
-func bindArticleCreateForm(c *gin.Context) (*contentdto.ArticleFormReq, bool) {
-	form, ok := bindArticleForm(c)
-	if !ok {
-		return nil, false
-	}
+	form.Normalize()
 	if form.Title == "" {
 		pageview.FailStatus(c, http.StatusBadRequest, articleErrScene, contentenums.Err(articleMissingTitleText))
-		return nil, false
+		return
 	}
 	if form.Slug == "" {
 		pageview.FailStatus(c, http.StatusBadRequest, articleErrScene, contentenums.Err(articleMissingSlugText))
-		return nil, false
-	}
-	return form, true
-}
-
-func (h *articlePageHandle) ArticleCreate(c *gin.Context) {
-	c.Header("Cache-Control", "no-store")
-	form, ok := bindArticleCreateForm(c)
-	if !ok {
 		return
 	}
 	res, err := h.contents.Create(c.Request.Context(), &contentdto.CreateReq{
@@ -258,28 +241,33 @@ func (h *articlePageHandle) ArticleCreate(c *gin.Context) {
 }
 
 func (h *articlePageHandle) ArticleUpdate(c *gin.Context) {
-	form, ok := bindArticleForm(c)
-	if !ok {
+	c.Header("Cache-Control", "no-store")
+	var form contentdto.ArticleFormReq
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, articleErrScene, contentenums.Err(contentenums.ErrInvalidParam))
 		return
 	}
+	form.Normalize()
 	if form.ID == "" {
-		response.ErrorMsg(c, http.StatusBadRequest, articleMissingIDMsg)
+		pageview.FailMessage(c, articleErrScene, articleMissingIDMsg.Key, articleMissingIDMsg.Fallback)
 		return
 	}
 	if form.Title == "" {
-		response.ErrorMsg(c, http.StatusBadRequest, articleMissingTitleMsg)
+		pageview.FailMessage(c, articleErrScene, articleMissingTitleMsg.Key, articleMissingTitleMsg.Fallback)
 		return
 	}
 	if _, err := h.contents.Update(c.Request.Context(), &contentdto.UpdateReq{ID: form.ID, Data: form.Data()}); err != nil {
-		response.ErrorMsg(c, response.ErrorStatus(err), articleFacingErrMsg(c, err))
+		pageview.FailScene(c, articleErrScene, err)
 		return
 	}
-	response.SuccessMsg(c, articleSavedMsg, gin.H{"id": form.ID})
+	// 编辑是普通表单写：成功交共享成功出口（单根状态节点），失败进入发起宿主的错误区。
+	// 不再回 JSON —— 同一页面里的新建已是 HTML 结论，更新没有理由是另一种协议。
+	pageview.SuccessMessage(c, articleSavedMsg.Key, articleSavedMsg.Fallback, articleSavedMsg.Args...)
 }
 
 func (h *articlePageHandle) ArticleDelete(c *gin.Context) {
-	req, err := binding.ParseForm[contentdto.ArticleDeleteReq](c)
-	if err != nil {
+	var req contentdto.ArticleDeleteReq
+	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
 		articleListJump(c, false, articleMissingIDMsg)
 		return
 	}
@@ -295,8 +283,8 @@ func (h *articlePageHandle) ArticleDelete(c *gin.Context) {
 }
 
 func (h *articlePageHandle) ArticlesBulkDelete(c *gin.Context) {
-	req, err := binding.ParseForm[contentdto.ArticleBulkDeleteReq](c)
-	if err != nil {
+	var req contentdto.ArticleBulkDeleteReq
+	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, articleErrScene, contentenums.Err(contentenums.ErrInvalidParam))
 		return
 	}
@@ -329,11 +317,12 @@ func articleBulkDeleteResult(deleted, skipped int) articleMsg {
 }
 
 func (h *articlePageHandle) ArticleScorePanel(c *gin.Context) {
-	form, err := binding.ParseForm[contentdto.ArticleFormReq](c)
-	if err != nil {
+	var form contentdto.ArticleFormReq
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, articleErrScene, contentenums.Err(contentenums.ErrInvalidParam))
 		return
 	}
+	form.Normalize()
 	pageview.RenderTemplate(c, SeoScoreFragmentTemplate, &SeoScoreFragmentView{
 		Score: articleScoreViewOf(form.Data(), form.URL, requestScoreLang(c)),
 	})
@@ -484,8 +473,9 @@ func (h *articlePageHandle) ArticleImportPreview(c *gin.Context) {
 }
 
 func (h *articlePageHandle) ArticleImportCreate(c *gin.Context) {
-	form, ok := bindArticleImportForm(c)
-	if !ok {
+	var form contentdto.ArticleImportReq
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, articleErrScene, contentenums.Err(contentenums.ErrInvalidParam))
 		return
 	}
 	id, projectID, draftPath := form.ID, form.ProjectID, form.DraftPath
@@ -537,14 +527,22 @@ func (h *articlePageHandle) ArticleImportCreate(c *gin.Context) {
 		return
 	}
 
-	c.Redirect(http.StatusFound, "/workbench?id="+page.ID)
+	// 成功给业务结论片段：目标链接由实体事实生成，导航由发起表单声明的选择器执行；
+	// 后端不发 302（界面导航只由发起模板的 data-write-nav 决定）。
+	c.Header("Cache-Control", "no-store")
+	pageview.RenderFragment(c, ArticleImportedTemplate, articleImportedView{PageID: page.ID})
+}
+
+// articleImportedView 是导入成功的结论事实：只带新页面 id，链接由 Jet 生成。
+type articleImportedView struct {
+	PageID string
 }
 
 // bindArticleImportID 绑定导入预览的 id：预览按钮是 POST（带左列表单），
 // 但同一片段也可能被 GET 直接打开，所以回落到查询串。
 func bindArticleImportID(c *gin.Context) string {
-	req, err := binding.ParseForm[contentdto.ArticleImportReq](c)
-	if err != nil {
+	var req contentdto.ArticleImportReq
+	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
 		return ""
 	}
 	if req.ID != "" {
@@ -656,16 +654,6 @@ func (h *articlePageHandle) ArticleNewPage(c *gin.Context) {
 
 		Form: &ArticleFormResp{},
 	})
-}
-
-// bindArticleImportForm 绑定导入创建表单；失败已由这里写出 400 片段。
-func bindArticleImportForm(c *gin.Context) (*contentdto.ArticleImportReq, bool) {
-	form, err := binding.ParseForm[contentdto.ArticleImportReq](c)
-	if err != nil {
-		pageview.FailStatus(c, http.StatusBadRequest, articleErrScene, contentenums.Err(contentenums.ErrInvalidParam))
-		return nil, false
-	}
-	return form, true
 }
 
 func articleListPageData(list []*contentdto.ContentResp, published map[string]string, pageErr articleMsg) *ArticleListPageResp {
@@ -1021,26 +1009,29 @@ func (h *articleTranslationHandle) ArticleTranslations(c *gin.Context) {
 
 // translationsQuery 读译文的取数参数（筛选 / 分页）；POST 时先看表单里的预置值。
 func translationsQuery(c *gin.Context) *contentdto.ArticleTranslationsSaveReq {
-	req, err := binding.ParseForm[contentdto.ArticleTranslationsSaveReq](c)
-	if err != nil || c.Request.Method != http.MethodPost {
-		req = &contentdto.ArticleTranslationsSaveReq{
+	req := &contentdto.ArticleTranslationsSaveReq{}
+	if err := c.ShouldBindWith(req, ginbinding.FormPost); err != nil || c.Request.Method != http.MethodPost {
+		return &contentdto.ArticleTranslationsSaveReq{
 			Lang:    strings.TrimSpace(c.Query("lang")),
 			Project: strings.TrimSpace(c.Query("project")),
 			Keyword: strings.TrimSpace(c.Query("keyword")),
 		}
 	}
+	req.Normalize()
 	return req
 }
 
 func (h *articleTranslationHandle) SaveArticleTranslations(c *gin.Context) {
 	ctx := c.Request.Context()
-	req, ok := bindArticleTranslationsForm(c)
-	if !ok {
+	var req contentdto.ArticleTranslationsSaveReq
+	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, articleErrScene, contentenums.Err(contentenums.ErrInvalidParam))
 		return
 	}
+	req.Normalize()
 	lang, projectID, keyword := req.Lang, req.Project, req.Keyword
 	page, _ := strconv.Atoi(req.Page)
-	data := h.build(c, req)
+	data := h.build(c, &req)
 
 	if page != data.Page || req.Limit != strconv.Itoa(data.Limit) {
 		data.Errors = []articleMsg{articleTranslationMsg(contentenums.TranslationsErrPageChanged, "列表页码已变化，请刷新后重试")}
@@ -1243,16 +1234,6 @@ func articleTranslationLocation(projectID, lang, keyword string, page, limit int
 		q.Set("limit", strconv.Itoa(limit))
 	}
 	return "/admin/articles/translations?" + q.Encode()
-}
-
-// bindArticleTranslationsForm 绑定译文保存表单；失败已由这里写出 400 片段。
-func bindArticleTranslationsForm(c *gin.Context) (*contentdto.ArticleTranslationsSaveReq, bool) {
-	req, err := binding.ParseForm[contentdto.ArticleTranslationsSaveReq](c)
-	if err != nil {
-		pageview.FailStatus(c, http.StatusBadRequest, articleErrScene, contentenums.Err(contentenums.ErrInvalidParam))
-		return nil, false
-	}
-	return req, true
 }
 
 func (h *articleTranslationHandle) build(c *gin.Context, req *contentdto.ArticleTranslationsSaveReq) *articleTranslationsData {
@@ -1606,8 +1587,9 @@ var articlePublishFallbacks = map[string]string{
 }
 
 func (h *articlePageHandle) ArticlePublish(c *gin.Context) {
-	form, ok := bindArticlePublishForm(c)
-	if !ok {
+	var form contentdto.ArticlePublishReq
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, articleErrScene, contentenums.Err(contentenums.ErrInvalidParam))
 		return
 	}
 	id, projectID, urlPath, templateID := form.ID, form.ProjectID, form.URLPath, form.TemplateID
@@ -1638,29 +1620,10 @@ func (h *articlePageHandle) ArticlePublish(c *gin.Context) {
 	articleEditJump(c, true, id, articlePublishTextMsg(articlePublishedText))
 }
 
-// bindArticlePublishForm 绑定发布表单；失败已由这里写出 400 片段。
-func bindArticlePublishForm(c *gin.Context) (*contentdto.ArticlePublishReq, bool) {
-	form, err := binding.ParseForm[contentdto.ArticlePublishReq](c)
-	if err != nil {
-		pageview.FailStatus(c, http.StatusBadRequest, articleErrScene, contentenums.Err(contentenums.ErrInvalidParam))
-		return nil, false
-	}
-	return form, true
-}
-
-// bindArticleID 绑定只带 id 的写表单（重新发布 / 改 URL 共用）。
-func bindArticleID(c *gin.Context) (*contentdto.ArticleDeleteReq, bool) {
-	form, err := binding.ParseForm[contentdto.ArticleDeleteReq](c)
-	if err != nil {
-		pageview.FailStatus(c, http.StatusBadRequest, articleErrScene, contentenums.Err(contentenums.ErrInvalidParam))
-		return nil, false
-	}
-	return form, true
-}
-
 func (h *articlePageHandle) ArticleRebuild(c *gin.Context) {
-	form, ok := bindArticleID(c)
-	if !ok {
+	var form contentdto.ArticleDeleteReq
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, articleErrScene, contentenums.Err(contentenums.ErrInvalidParam))
 		return
 	}
 	id := form.ID
@@ -1676,8 +1639,9 @@ func (h *articlePageHandle) ArticleRebuild(c *gin.Context) {
 }
 
 func (h *articlePageHandle) ArticleUpdateURL(c *gin.Context) {
-	form, ok := bindArticleURLForm(c)
-	if !ok {
+	var form contentdto.ArticleURLReq
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, articleErrScene, contentenums.Err(contentenums.ErrInvalidParam))
 		return
 	}
 	id := form.ID
@@ -1699,16 +1663,6 @@ func (h *articlePageHandle) ArticleUpdateURL(c *gin.Context) {
 		return
 	}
 	articleEditJump(c, true, id, articlePublishTextMsg(articleURLUpdatedText))
-}
-
-// bindArticleURLForm 绑定「改 URL」表单；失败已由这里写出 400 片段。
-func bindArticleURLForm(c *gin.Context) (*contentdto.ArticleURLReq, bool) {
-	form, err := binding.ParseForm[contentdto.ArticleURLReq](c)
-	if err != nil {
-		pageview.FailStatus(c, http.StatusBadRequest, articleErrScene, contentenums.Err(contentenums.ErrInvalidParam))
-		return nil, false
-	}
-	return form, true
 }
 
 func articlePublishView(ctx context.Context, h *articlePageHandle, id, slug string, projectOptions []OptionResp) ArticlePublishBlockResp {

@@ -178,7 +178,7 @@
                    看起来像「没货」）/ 数字（跟踪）/ 未入库（这个仓没有这一行，label 已由 handler 给好）。
                    预占 / 可售两列（迁移 621）：数字由 handler 算好（可售 = 数量 − 预占），
                    模板**不做减法**（template_logic_test.go）。未入库行没有这两列的语义，给 —。 *}
-                <td>{{if r.Present}}{{if r.TrackQuantity}}{{r.Quantity}}{{else}}{{ .["t"]("admin.inventory.stock.unlimited", "∞ 无限") }}{{end}}{{else}}{{ .["t"]("admin.inventory.stock.notStocked", "未入库") }}{{end}}</td>
+                <td>{{if r.Present}}{{if r.TrackQuantity}}{{r.Quantity}}{{else}}∞ {{ .["t"]("admin.inventory.stock.unlimited", "无限") }}{{end}}{{else}}{{ .["t"]("admin.inventory.stock.notStocked", "未入库") }}{{end}}</td>
                 <td>{{if isset(r.Present)}}{{if r.Present}}{{r.ReservedQuantity}}{{else}}—{{end}}{{else}}—{{end}}</td>
                 <td>{{if isset(r.Present)}}{{if r.Present}}{{r.AvailableQuantity}}{{else}}—{{end}}{{else}}—{{end}}</td>
                 <td>

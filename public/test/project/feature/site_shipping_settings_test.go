@@ -1,8 +1,9 @@
 package feature
 
 import (
-	pageview "go_wp/pkg/view"
 	"context"
+	pageview "go_wp/pkg/view"
+	text "go_wp/pkg/view/jet"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -32,8 +33,14 @@ func newSiteShippingEnv(t *testing.T) (*gin.Engine, *projectservice.Service, str
 	handle := projecthttp.NewSiteSettingsAdminHandle(projects, nil, nil)
 	router := gin.New()
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
+	// 与生产装配一致：请求级取词作用域与统一成功出口由应用装一次。
+	// FailureWriter 就是出口本身：这里不能再调 FailStatus（会命中重入保护直接返回）。
+	router.Use(pageview.FailureMiddleware(pageview.RenderFailure))
+	router.Use(pageview.UseSuccess(pageview.NewSuccessWriter()))
+	router.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	router.GET("/admin/settings", pageview.Slot(projecthttp.SiteSettingsPageTemplate, pageview.RenderPage), handle.SiteSettings)
-	router.POST("/admin/settings/save", pageview.Slot(projecthttp.SiteSettingsPageTemplate, pageview.RenderPage), handle.SaveSiteSettings)
+	// 与生产注册一致：写入口声明 HTML 片段协议，失败走共享失败出口而不是 JSON。
+	router.POST("/admin/settings/save", pageview.HTMLFragment, handle.SaveSiteSettings)
 	return router, projects, project.ID
 }
 
@@ -61,8 +68,8 @@ func TestSiteSettingsShippingSaveAndReadBack(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("保存应 200 渲染成功提示页，实际 %d（body=%s）", rec.Code, rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), `data-jump-state="ok"`) {
-		t.Fatalf("响应不是成功提示页（缺 data-jump-state=\"ok\"）:\n%s", rec.Body.String())
+	if !strings.Contains(rec.Body.String(), `role="status"`) {
+		t.Fatalf("响应不是共享成功出口的单根状态节点：\n%s", rec.Body.String())
 	}
 
 	detail, err := projects.Detail(ctx, &projectdto.DetailReq{ID: projectID})
@@ -127,12 +134,13 @@ func TestSiteSettingsShippingRejectsInvalidWithoutWriting(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			rec := submitShippingSettings(t, router, projectID, tc.extra)
-			if rec.Code != http.StatusOK {
-				t.Fatalf("非法值应 200 渲染失败提示页，实际 %d", rec.Code)
+			// 失败按真实语义给状态码（400），由共享失败出口渲染受控错误区。
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("非法值应 400，实际 %d", rec.Code)
 			}
 			body := rec.Body.String()
-			if !strings.Contains(body, `data-jump-state="err"`) {
-				t.Fatalf("响应不是失败提示页（缺 data-jump-state=\"err\"）：用户看不到任何原因\n%s", body)
+			if !strings.Contains(body, "data-ui-error") && !strings.Contains(body, "form-error") {
+				t.Fatalf("响应不是受控错误区：用户看不到任何原因\n%s", body)
 			}
 			detail, err := projects.Detail(ctx, &projectdto.DetailReq{ID: projectID})
 			if err != nil {

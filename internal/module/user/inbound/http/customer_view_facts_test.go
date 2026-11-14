@@ -1,8 +1,8 @@
 package userhttp
 
 import (
-	pageview "go_wp/pkg/view"
 	"go_wp/pkg/utils"
+	pageview "go_wp/pkg/view"
 	"net/http"
 	"net/http/httptest"
 	"os"

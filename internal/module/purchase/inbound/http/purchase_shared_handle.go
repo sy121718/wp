@@ -72,8 +72,6 @@ func purchaseErrFallback(key string) string { return key }
 
 func purchaseMsgText(c *gin.Context, m facing.Msg) string { return response.MsgText(c, m) }
 
-
-
 var (
 	purchaseSourceBackKeys = []string{"project", "type", "relatedParty", "status", "keyword", "page", "limit"}
 	purchaseOrderBackKeys  = []string{"project", "status", "sourceId", "keyword", "page", "limit"}

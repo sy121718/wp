@@ -1,6 +1,7 @@
 package buildservice
 
 import (
+	"sync"
 	"context"
 	"errors"
 	"time"
@@ -75,14 +76,27 @@ func (s *Service) noteMarkRejected(job *buildmodel.Entity, outcome string, err e
 	logger.Scene("build").With("jobId", job.ID).Error(err, "构建任务状态写入失败")
 }
 
-func (s *Service) StartWorkers(ctx context.Context, n int) {
+// 返回的 stop 等待全部 worker 与租约回收循环退出：调用方必须在关闭数据库之前调用它。
+func (s *Service) StartWorkers(ctx context.Context, n int) func() {
 	if s == nil || s.m == nil || n <= 0 {
-		return
+		return func() {}
 	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	var wg sync.WaitGroup
+	wg.Add(n + 1)
 	for i := 0; i < n; i++ {
-		go s.workerLoop(ctx)
+		go func() {
+			defer wg.Done()
+			s.workerLoop(ctx)
+		}()
 	}
-	go s.reclaimLoop(ctx)
+	go func() {
+		defer wg.Done()
+		s.reclaimLoop(ctx)
+	}()
+	return func() { wg.Wait() }
 }
 
 func (s *Service) workerLoop(ctx context.Context) {

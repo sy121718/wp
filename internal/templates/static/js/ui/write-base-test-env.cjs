@@ -37,7 +37,7 @@ function env(attrs = {}, options = {}) {
         WPSitePreview: { active: !!options.preview },
     };
     const context = vm.createContext({
-        window, document, location: window.location, URL,
+        window, document, location: window.location, URL, URLSearchParams,
         htmx: { config: {}, registerExtension: (_name, value) => { hooks = value; } },
         CustomEvent: class { constructor(type) { this.type = type; } },
     });

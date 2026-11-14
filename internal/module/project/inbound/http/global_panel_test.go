@@ -3,8 +3,6 @@ package projecthttp
 import (
 	pageview "go_wp/pkg/view"
 	"net/http"
-	"net/http/httptest"
-	"net/url"
 	"strings"
 	"testing"
 
@@ -26,15 +24,11 @@ func newGlobalRouter(t *testing.T) *gin.Engine {
 }
 
 func TestGlobalPanelRendersFields(t *testing.T) {
-	form := url.Values{"themeId": {"theme-1"}, "settings": {globalPanelThemeSettingsJSON}}
-	recorder := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/workbench/global", strings.NewReader(form.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	newGlobalRouter(t).ServeHTTP(recorder, req)
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("状态码 %d", recorder.Code)
+	code, body := panelJSON(t, newGlobalRouter(t), "/workbench/global",
+		`{"themeId":"theme-1","settings":`+globalPanelThemeSettingsJSON+`}`)
+	if code != http.StatusOK {
+		t.Fatalf("状态码 %d", code)
 	}
-	body := recorder.Body.String()
 	for _, want := range []string{
 		`wb-palette-group">颜色<`,
 		`wb-palette-group">按钮<`,
@@ -59,12 +53,11 @@ func TestGlobalPanelRendersFields(t *testing.T) {
 }
 
 func TestGlobalPanelEmptyState(t *testing.T) {
-	form := url.Values{"themeId": {""}}
-	recorder := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/workbench/global", strings.NewReader(form.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	newGlobalRouter(t).ServeHTTP(recorder, req)
-	if !strings.Contains(recorder.Body.String(), "未挂接主题") {
-		t.Errorf("应输出空态提示，实际: %s", recorder.Body.String())
+	code, body := panelJSON(t, newGlobalRouter(t), "/workbench/global", `{"themeId":""}`)
+	if code != http.StatusOK {
+		t.Fatalf("状态码 %d", code)
+	}
+	if !strings.Contains(body, "未挂接主题") {
+		t.Errorf("应输出空态提示，实际: %s", body)
 	}
 }

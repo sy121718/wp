@@ -3,9 +3,9 @@ package aihttp
 import (
 	"context"
 	"errors"
-	view "go_wp/pkg/view"
 	"go_wp/pkg/binding"
 	json "go_wp/pkg/jsonx"
+	view "go_wp/pkg/view"
 	"net/http"
 	"strconv"
 	"strings"
@@ -30,8 +30,9 @@ import (
 )
 
 func (h *Handle) Chat(c *gin.Context) {
-	req, ok := binding.Form[aidto.ChatReq](c)
-	if !ok {
+	req, err := binding.ParseForm[aidto.ChatReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 
@@ -64,8 +65,8 @@ func (h *SessionPageHandle) FabAskStream(c *gin.Context) {
 		return
 	}
 
-	form, ferr := binding.ParseForm[aidto.FabAskFormReq](c)
-	if ferr != nil {
+	var form aidto.FabAskFormReq
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
 		writeFabStreamError(c, response.MsgText(c, facing.Msg{Key: aienums.MsgFabEmptyInput}))
 		return
 	}
@@ -256,8 +257,9 @@ func (h *Handle) ListModels(c *gin.Context) {
 
 func (h *Handle) SaveModels(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	req, ok := binding.JSON[aidto.SaveModelsReq](c)
-	if !ok {
+	req, err := binding.ParseJSON[aidto.SaveModelsReq](c)
+	if err != nil {
+		aiWriteBadInput(c)
 		return
 	}
 	req.UpdateBy = userID(c)
@@ -286,12 +288,14 @@ func (h *Handle) RestoreDefaultModels(c *gin.Context) {
 }
 
 func (h *Handle) FetchAvailableModels(c *gin.Context) {
-	req, ok := binding.JSON[aidto.ProviderActionReq](c)
-	if !ok {
+	// 供应商卡片是标准表单（hx-post），不是 JSON 对象。
+	var req aidto.ProviderActionReq
+	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+		response.ParamError(c)
 		return
 	}
 	req.UpdateBy = userID(c)
-	result, err := h.svc.FetchAvailableModels(c.Request.Context(), req)
+	result, err := h.svc.FetchAvailableModels(c.Request.Context(), &req)
 	if err != nil {
 		aiErrExit(c, err)
 		return
@@ -709,8 +713,9 @@ func (h *SessionHandle) Events(c *gin.Context) {
 }
 
 func (h *SessionHandle) Append(c *gin.Context) {
-	body, ok := binding.JSON[sessionAppendBody](c)
-	if !ok {
+	var body sessionAppendBody
+	if err := c.ShouldBindJSON(&body); err != nil {
+		response.ParamError(c)
 		return
 	}
 	res, err := h.svc.AppendEvent(c.Request.Context(), aidto.AppendEventReq{
@@ -739,12 +744,14 @@ func (h *SessionHandle) Append(c *gin.Context) {
 // 续写变成新会话，历史全丢。输入内容的校验、失败轮次标记、工具调用都在 service 里，
 // 这里只绑定、调一次、出口。
 func (h *SessionHandle) Send(c *gin.Context) {
-	req, ok := binding.JSON[aidto.SendMessageReq](c)
-	if !ok {
+	// 会话续写由页面表单提交（标准表单编码，图片以 JSON 字符串字段随表单走）。
+	var req aidto.SendMessageReq
+	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+		response.ParamError(c)
 		return
 	}
 	req.UserID = userID(c)
-	result, err := h.svc.SendMessage(c.Request.Context(), *req)
+	result, err := h.svc.SendMessage(c.Request.Context(), req)
 	if err != nil {
 		aiErrExit(c, err)
 		return
@@ -755,8 +762,9 @@ func (h *SessionHandle) Send(c *gin.Context) {
 }
 
 func (h *SessionHandle) Rename(c *gin.Context) {
-	body, ok := binding.JSON[sessionRenameBody](c)
-	if !ok {
+	var body sessionRenameBody
+	if err := c.ShouldBindJSON(&body); err != nil {
+		response.ParamError(c)
 		return
 	}
 	status := int16(-1)
@@ -780,8 +788,9 @@ func (h *SessionHandle) Rename(c *gin.Context) {
 }
 
 func (h *SessionHandle) Archive(c *gin.Context) {
-	body, ok := binding.JSON[sessionRenameBody](c)
-	if !ok {
+	var body sessionRenameBody
+	if err := c.ShouldBindJSON(&body); err != nil {
+		response.ParamError(c)
 		return
 	}
 	archived := int16(aienums.SessionArchived)
@@ -800,8 +809,9 @@ func (h *SessionHandle) Archive(c *gin.Context) {
 }
 
 func (h *SessionHandle) FoldPlan(c *gin.Context) {
-	body, ok := binding.JSON[sessionFoldPlanBody](c)
-	if !ok {
+	var body sessionFoldPlanBody
+	if err := c.ShouldBindJSON(&body); err != nil {
+		response.ParamError(c)
 		return
 	}
 	plan, err := h.svc.FoldPlan(c.Request.Context(), aidto.FoldPlanReq{
@@ -816,8 +826,9 @@ func (h *SessionHandle) FoldPlan(c *gin.Context) {
 }
 
 func (h *SessionHandle) Fold(c *gin.Context) {
-	body, ok := binding.JSON[sessionFoldBody](c)
-	if !ok {
+	var body sessionFoldBody
+	if err := c.ShouldBindJSON(&body); err != nil {
+		response.ParamError(c)
 		return
 	}
 	res, err := h.svc.Fold(c.Request.Context(), aidto.FoldReq{
@@ -1052,19 +1063,34 @@ func fabImageRequest(req *aidto.SendMessageReq, images, labels []string) {
 	req.ImageLabels = labels
 }
 
-// accountAuthorizer 按请求提供的路由绑定索引判断当前用户对某操作的授权事实。
+// permIndex 是「全部路由与工具登记完成后」由 routers 验证通过后建立的不可变查询。
 //
-// 绑定索引由装配方在启动期从同一个登记快照构造并注入 —— 执行期不再读全局登记，
+// 它不在 AI 包内构造：装配方先冻结登记、核对权限目录，通过后才用
+// mw.BuildPermIndex 建索引并注入这里。执行期不再读全局登记，也不重建索引 ——
 // 第二个 router 的装配不会悄悄改掉第一个实例看到的绑定。
-//
-// 每个登记里有两条事实：真实路由（Path/Method）与**实际被检查的鉴权目标**
-// （AuthObject/AuthMethod）。页面或 HTML 写入口复用别的权限时后者才不同 ——
-// 这里必须用后者判断，用 Path 会把「复用权限的页面入口」当成独立对象去查，
-// 结果永远是拒绝。
-func casbinAuthorizer(bindings []mw.RouteSpec, userID int64, perm string) (bool, error) {
-	routes := BindingsOf(bindings, perm)
-	if len(routes) == 0 {
+type permIndex = mw.PermIndex
 
+// RouteAuthorizer 构造站内 Runner 与外部 MCP 端点共用的授权闭包。
+//
+// 两个执行入口必须用同一份判定：站内工具与外部 MCP 若各自接线，
+// 任一侧漏注入都会变成「未注入即放行」或「永远拒绝」的隐形分叉。
+func RouteAuthorizer(routeBindings **mw.PermIndex) AccountAuthorizer {
+	return func(ctx context.Context, userID int64, perm string) (bool, error) {
+		if routeBindings == nil {
+			return false, nil
+		}
+		return casbinAuthorizer(*routeBindings, userID, perm)
+	}
+}
+
+// casbinAuthorizer 按不可变索引判断当前用户对某操作的授权事实。
+//
+// 每个登记里有两条事实：真实路由与**实际被检查的鉴权目标**（AuthObject/AuthMethod）。
+// 页面或 HTML 写入口复用别的权限时后者才不同 —— 这里必须用后者判断，
+// 用 Path 会把「复用权限的页面入口」当成独立对象去查，结果永远是拒绝。
+func casbinAuthorizer(index *permIndex, userID int64, perm string) (bool, error) {
+	routes := index.Of(perm)
+	if len(routes) == 0 {
 		logger.Scene("ai").With("perm", string(perm)).Warn("权限点没有声明路由，工具调用按无权限处理")
 		return false, nil
 	}
@@ -1085,17 +1111,6 @@ func casbinAuthorizer(bindings []mw.RouteSpec, userID int64, perm string) (bool,
 		}
 	}
 	return false, nil
-}
-
-// BindingsOf 从装配期快照里取某权限点的绑定；索引缺失即无权限（不回落全局登记）。
-func BindingsOf(bindings []mw.RouteSpec, perm string) []mw.RouteSpec {
-	out := make([]mw.RouteSpec, 0, 2)
-	for _, r := range bindings {
-		if r.Perm == perm {
-			out = append(out, r)
-		}
-	}
-	return out
 }
 
 type toolProvider struct {

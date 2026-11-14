@@ -13,7 +13,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	adminhttp "go_wp/internal/module/admin/inbound/http"
-	view "go_wp/pkg/view"
+	"go_wp/pkg/response"
 	"go_wp/internal/templates"
 	bulkids "go_wp/pkg/bulkids"
 	"go_wp/pkg/i18n"
@@ -119,7 +119,7 @@ func TestAdminBulkLimitTextDoesNotDeriveFromErrorText(t *testing.T) {
 
 	wrapped := fmt.Errorf(`批量删除管理员失败: SQLSTATE 23505 uk_sys_admin_username: %w`,
 		&bulkids.IDsError{Count: bulkids.MaxIDs + 1, Max: bulkids.MaxIDs})
-	got := view.BulkIDsFacingText(bulkProbeContext(t), wrapped)
+	got := response.MessageOf(bulkProbeContext(t), "admin", wrapped)
 	if !strings.Contains(got, "一次最多操作") {
 		t.Fatalf("命中 sentinel 的错误应给出受控提示，实际 %q", got)
 	}

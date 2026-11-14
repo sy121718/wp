@@ -66,8 +66,9 @@ func (h *PublicHandle) VisitorReturns(c *gin.Context) {
 	response.Success(c, data)
 }
 func (h *PublicHandle) VisitorRequestReturn(c *gin.Context) {
-	req, ok := binding.JSON[orderdto.ReturnRequestReq](c)
-	if !ok {
+	req, err := binding.ParseForm[orderdto.ReturnRequestReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	req.UserID = visitorOrderUserID(c)

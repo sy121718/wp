@@ -43,8 +43,9 @@ func operatorFromContext(c *gin.Context) (id uint64, name string) {
 }
 
 func (h *Handle) CreateOrder(c *gin.Context) {
-	req, ok := binding.JSON[orderdto.CreateOrderReq](c)
-	if !ok {
+	var req orderdto.CreateOrderReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ParamError(c)
 		return
 	}
 
@@ -54,7 +55,7 @@ func (h *Handle) CreateOrder(c *gin.Context) {
 		req.CreateBy = id
 	}
 
-	res, err := h.svc.CreateAPIOrder(c.Request.Context(), req)
+	res, err := h.svc.CreateAPIOrder(c.Request.Context(), &req)
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "order", err)
 		return

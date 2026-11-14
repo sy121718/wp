@@ -70,8 +70,9 @@ func newCustomerE2EEnv(t *testing.T) *customerE2EEnv {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "internal/templates"), true)
-	// 生产装配在基础层挂失败出口与请求取词；缺了它们失败会落成 JSON。
+	// 生产装配在基础层挂成功/失败出口与请求取词；缺了它们成功会退成 500、失败会落成 JSON。
 	engine.Use(pageview.FailureMiddleware(pageview.RenderFailure))
+	engine.Use(pageview.UseSuccess(pageview.NewSuccessWriter()))
 	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	page := userhttp.NewCustomerPageHandle(users, orders, projects)
 	engine.GET("/admin/customers", pageview.Slot(userhttp.CustomersListPageTemplate, pageview.RenderPage), page.CustomersPage)

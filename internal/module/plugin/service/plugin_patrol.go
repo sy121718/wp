@@ -7,11 +7,11 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"go_wp/internal/module/plugin/dto"
 	"go_wp/internal/module/plugin/model"
+	"go_wp/pkg/lifecycle"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/utils"
 )
@@ -171,27 +171,29 @@ func runPluginPatrolRound(ctx context.Context, svc *Service) (res pluginPatrolRo
 	return res
 }
 
-func runPluginPatrolLoop(round func(), interval time.Duration) (stop func()) {
+// runPluginPatrolLoop 用共享的最小周期原语启动巡检循环，返回 quit 与 wait。
+//
+// quit 停止新轮；wait 等在途的一轮结束后返回 —— 调用方必须在关闭数据库之前 wait。
+// 循环 ctx 从 parent 派生：应用 ctx 取消后循环退出，不再启动新轮。
+func runPluginPatrolLoop(parent context.Context, round func(context.Context), interval time.Duration) (stop func(), wait func()) {
 	if interval <= 0 {
 		interval = pluginPatrolInterval
 	}
-	done := make(chan struct{})
-	var once sync.Once
-	go func() {
-
-		safePluginPatrolRound(round)
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ticker.C:
-				safePluginPatrolRound(round)
-			case <-done:
-				return
-			}
-		}
-	}()
-	return func() { once.Do(func() { close(done) }) }
+	if parent == nil {
+		parent = context.Background()
+	}
+	ctx, cancel := context.WithCancel(parent)
+	task := lifecycle.PeriodicTask{
+		Interval: interval,
+		Timeout:  pluginPatrolTimeout,
+		Round:    round,
+		OnPanic: func(r any) {
+			logger.Scene("plugin-patrol").Error(fmt.Errorf("panic: %v", r),
+				"插件产物巡检单轮 panic（已收敛，下一轮照常；不影响进程）")
+		},
+	}
+	waitFn := task.Start(ctx)
+	return cancel, waitFn
 }
 
 func safePluginPatrolRound(round func()) {
@@ -204,28 +206,35 @@ func safePluginPatrolRound(round func()) {
 	round()
 }
 
-func StartPluginPatrolScheduler(svc *Service) {
+// StartPluginPatrolScheduler 启动巡检；返回的 stop 取消循环并等待在途一轮结束。
+func StartPluginPatrolScheduler(ctx context.Context, svc *Service) func() {
 	if utils.IsTestProcess() {
-		return
+		return func() {}
 	}
-	startPluginPatrolScheduler(svc, pluginPatrolInterval)
+	return startPluginPatrolScheduler(ctx, svc, pluginPatrolInterval)
 }
 
-func StartPluginPatrolSchedulerWithInterval(svc *Service, interval time.Duration) {
-	startPluginPatrolScheduler(svc, interval)
+// StartPluginPatrolSchedulerWithInterval 与上同，只是显式指定间隔。
+func StartPluginPatrolSchedulerWithInterval(ctx context.Context, svc *Service, interval time.Duration) func() {
+	return startPluginPatrolScheduler(ctx, svc, interval)
 }
 
-func startPluginPatrolScheduler(svc *Service, interval time.Duration) {
+func startPluginPatrolScheduler(ctx context.Context, svc *Service, interval time.Duration) func() {
 	if svc == nil {
-		return
+		return func() {}
 	}
-	runPluginPatrolLoop(func() {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	stop, wait := runPluginPatrolLoop(ctx, func(runCtx context.Context) {
 		start := time.Now()
-		ctx, cancel := context.WithTimeout(context.Background(), pluginPatrolTimeout)
-		defer cancel()
-		res := runPluginPatrolRound(ctx, svc)
+		res := runPluginPatrolRound(runCtx, svc)
 		logPluginPatrolRound(res, time.Since(start))
 	}, interval)
+	return func() {
+		stop()
+		wait()
+	}
 }
 
 func logPluginPatrolRound(res pluginPatrolRoundResult, cost time.Duration) {

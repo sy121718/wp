@@ -115,7 +115,6 @@ func redirectPageData(c *gin.Context, res *pagedto.RedirectListResp, errKey stri
 
 	_ = token
 	view := &RedirectPageResp{
-		PagePath:        redirectPagePath,
 		ErrKey:          errKey,
 		Projects:        []pagedto.RedirectProjectOptionResp{},
 		Items:           []pagedto.RedirectItemResp{},

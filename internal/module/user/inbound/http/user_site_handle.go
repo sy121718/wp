@@ -31,8 +31,10 @@ func (h *Handle) SiteDevices(c *gin.Context) {
 }
 
 func (h *Handle) SiteRegister(c *gin.Context) {
-	req, ok := binding.JSON[userdto.RegisterReq](c)
-	if !ok {
+	// 站点表单是标准 form 提交（user_forms_widget.jet）；显式表单入口只读 body。
+	req, err := binding.ParseForm[userdto.RegisterReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	req.RegisterIP, req.Locale = clientIP(c), locale(c)
@@ -45,8 +47,9 @@ func (h *Handle) SiteRegister(c *gin.Context) {
 }
 
 func (h *Handle) SiteLogin(c *gin.Context) {
-	req, ok := binding.JSON[userdto.LoginReq](c)
-	if !ok {
+	req, err := binding.ParseForm[userdto.LoginReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	data, err := h.svc.Login(c.Request.Context(), req, userservice.SessionMeta{IP: clientIP(c), UserAgent: c.Request.UserAgent()})
@@ -74,8 +77,9 @@ func (h *Handle) SiteLogout(c *gin.Context) {
 }
 
 func (h *Handle) SiteActivate(c *gin.Context) {
-	req, ok := binding.JSON[userdto.ActivateEmailReq](c)
-	if !ok {
+	req, err := binding.ParseForm[userdto.ActivateEmailReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	req.Locale = locale(c)
@@ -88,8 +92,9 @@ func (h *Handle) SiteActivate(c *gin.Context) {
 }
 
 func (h *Handle) SiteResendActivation(c *gin.Context) {
-	req, ok := binding.JSON[userdto.ResendActivationReq](c)
-	if !ok {
+	req, err := binding.ParseForm[userdto.ResendActivationReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	req.Locale = locale(c)
@@ -101,8 +106,9 @@ func (h *Handle) SiteResendActivation(c *gin.Context) {
 }
 
 func (h *Handle) SiteForgot(c *gin.Context) {
-	req, ok := binding.JSON[userdto.PasswordResetReqRequest](c)
-	if !ok {
+	req, err := binding.ParseForm[userdto.PasswordResetReqRequest](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	req.Locale = locale(c)
@@ -114,8 +120,9 @@ func (h *Handle) SiteForgot(c *gin.Context) {
 }
 
 func (h *Handle) SiteReset(c *gin.Context) {
-	req, ok := binding.JSON[userdto.ResetPasswordReq](c)
-	if !ok {
+	req, err := binding.ParseForm[userdto.ResetPasswordReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	if err := h.svc.ResetPassword(c.Request.Context(), req); err != nil {
@@ -126,8 +133,9 @@ func (h *Handle) SiteReset(c *gin.Context) {
 }
 
 func (h *Handle) SiteUpdateProfile(c *gin.Context) {
-	req, ok := binding.JSON[userdto.UpdateProfileReq](c)
-	if !ok {
+	req, err := binding.ParseForm[userdto.UpdateProfileReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	req.UserID = siteUserID(c)
@@ -139,8 +147,9 @@ func (h *Handle) SiteUpdateProfile(c *gin.Context) {
 }
 
 func (h *Handle) SiteUpdatePreference(c *gin.Context) {
-	req, ok := binding.JSON[userdto.UpdatePreferenceReq](c)
-	if !ok {
+	req, err := binding.ParseForm[userdto.UpdatePreferenceReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	req.UserID = siteUserID(c)
@@ -152,8 +161,9 @@ func (h *Handle) SiteUpdatePreference(c *gin.Context) {
 }
 
 func (h *Handle) SiteChangePassword(c *gin.Context) {
-	req, ok := binding.JSON[userdto.ChangePasswordReq](c)
-	if !ok {
+	req, err := binding.ParseForm[userdto.ChangePasswordReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	req.UserID = siteUserID(c)
@@ -165,8 +175,9 @@ func (h *Handle) SiteChangePassword(c *gin.Context) {
 }
 
 func (h *Handle) SiteRevokeDevice(c *gin.Context) {
-	req, ok := binding.JSON[userdto.SiteRevokeReq](c)
-	if !ok {
+	req, err := binding.ParseForm[userdto.SiteRevokeReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	if err := h.svc.RevokeSiteDevice(c.Request.Context(), siteUserID(c), currentToken(c), req.ID); err != nil {

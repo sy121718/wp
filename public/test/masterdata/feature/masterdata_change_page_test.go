@@ -169,7 +169,8 @@ func TestMasterDataChangePageMultiDeviceContract(t *testing.T) {
 		}
 	}
 
-	raw, err := os.ReadFile(templateRoot() + "/static/css/theme.css")
+	// theme.css 的属主是 pkg/view/ui/assets/css（公共 UI 资产），应用侧不保留副本。
+	raw, err := os.ReadFile(templateRoot() + "/../../pkg/view/ui/assets/css/theme.css")
 	if err != nil {
 		t.Fatalf("读样式表失败: %v", err)
 	}

@@ -1,8 +1,8 @@
 package pagehttp
 
 import (
-	view "go_wp/pkg/view"
 	"errors"
+	view "go_wp/pkg/view"
 	"net/http"
 	"net/http/httptest"
 	"strings"

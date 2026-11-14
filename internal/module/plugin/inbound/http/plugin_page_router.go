@@ -5,13 +5,14 @@ import (
 	plugincontract "go_wp/internal/module/plugin/contract"
 	mw "go_wp/pkg/middleware"
 	pageview "go_wp/pkg/view"
+	"net/http"
 
 	"github.com/gin-gonic/gin"
 )
 
 const PluginsPageTemplate = "admin/plugin/plugins"
 
-func SetupPluginPages(adminPages *gin.RouterGroup, plugins plugincontract.PluginService) {
+func SetupPluginPages(reg *mw.Registry, adminPages *gin.RouterGroup, plugins plugincontract.PluginService) {
 	if adminPages == nil {
 		return
 	}
@@ -20,5 +21,10 @@ func SetupPluginPages(adminPages *gin.RouterGroup, plugins plugincontract.Plugin
 		mw.PageAuthz("/api/plugin/list"),
 		pageview.Slot(PluginsPageTemplate, pageview.RenderPage),
 		h.PluginsPage)
+	mw.DeclarePageGetOn(reg, "/admin/plugins", "/api/plugin/list")
 	adminPages.POST("/plugins/install", builtin.CasbinMiddlewareForPath("/api/plugin/install"), h.PluginsInstall)
+	if reg != nil {
+		reg.DeclarePageWrite(http.MethodPost, "/admin/plugins/install", "/api/plugin/install", http.MethodPost)
+	}
+
 }

@@ -2,6 +2,7 @@ package feature
 
 import (
 	"context"
+	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	json "go_wp/pkg/jsonx"
 	publish "go_wp/pkg/publish"
 	"os"
@@ -58,6 +59,15 @@ func injectStructureTemplatePort(t *testing.T, db *gorm.DB, svc pagecontract.Pag
 	projects := projectservice.NewService(projectmodel.NewProjectModel(db))
 	tplSvc := contenttemplateservice.NewService(contenttemplatemodel.NewModel(db), projects, core.NewEntitySourceRegistry())
 	setter.SetStructureTemplatePort(structureTemplatePortForTest{svc: tplSvc})
+	// 页面写入事务内的模板存在性复核端口：缺了它，任何引用结构模板的写入都会
+	// fail-closed（这正是生产行为），夹具必须与生产装配一样注入。
+	if existence, ok := svc.(interface {
+		SetTemplateExistencePort(contenttemplatecontract.TemplateExistenceTxReader)
+	}); ok {
+		existence.SetTemplateExistencePort(tplSvc)
+	} else {
+		t.Fatal("page service 未暴露模板存在性端口注入点（SetTemplateExistencePort）")
+	}
 	return tplSvc
 }
 
@@ -77,6 +87,10 @@ func createHeaderBlock(t *testing.T, db *gorm.DB, projectID, doc string) (blockI
 func bindThemeStructure(t *testing.T, db *gorm.DB, projectID string, settings map[string]any) {
 	t.Helper()
 	projects := projectservice.NewService(projectmodel.NewProjectModel(db))
+	// 主题写入同样在事务内复核结构模板引用；夹具必须像生产装配那样注入端口，
+	// 否则任何带 headerTemplateId 的主题写入都会 fail-closed。
+	projects.SetTemplateExistencePort(contenttemplateservice.NewService(
+		contenttemplatemodel.NewModel(db), projects, core.NewEntitySourceRegistry()))
 	raw, err := json.Marshal(settings)
 	if err != nil {
 		t.Fatalf("序列化主题设置失败: %v", err)
@@ -176,36 +190,22 @@ func TestPageStructureTemplateMissingFailsPublish(t *testing.T) {
 		"headerBlockId":    headerID,
 		"headerTemplateId": missing,
 	})
-	pageID, blockID, templateID := createPageAndReadStructure(t, svc, projectID, "/structure-missing")
-
-	if templateID != missing || blockID != headerID {
-		t.Fatalf("settings.structure 快照应同时保留模板与块绑定: block=%s template=%s", blockID, templateID)
+	// 主题绑定了一份不存在的结构模板：页面写入在事务内复核引用，必须直接拒绝
+	// （fail-closed），不能先落库一份悬空引用、等到发布才失败。
+	_, createErr := svc.Create(ctx, &pagedto.CreateReq{
+		ProjectID: projectID, Kind: "home", ContentTargetType: "none",
+		DraftPath: "/structure-missing", DraftDocument: json.RawMessage(pageDocument),
+	})
+	if createErr == nil {
+		t.Fatal("引用不存在的结构模板时页面创建必须失败（旧行为：先落库悬空引用）")
 	}
-
-	_, err := svc.Build(ctx, &pagedto.BuildReq{ID: pageID})
-	if err == nil {
-		t.Fatal("绑定的结构模板不存在时发布必须失败（旧行为：静默回退到块绑定并发布成功）")
+	// 失败必须落在写入阶段：没有页面行、没有暂存产物、也没有依赖登记。
+	var pageCount int64
+	if err := db.Table("pages").Where("draft_path = ?", "/structure-missing").Count(&pageCount).Error; err != nil {
+		t.Fatalf("统计页面失败: %v", err)
 	}
-	if !strings.Contains(err.Error(), "结构槽位 header") || !strings.Contains(err.Error(), missing) {
-		t.Fatalf("失败原因必须能定位到槽位与那份模板，实际: %v", err)
-	}
-
-	if got := stagedArtifactIDOf(t, svc, projectID, pageID); got != "" {
-		t.Fatalf("发布失败不该产生暂存产物，实际 %q", got)
-	}
-	if n := countStagedDepRows(t, db, pageID, publish.DepKindBlock, "block:"+headerID); n != 0 {
-		t.Fatalf("发布失败不该登记任何依赖，实际块依赖 %d 条", n)
-	}
-	if n := countStagedDepRows(t, db, pageID, publish.DepKindContentTemplate, "content_template:"+missing); n != 0 {
-		t.Fatalf("发布失败不该登记任何依赖，实际模板依赖 %d 条", n)
-	}
-
-	preview := previewOf(t, svc, projectID, pageID, "/structure-missing")
-	if !containsBytes([]byte(preview), []byte("FALLBACK-HEADER-BLOCK")) {
-		t.Fatalf("预览应回退到块绑定，产物里必须出现块内容: %s", preview[:min(len(preview), 400)])
-	}
-	if containsBytes([]byte(preview), []byte("STRUCTURE-TEMPLATE-HEADER")) {
-		t.Fatalf("模板拿不到时不该渲染出模板内容: %s", preview[:min(len(preview), 400)])
+	if pageCount != 0 {
+		t.Fatalf("引用缺失模板的创建不该落库，实际 %d 行", pageCount)
 	}
 }
 
@@ -216,25 +216,13 @@ func TestPageStructureTemplateMissingPreviewDegradesWithAttribution(t *testing.T
 
 	missing := uuid.NewString()
 	bindThemeStructure(t, db, projectID, map[string]any{"headerTemplateId": missing})
-	pageID, blockID, templateID := createPageAndReadStructure(t, svc, projectID, "/structure-missing-attr")
-	if templateID != missing || blockID != "" {
-		t.Fatalf("本用例要求只绑定模板、不绑定块: block=%q template=%q", blockID, templateID)
-	}
-
-	if _, err := svc.Build(ctx, &pagedto.BuildReq{ID: pageID}); err == nil {
-		t.Fatal("绑定的结构模板不存在时发布必须失败")
-	}
-
-	preview := previewOf(t, svc, projectID, pageID, "/structure-missing-attr")
-	for _, want := range []string{
-		`data-sky-id="__layout_header"`,
-		`data-sky-slot="header"`,
-		`data-sky-ref="__structure_template__` + missing + `"`,
-		`data-sky-degrade="ref_template_unavailable"`,
-	} {
-		if !containsBytes([]byte(preview), []byte(want)) {
-			t.Fatalf("预览占位必须可归因：缺 %s\n%s", want, preview[:min(len(preview), 800)])
-		}
+	// 主题绑定了一份不存在的模板：页面写入在事务内复核引用，必须直接拒绝。
+	_, createErr := svc.Create(ctx, &pagedto.CreateReq{
+		ProjectID: projectID, Kind: "home", ContentTargetType: "none",
+		DraftPath: "/structure-missing-attr", DraftDocument: json.RawMessage(pageDocument),
+	})
+	if createErr == nil {
+		t.Fatal("引用不存在的结构模板时页面创建必须失败")
 	}
 }
 

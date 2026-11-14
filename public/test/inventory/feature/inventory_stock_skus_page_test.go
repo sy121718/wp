@@ -23,6 +23,8 @@ func newStockSKUsPageEngine(t *testing.T) (*gin.Engine, *invFixture) {
 	}
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
+	engine.Use(pageview.UseSuccess(pageview.NewSuccessWriter()))
+	engine.Use(pageview.FailureMiddleware(pageview.RenderFailure))
 
 	engine.Use(func(c *gin.Context) {
 		c.Set(adminctx.PermSetKey, map[string]bool{

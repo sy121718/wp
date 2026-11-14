@@ -19,11 +19,12 @@ type Handle struct {
 func NewHandle(svc presentationcontract.PresentationService) *Handle { return &Handle{svc: svc} }
 
 func (h *Handle) CreateInstance(c *gin.Context) {
-	req, ok := binding.JSON[presentationdto.CreateInstanceReq](c)
-	if !ok {
+	var req presentationdto.CreateInstanceReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ParamError(c)
 		return
 	}
-	res, err := h.svc.CreateInstance(c.Request.Context(), req)
+	res, err := h.svc.CreateInstance(c.Request.Context(), &req)
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "presentation", err)
 		return
@@ -32,11 +33,12 @@ func (h *Handle) CreateInstance(c *gin.Context) {
 }
 
 func (h *Handle) Rebuild(c *gin.Context) {
-	req, ok := binding.JSON[presentationdto.RebuildReq](c)
-	if !ok {
+	var req presentationdto.RebuildReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ParamError(c)
 		return
 	}
-	res, err := h.svc.Rebuild(c.Request.Context(), req)
+	res, err := h.svc.Rebuild(c.Request.Context(), &req)
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "presentation", err)
 		return
@@ -45,8 +47,9 @@ func (h *Handle) Rebuild(c *gin.Context) {
 }
 
 func (h *Handle) GetByEntity(c *gin.Context) {
-	req, ok := binding.Form[presentationdto.GetByEntityReq](c)
-	if !ok {
+	req, err := binding.ParseForm[presentationdto.GetByEntityReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	res, err := h.svc.GetByEntity(c.Request.Context(), req)
@@ -58,8 +61,9 @@ func (h *Handle) GetByEntity(c *gin.Context) {
 }
 
 func (h *Handle) Preview(c *gin.Context) {
-	req, ok := binding.Form[presentationdto.PreviewInstanceReq](c)
-	if !ok {
+	req, err := binding.ParseForm[presentationdto.PreviewInstanceReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	res, err := h.svc.PreviewInstance(c.Request.Context(), req)
@@ -71,8 +75,9 @@ func (h *Handle) Preview(c *gin.Context) {
 }
 
 func (h *Handle) UpdateURL(c *gin.Context) {
-	req, ok := binding.Form[presentationdto.UpdateURLReq](c)
-	if !ok {
+	req, err := binding.ParseForm[presentationdto.UpdateURLReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	res, err := h.svc.UpdateURL(c.Request.Context(), req)
@@ -84,8 +89,9 @@ func (h *Handle) UpdateURL(c *gin.Context) {
 }
 
 func (h *Handle) Get(c *gin.Context) {
-	req, ok := binding.Form[presentationdto.GetReq](c)
-	if !ok {
+	req, err := binding.ParseForm[presentationdto.GetReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	res, err := h.svc.Get(c.Request.Context(), req)
@@ -97,8 +103,9 @@ func (h *Handle) Get(c *gin.Context) {
 }
 
 func (h *Handle) List(c *gin.Context) {
-	req, ok := binding.Form[presentationdto.ListReq](c)
-	if !ok {
+	req, err := binding.ParseForm[presentationdto.ListReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	list, err := h.svc.List(c.Request.Context(), req)
@@ -110,8 +117,9 @@ func (h *Handle) List(c *gin.Context) {
 }
 
 func (h *Handle) Delete(c *gin.Context) {
-	req, ok := binding.Form[presentationdto.DeleteReq](c)
-	if !ok {
+	req, err := binding.ParseForm[presentationdto.DeleteReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	if err := h.svc.Delete(c.Request.Context(), req); err != nil {

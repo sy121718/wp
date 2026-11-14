@@ -3,9 +3,11 @@ package mailservice
 import (
 	"context"
 	"errors"
+	"fmt"
 	json "go_wp/pkg/jsonx"
 	"math"
 	"strings"
+	"sync"
 	"time"
 
 	"gorm.io/gorm"
@@ -15,6 +17,7 @@ import (
 	mailmodel "go_wp/internal/module/mail/model"
 	"go_wp/pkg/database/retention"
 	"go_wp/pkg/facing"
+	"go_wp/pkg/lifecycle"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/mailer"
 	"go_wp/pkg/queue"
@@ -713,26 +716,53 @@ func (s *Service) PurgeRetention(ctx context.Context) (deleted int64, err error)
 	return total, nil
 }
 
-func StartMailRetentionScheduler(svc *Service) {
+// StartMailRetentionScheduler 启动邮件明细保留期清理；返回的 stop 取消循环并等待在途一轮结束。
+//
+// ctx 是进程/装配级上下文：收尾时先 cancel、再 stop 等待，最后关数据库。
+func StartMailRetentionScheduler(ctx context.Context, svc *Service) func() {
 	if utils.IsTestProcess() {
-		return
+		return func() {}
 	}
+	return startMailRetentionScheduler(ctx, svc, mailRetentionInterval)
+}
+
+// StartMailRetentionSchedulerWithInterval 与上同，只是显式指定间隔（测试与运维用）。
+func StartMailRetentionSchedulerWithInterval(ctx context.Context, svc *Service, interval time.Duration) func() {
+	return startMailRetentionScheduler(ctx, svc, interval)
+}
+
+func startMailRetentionScheduler(ctx context.Context, svc *Service, interval time.Duration) func() {
 	if svc == nil {
-		return
+		return func() {}
 	}
-	go func() {
-		run := func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-			defer cancel()
-			_, _ = svc.PurgeRetention(ctx)
-		}
-		run()
-		ticker := time.NewTicker(mailRetentionInterval)
-		defer ticker.Stop()
-		for range ticker.C {
-			run()
-		}
-	}()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if interval <= 0 {
+		interval = mailRetentionInterval
+	}
+	loopCtx, cancelLoop := context.WithCancel(ctx)
+	wait := lifecycle.PeriodicTask{
+		Interval: interval,
+		Timeout:  10 * time.Minute,
+		Round: func(runCtx context.Context) {
+			if _, err := svc.PurgeRetention(runCtx); err != nil {
+				logger.Scene("mail").Error(err, "邮件明细保留期清理失败（下一轮重试）")
+			}
+		},
+		OnPanic: func(r any) {
+			logger.Scene("mail").Error(fmt.Errorf("panic: %v", r),
+				"邮件明细保留期清理单轮 panic（已收敛，下一轮照常；不影响进程）")
+		},
+	}.Start(loopCtx)
+
+	var stopOnce sync.Once
+	return func() {
+		stopOnce.Do(func() {
+			cancelLoop()
+			wait()
+		})
+	}
 }
 
 func (s *Service) CampaignReport(ctx context.Context, campaignID uint64, page, pageSize int) (res *maildto.CampaignReport, err error) {

@@ -54,9 +54,9 @@
        Err 是**事实**（key + 中文兜底），取词在这里发生 —— 控制器不取词，英文后台下
        这条提示才能真正跟着语言走。判空用 .Err.Key：articleErrMsgOfFact 的契约是
        「Key 为空即空事实」（见 content_page.go）。 *}
-    {{if isset(.Err)}}{{if .Err.Key != ""}}
+    {{if isset(.Err) && .Err.Key != ""}}
     <p class="badge badge-warning" role="alert">{{ .["t"]("admin.article.list.lastError", "上一次操作未完成：") }}{{ .["t"](.Err.Key, .Err.Fallback) }}</p>
-    {{end}}{{end}}
+    {{end}}
 
     {* 有 stale 时**什么都不渲染**：清单在抽屉里，页头徽章就是入口 ——
        再放一行占位会把刚让出来的首屏又占回去。这里只保留另外两档结论：

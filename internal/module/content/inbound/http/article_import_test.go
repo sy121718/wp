@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	pageview "go_wp/pkg/view"
+	text "go_wp/pkg/view/jet"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -18,6 +19,7 @@ import (
 	contentcontract "go_wp/internal/module/content/contract"
 	contentdto "go_wp/internal/module/content/dto"
 	pagecontract "go_wp/internal/module/page/contract"
+	pagedto "go_wp/internal/module/page/dto"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/internal/templates"
 	"go_wp/pkg/builder"
@@ -214,5 +216,70 @@ func TestArticleImportPreviewFragmentRenders(t *testing.T) {
 	}
 	if !strings.Contains(body, "badge") {
 		t.Errorf("错误分支应渲染出提示：%q", body)
+	}
+}
+
+type importCreatePageService struct {
+	pagecontract.PageService
+	created *pagedto.CreateReq
+}
+
+func (s *importCreatePageService) Create(_ context.Context, req *pagedto.CreateReq) (*pagedto.PageResp, error) {
+	s.created = req
+	return &pagedto.PageResp{ID: "page-1"}, nil
+}
+
+type importCreateContentService struct {
+	contentcontract.ContentService
+	item *contentdto.ContentResp
+}
+
+func (s importCreateContentService) Get(context.Context, *contentdto.GetReq) (*contentdto.ContentResp, error) {
+	return s.item, nil
+}
+
+// 导入创建成功必须返回带导航链接的 HTML 结论片段，不再由后端发 302：
+// 界面导航只由发起模板的 data-write-nav 声明。
+func TestArticleImportCreateRendersResultFragmentInsteadOfRedirect(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
+	engine.Use(pageview.FailureMiddleware(pageview.RenderFailure))
+	engine.Use(pageview.UseSuccess(pageview.NewSuccessWriter()))
+	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
+
+	pages := &importCreatePageService{}
+	h := &articlePageHandle{
+		contents: importCreateContentService{item: &contentdto.ContentResp{ID: "a1", Data: map[string]any{
+			"title": "标题", "body": "<p>正文段落</p>",
+		}}},
+		pages: pages,
+	}
+	engine.POST("/admin/articles/import-page", pageview.HTMLFragment, h.ArticleImportCreate)
+
+	form := url.Values{"id": {"a1"}, "projectId": {"p1"}, "draftPath": {"/from-article"}}
+	req := httptest.NewRequest(http.MethodPost, "/admin/articles/import-page", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("成功应回 200 片段，实际 %d：%s", rec.Code, rec.Body.String())
+	}
+	if loc := rec.Header().Get("Location"); loc != "" {
+		t.Fatalf("成功不得发 302（导航归 data-write-nav），得到 Location=%q", loc)
+	}
+	if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "text/html") {
+		t.Errorf("成功应回 HTML 片段，得到 %q", ct)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `data-article-imported-link`) {
+		t.Errorf("片段应含下一步导航锚点：%s", body)
+	}
+	if !strings.Contains(body, "page-1") {
+		t.Errorf("链接应指向新建页面的 id：%s", body)
+	}
+	if pages.created == nil {
+		t.Fatal("未调用页面创建")
 	}
 }

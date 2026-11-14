@@ -53,7 +53,7 @@ func TestSourcePageMultiDeviceContract(t *testing.T) {
 		}
 	}
 
-	raw, err := os.ReadFile(templateRoot() + "/static/css/theme.css")
+	raw, err := os.ReadFile("../../../../pkg/view/ui/assets/css/theme.css")
 	if err != nil {
 		t.Fatalf("读样式表失败: %v", err)
 	}

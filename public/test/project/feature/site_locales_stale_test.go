@@ -2,6 +2,7 @@ package feature
 
 import (
 	pageview "go_wp/pkg/view"
+	text "go_wp/pkg/view/jet"
 	"net/http"
 	"net/url"
 	"strings"
@@ -35,6 +36,9 @@ func newLocaleStaleEnv(t *testing.T) (*gin.Engine, *projectservice.Service, *gor
 	handle := projecthttp.NewSiteSettingsAdminHandle(projects, pages, nil)
 	router := gin.New()
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
+	// 与生产装配一致：请求级取词作用域与统一成功出口由应用装一次。
+	router.Use(pageview.UseSuccess(pageview.NewSuccessWriter()))
+	router.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	router.GET("/admin/settings", pageview.Slot(projecthttp.SiteSettingsPageTemplate, pageview.RenderPage), handle.SiteSettings)
 	router.POST("/admin/settings/locales/save", pageview.Slot(projecthttp.SiteSettingsPageTemplate, pageview.RenderPage), handle.SaveSiteLocales)
 	return router, projects, db, project.ID
@@ -92,7 +96,7 @@ func TestSaveSiteLocalesMarksStaleOnChange(t *testing.T) {
 		"defaultIndex": {"0"},
 		"enabledIndex": {"0", "1"},
 	})
-	if saved.Code != http.StatusOK || !strings.Contains(saved.Body.String(), `data-jump-state="ok"`) {
+	if saved.Code != http.StatusOK || !strings.Contains(saved.Body.String(), `role="status"`) {
 		t.Fatalf("保存成功应 200 渲染成功提示页，实际 %d：%s", saved.Code, saved.Body.String())
 	}
 	live := pageStaleOf(t, db, "11111111-1111-1111-1111-111111111111")
@@ -115,7 +119,7 @@ func TestSaveSiteLocalesMarksStaleOnDefaultChange(t *testing.T) {
 		"defaultIndex": {"1"},
 		"enabledIndex": {"0", "1"},
 	})
-	if saved.Code != http.StatusOK || !strings.Contains(saved.Body.String(), `data-jump-state="ok"`) {
+	if saved.Code != http.StatusOK || !strings.Contains(saved.Body.String(), `role="status"`) {
 		t.Fatalf("保存成功应 200 渲染成功提示页，实际 %d：%s", saved.Code, saved.Body.String())
 	}
 	if row := pageStaleOf(t, db, "33333333-3333-3333-3333-333333333333"); !row.Stale {
@@ -135,7 +139,7 @@ func TestSaveSiteLocalesSkipsStaleWhenUnchanged(t *testing.T) {
 		"defaultIndex": {"0"},
 		"enabledIndex": {"0", "1"},
 	})
-	if saved.Code != http.StatusOK || !strings.Contains(saved.Body.String(), `data-jump-state="ok"`) {
+	if saved.Code != http.StatusOK || !strings.Contains(saved.Body.String(), `role="status"`) {
 		t.Fatalf("保存成功应 200 渲染成功提示页，实际 %d：%s", saved.Code, saved.Body.String())
 	}
 	after := pageStaleOf(t, db, "44444444-4444-4444-4444-444444444444")

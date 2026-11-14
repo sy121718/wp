@@ -9,7 +9,7 @@ import (
 
 const SystemSettingsPageTemplate = "admin/system/settings"
 
-func SetupSysConfigPages(adminPages *gin.RouterGroup, h *AdminHandle) {
+func SetupSysConfigPages(reg *mw.Registry, adminPages *gin.RouterGroup, h *AdminHandle) {
 	if adminPages == nil || h == nil {
 		return
 	}
@@ -17,4 +17,5 @@ func SetupSysConfigPages(adminPages *gin.RouterGroup, h *AdminHandle) {
 		mw.PageAuthz("/api/sysconfig/get"),
 		pageview.Slot(SystemSettingsPageTemplate, pageview.RenderPage),
 		h.SystemPage)
+	mw.DeclarePageGetOn(reg, "/admin/system", "/api/sysconfig/get")
 }

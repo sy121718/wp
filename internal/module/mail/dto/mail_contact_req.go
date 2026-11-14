@@ -21,10 +21,10 @@ type ContactFilterReq struct {
 }
 
 type UpdateContactStatusReq struct {
-	ID         uint64
-	Status     string
-	Note       string
-	OperatorID uint64
+	ID         uint64 `form:"id" json:"id"`
+	Status     string `form:"status" json:"status"`
+	Note       string `form:"note" json:"note"`
+	OperatorID uint64 `form:"-" json:"-"`
 }
 
 type SaveContactReq struct {

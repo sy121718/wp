@@ -62,7 +62,7 @@ trix-editor.rich-editor pre {
     overflow-x: auto;
 }
 /* 代码块语言：Trix 的 language 属性（htmlAttributes: ["language"]）与服务端归一后的
-   class="language-xxx"（见 internal/builder/core/richtext.go 的 renderPreAttrs）。
+   class="language-xxx"（见 pkg/richtext/richtext.go 的 renderPreAttrs）。
    这里只给等宽字体与轻微的字号区分，语法高亮留给主题与产物 CSS —— 不新增别人的类名。 */
 trix-editor.rich-editor pre[class*="language-"] {
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;

@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	ginbinding "github.com/gin-gonic/gin/binding"
+	"net/http"
 
 	projectcontract "go_wp/internal/module/project/contract"
 	purchasecontract "go_wp/internal/module/purchase/contract"
@@ -197,8 +199,9 @@ func (h *sourcePageHandle) fillSourceRows(c *gin.Context, f *sourcePageFilter) {
 }
 
 func (h *sourcePageHandle) SourceCreate(c *gin.Context) {
-	form, ok := binding.Form[purchasedto.SourceFormReq](c)
-	if !ok {
+	var form purchasedto.SourceFormReq
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, purchaseErrScene, purchaseenums.Err(purchaseenums.ErrInvalidParam))
 		return
 	}
 	req, ferr := form.CreateReq()
@@ -214,8 +217,9 @@ func (h *sourcePageHandle) SourceCreate(c *gin.Context) {
 }
 
 func (h *sourcePageHandle) SourceUpdate(c *gin.Context) {
-	form, ok := binding.Form[purchasedto.SourceFormReq](c)
-	if !ok {
+	var form purchasedto.SourceFormReq
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, purchaseErrScene, purchaseenums.Err(purchaseenums.ErrInvalidParam))
 		return
 	}
 
@@ -232,8 +236,9 @@ func (h *sourcePageHandle) SourceUpdate(c *gin.Context) {
 }
 
 func (h *sourcePageHandle) SourceDelete(c *gin.Context) {
-	form, ok := binding.Form[purchasedto.SourceDeleteFormReq](c)
-	if !ok {
+	var form purchasedto.SourceDeleteFormReq
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, purchaseErrScene, purchaseenums.Err(purchaseenums.ErrInvalidParam))
 		return
 	}
 	if err := h.purchase.DeleteSource(c.Request.Context(), &purchasedto.DeleteSourceReq{
@@ -246,8 +251,9 @@ func (h *sourcePageHandle) SourceDelete(c *gin.Context) {
 }
 
 func (h *sourcePageHandle) SourcesBulkDelete(c *gin.Context) {
-	form, ok := binding.Form[purchasedto.SourceBulkFormReq](c)
-	if !ok {
+	var form purchasedto.SourceBulkFormReq
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, purchaseErrScene, purchaseenums.Err(purchaseenums.ErrInvalidParam))
 		return
 	}
 
@@ -300,7 +306,7 @@ func sourceRow(s *purchasedto.SourceResp) purchasedto.SourceRowResp {
 	return purchasedto.SourceRowResp{
 		ID: s.ID, Code: s.Code, Name: s.Name,
 		Type: s.Type, RelatedParty: s.RelatedParty,
-		Status: s.Status,
+		Status:      s.Status,
 		SettlePrice: settlePrice, HasSettlePrice: s.SettlePrice != nil,
 		Config: prettyJSON(s.Config), Sort: s.Sort, UpdatedAt: s.UpdatedAt,
 	}

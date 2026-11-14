@@ -31,10 +31,6 @@ func mailErrMsg(c *gin.Context, err error) mailMsg {
 	return mailMsg{Key: fact.Key, Fallback: fact.Fallback}
 }
 
-func mailErrPageText(c *gin.Context, err error) string {
-	return response.MsgText(c, mailErrMsg(c, err))
-}
-
 func mailInternalMsg() mailMsg {
 	return mailMsg{Key: mailenums.ErrInternal, Fallback: mailInternalFallback}
 }

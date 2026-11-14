@@ -85,6 +85,16 @@ type RuleUpdateReq struct {
 	Config   RuleConfigDTO `json:"config" form:"config"`
 	Status   int           `json:"status" form:"status" binding:"oneof=0 1" validate:"oneof=0 1"`
 	Remark   string        `json:"remark" form:"remark" binding:"omitempty,max=200" validate:"omitempty,max=200"`
+
+	// 条件编辑器的线上字段：组状态与条件行都是静态平行数组（同名控件按出现顺序多值）。
+	// 它们由控制器在绑定后按顺序装配成 Config，DTO 只声明线上形状，不做业务解析。
+	ConfigEditor string   `json:"config_editor" form:"config_editor"`
+	OmitFields   []string `json:"omit_fields" form:"omit_fields"`
+	GroupLogic   []string `json:"groupLogic" form:"groupLogic"`
+	CondGroup    []string `json:"condGroup" form:"condGroup"`
+	CondField    []string `json:"condField" form:"condField"`
+	CondOp       []string `json:"condOp" form:"condOp"`
+	CondValue    []string `json:"condValue" form:"condValue"`
 }
 
 type RuleDeleteReq struct {

@@ -59,6 +59,12 @@ type UpdateEnvelope struct {
 	Action    string `json:"action" form:"action"`
 	HasAction bool   `json:"-" form:"-"`
 
+	// Project / Lang 只在 translations 分支出现，值来自 raw 里已白名单的顶层键。
+	// 显式声明成字段（而不是只留在 raw 里）是为了让线上形状对契约生成器可见：
+	// 写基座提交的就是 action/project/lang/rows 四个顶层键。
+	Project string `json:"project" form:"project"`
+	Lang    string `json:"lang" form:"lang"`
+
 	Rows []TranslationWriteRow `json:"rows" form:"-"`
 
 	LegacyBody []byte `json:"-" form:"-"`
@@ -121,6 +127,8 @@ func (e *UpdateEnvelope) BindForm(values url.Values) error {
 func (e *UpdateEnvelope) parse(body []byte, form bool) error {
 	e.Action = ""
 	e.HasAction = false
+	e.Project = ""
+	e.Lang = ""
 	e.Rows = nil
 	e.raw = nil
 	e.form = false
@@ -166,6 +174,9 @@ func (e *UpdateEnvelope) applyRaw(raw map[string]json.RawMessage, form bool) {
 	if e.Route() != RouteTranslations {
 		return
 	}
+	// 顶层键已经过白名单校验，这里把它们落到显式字段上，供契约与调用方读取。
+	e.Project, _ = updateRequiredString(raw[updateTranslationProjectKey])
+	e.Lang, _ = updateRequiredString(raw[updateTranslationLangKey])
 
 	rows, ok := updateTranslationRows(updateRowsCell(raw[updateRowsKey], form))
 	if !ok {

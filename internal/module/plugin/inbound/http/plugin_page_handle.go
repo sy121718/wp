@@ -1,9 +1,11 @@
 package pluginhttp
 
 import (
+	ginbinding "github.com/gin-gonic/gin/binding"
 	"io"
 
 	plugincontract "go_wp/internal/module/plugin/contract"
+	plugindto "go_wp/internal/module/plugin/dto"
 	pluginenums "go_wp/internal/module/plugin/enums"
 	"go_wp/pkg/logger"
 	pageview "go_wp/pkg/view"
@@ -68,7 +70,15 @@ func (h *pluginPageHandle) PluginsInstall(c *gin.Context) {
 		pluginPageJump(c, false, pluginNoticeModuleUnwired)
 		return
 	}
-	file, _, err := c.Request.FormFile("file")
+	// 上传是明确的 multipart 文件表单：先按 FormMultipart 绑定成 DTO，
+	// 让写端点契约能对账线上控件名；再取文件流做大小上限校验。
+	var form plugindto.InstallFormReq
+	if err := c.ShouldBindWith(&form, ginbinding.FormMultipart); err != nil || form.File == nil {
+		pluginPageJump(c, false, pluginInstallFailMsg(c, pluginNoticeNoFile))
+		return
+	}
+	// 消费绑定到的真实文件头；不再二次 FormFile，避免两处各解析一次请求体。
+	file, err := form.File.Open()
 	if err != nil {
 		pluginPageJump(c, false, pluginInstallFailMsg(c, pluginNoticeNoFile))
 		return

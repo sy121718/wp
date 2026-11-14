@@ -4,16 +4,16 @@ import (
 	"github.com/gin-gonic/gin"
 	pageview "go_wp/pkg/view"
 
-	mw "go_wp/pkg/middleware"
 	contentcontract "go_wp/internal/module/content/contract"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	productcontract "go_wp/internal/module/product/contract"
 	projectcontract "go_wp/internal/module/project/contract"
+	mw "go_wp/pkg/middleware"
 )
 
 const ContentTemplatesPageTemplate = "admin/contenttemplate/content_templates.html"
 
-func SetupContentTemplatePages(pages *gin.RouterGroup,
+func SetupContentTemplatePages(reg *mw.Registry, pages *gin.RouterGroup,
 	templates contenttemplatecontract.ContentTemplateService,
 	projects projectcontract.ProjectService, products productcontract.ProductService,
 	contents contentcontract.ContentService) {
@@ -26,5 +26,7 @@ func SetupContentTemplatePages(pages *gin.RouterGroup,
 		mw.PageAuthz("/api/contenttemplate/list"),
 		pageview.Slot(ContentTemplatesPageTemplate, pageview.RenderPage),
 		contentTemplatePages.ContentTemplatesPage)
+	mw.DeclarePageGetOn(reg, "/admin/content-templates", "/api/contenttemplate/list")
 	pages.GET("/content-templates/edit", mw.PageAuthz("/api/contenttemplate/list"), contentTemplatePages.ContentTemplateEditPage)
+	mw.DeclarePageGetOn(reg, "/admin/content-templates/edit", "/api/contenttemplate/list")
 }

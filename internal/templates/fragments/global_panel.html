@@ -1,6 +1,11 @@
-{* fragments/global_panel.html — 全局设置（站点主题）面板（HTMX 服务端渲染，docs/09 §3）
-   数据：ThemeID / Groups（分组 → 字段）
+{* fragments/global_panel.html — 全局设置（站点主题）面板（服务端渲染片段，docs/09 §3）
+   数据：ThemeID / Groups（分组 → 字段）/ HeaderBlockID / FooterBlockID / AnnouncementBlockID
    约定：普通字段带 name（提交键）与 value；color 字段输出槽，客户端用取色器增强并注入 hidden input。
+
+   面板既是**取数结果**也是**保存表单**：字段与端点在同一段里，写基座（ui/write-base.js）
+   负责 CSRF、HTML/状态校验、失败区与迟到响应隔离；成功回执换进结果区，失败只进
+   宿主的 data-write-status 行，不替换正在编辑的字段。
+
    取词：本片段不经 PrepareBare，t / tf 由数据注入（Go 侧经 adminui.Prepare）；
    分组标题 / 字段 label / 选项 label 收的是**事实**（TitleKey+TitleFallback 这类两字段），
    取词在本片段做（tr）—— 控制器只交 key + 中文兜底。
@@ -9,6 +14,18 @@
 {{if .ThemeID == ""}}
 <p class="wb-empty">{{tr("workbench.ui.settings.noTheme", "当前页面未挂接主题。")}}<br>{{tr("workbench.ui.settings.noThemeHint", "到后台「主题管理」创建并激活主题后，这里可就地调整。")}}</p>
 {{else}}
+<form id="wb-global-save" data-write hx-post="/admin/themes/settings/save"
+      hx-target="#wb-global-save-result" hx-swap="innerHTML"
+      hx-sync="this:drop" hx-disable="findAll button:not(:disabled)"
+      data-msg-failed="{{tr("workbench.ui.settings.saveFailed", "主题设置未保存，请检查输入值。")}}">
+    {* 主题 id 由片段给出：它只来自服务端事实，客户端不拼。 *}
+    <input type="hidden" name="id" value="{{.ThemeID}}">
+    {* 本面板不渲染的绑定事实原样带回：保存是整份主题设置，
+       缺键等于「本页未编辑」会被零值覆盖，改个颜色就把页眉/页脚解绑了。
+       空值不输出 —— 空串提交会主动解绑，那是本面板之外的编辑动作。 *}
+    {{if .HeaderBlockID}}<input type="hidden" name="headerBlockId" value="{{.HeaderBlockID}}">{{end}}
+    {{if .FooterBlockID}}<input type="hidden" name="footerBlockId" value="{{.FooterBlockID}}">{{end}}
+    {{if .AnnouncementBlockID}}<input type="hidden" name="slots.announcement" value="{{.AnnouncementBlockID}}">{{end}}
 {{range _, g := .Groups}}
 <div class="wb-palette-group">{{tr(g.TitleKey, g.TitleFallback)}}</div>
 {{range _, f := g.Fields}}
@@ -32,4 +49,10 @@
 {{end}}
 {{end}}
 <p class="wb-empty">{{tr("workbench.ui.settings.saveHint", "保存后主题设置批量合入全部页面文档，已发布页面需重新构建才会带新主题。")}}</p>
+{* 保存按钮必须在本片段里：字段与提交入口同段，既是真实用户入口，
+   也让静态门禁能看到「这个表单由谁提交」。 *}
+<div class="wb-field">
+    <button type="submit" class="wb-btn wb-btn-primary" id="wb-global-save-btn">{{tr("admin.theme_settings.save", "保存并应用到该主题页面")}}</button>
+</div>
+</form>
 {{end}}

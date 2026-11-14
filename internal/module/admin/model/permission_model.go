@@ -3,6 +3,7 @@ package adminmodel
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"go_wp/pkg/database"
@@ -112,6 +113,17 @@ func (m *PermissionModel) ListByCodes(ctx context.Context, codes []string) ([]Pe
 	}
 	var list []PermissionEntity
 	err := m.DB(ctx).Where("permission_code IN ?", codes).Order("id ASC").Find(&list).Error
+	return list, err
+}
+
+// ListByPathMethod 返回 api_path/api_method 命中的目录行（含被停用的）。
+//
+// 页面与后台写入口复用别的操作权限时不带自己的 Perm，核对它们只能按
+// 「实际检查的 AuthObject/AuthMethod」去目录里找对应策略行。
+func (m *PermissionModel) ListByPathMethod(ctx context.Context, path, method string) ([]PermissionEntity, error) {
+	var list []PermissionEntity
+	err := m.DB(ctx).Where("api_path = ? AND upper(api_method) = ?", path, strings.ToUpper(method)).
+		Order("id ASC").Find(&list).Error
 	return list, err
 }
 

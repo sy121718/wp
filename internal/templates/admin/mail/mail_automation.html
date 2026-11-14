@@ -41,9 +41,9 @@
 
   {* Err 只来自**取数失败**分支（写动作的结论走 shell.RenderJump 提示页，见 mail_jump.go）——
      可选键一律 isset 包裹：直接比较会让整页在此中断（HTTP 仍 200、正文整块消失）。 *}
-  {{if isset(.Err)}}{{if .Err != ""}}
-  <p class="badge badge-warning" role="alert">{{.Err}}</p>
-  {{end}}{{end}}
+  {{if isset(.Err) && .Err.Key != ""}}
+  <p class="badge badge-warning" role="alert">{{t(.Err.Key, .Err.Fallback)}}</p>
+  {{end}}
 
   <section class="card list-card">
     <div class="card-header">

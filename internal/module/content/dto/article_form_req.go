@@ -1,10 +1,9 @@
 package contentdto
 
 import (
-	"net/url"
 	"strings"
 
-	"go_wp/pkg/builder/core"
+	"go_wp/pkg/richtext"
 )
 
 // ArticleFormReq 是文章新建 / 更新的表单（标题、正文、摘要与 SEO 字段）。
@@ -25,17 +24,19 @@ type ArticleFormReq struct {
 	URL string `form:"url"`
 }
 
-// BindForm 在通用绑定之后统一清洗正文并去掉其余字段的首尾空白。
-func (r *ArticleFormReq) BindForm(url.Values) error {
+// Normalize 统一清洗正文并去掉其余字段的首尾空白。
+//
+// 显式方法而不是 pkg/binding 的 FormBinder 钩子：普通表单走 Gin 原生 FormPost 绑定，
+// 清洗由控制器在绑定成功后显式调用，绑定层不再承担第二次解析。
+func (r *ArticleFormReq) Normalize() {
 	r.ID = strings.TrimSpace(r.ID)
 	r.Slug = strings.TrimSpace(r.Slug)
 	r.Title = strings.TrimSpace(r.Title)
-	r.Body = core.SanitizeRichHTML(r.Body)
+	r.Body = richtext.SanitizeRichHTML(r.Body)
 	r.Excerpt = strings.TrimSpace(r.Excerpt)
 	r.FeaturedImage = strings.TrimSpace(r.FeaturedImage)
 	r.FocusKeyword = strings.TrimSpace(r.FocusKeyword)
 	r.URL = strings.TrimSpace(r.URL)
-	return nil
 }
 
 // Data 把表单投影成内容实体的数据字段。
@@ -76,13 +77,12 @@ type ArticleLinkReq struct {
 	Linked       string `form:"linked"`
 }
 
-// BindForm 去掉短字段的首尾空白；linked 是整段文本，只在这里统一裁剪。
-func (r *ArticleLinkReq) BindForm(url.Values) error {
+// Normalize 去掉短字段的首尾空白；linked 是整段文本，只在这里统一裁剪。
+func (r *ArticleLinkReq) Normalize() {
 	r.ID = strings.TrimSpace(r.ID)
 	r.ProjectID = strings.TrimSpace(r.ProjectID)
 	r.FocusKeyword = strings.TrimSpace(r.FocusKeyword)
 	r.Linked = strings.TrimSpace(r.Linked)
-	return nil
 }
 
 // ArticlePublishReq 是发布文章详情页的表单。
@@ -116,13 +116,12 @@ type ArticleTranslationsSaveReq struct {
 	RowTarget  []string `form:"rowTarget"`
 }
 
-// BindForm 只去掉列表预置项的首尾空白；语言与工程标识由调用方进一步校验。
-func (r *ArticleTranslationsSaveReq) BindForm(url.Values) error {
+// Normalize 只去掉列表预置项的首尾空白；语言与工程标识由调用方进一步校验。
+func (r *ArticleTranslationsSaveReq) Normalize() {
 	r.Lang = strings.TrimSpace(r.Lang)
 	r.Project = strings.TrimSpace(r.Project)
 	r.Keyword = strings.TrimSpace(r.Keyword)
 	for i := range r.RowContext {
 		r.RowContext[i] = strings.TrimSpace(r.RowContext[i])
 	}
-	return nil
 }

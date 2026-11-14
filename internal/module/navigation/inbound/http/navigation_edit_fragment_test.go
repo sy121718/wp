@@ -3,11 +3,6 @@ package navigationhttp
 import (
 	"context"
 	"errors"
-	"net/http"
-	"net/http/httptest"
-	"net/url"
-	"strings"
-	"testing"
 	blockcontract "go_wp/internal/module/block/contract"
 	navigationcontract "go_wp/internal/module/navigation/contract"
 	navigationdto "go_wp/internal/module/navigation/dto"
@@ -16,6 +11,11 @@ import (
 	"go_wp/pkg/logger"
 	pageview "go_wp/pkg/view"
 	text "go_wp/pkg/view/jet"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"strings"
+	"testing"
 
 	"github.com/spf13/viper"
 

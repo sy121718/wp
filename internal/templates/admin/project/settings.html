@@ -214,7 +214,14 @@
                         {{range _, p := .URLPatterns}}
                         <tr>
                             <td>{{p.Label}}</td>
-                            <td><input type="text" class="form-input" name="urlPattern_{{p.Kind}}" value="{{p.Value}}" maxlength="120" placeholder="{{p.Default}}"></td>
+                            <td>
+                                {* 控件名必须是字面量：门禁与契约按精确 name 对账，动态拼键会退化成「未检查」。 *}
+                                {{if p.Kind == "article"}}<input type="text" class="form-input" name="urlPattern_article" value="{{p.Value}}" maxlength="120" placeholder="{{p.Default}}">
+                                {{else if p.Kind == "product"}}<input type="text" class="form-input" name="urlPattern_product" value="{{p.Value}}" maxlength="120" placeholder="{{p.Default}}">
+                                {{else if p.Kind == "product_category"}}<input type="text" class="form-input" name="urlPattern_product_category" value="{{p.Value}}" maxlength="120" placeholder="{{p.Default}}">
+                                {{else if p.Kind == "product_brand"}}<input type="text" class="form-input" name="urlPattern_product_brand" value="{{p.Value}}" maxlength="120" placeholder="{{p.Default}}">
+                                {{else}}<input type="text" class="form-input" name="urlPattern_product_tag" value="{{p.Value}}" maxlength="120" placeholder="{{p.Default}}">{{end}}
+                            </td>
                             <td class="text-mono text-mute">{{p.Default}}</td>
                         </tr>
                         {{end}}

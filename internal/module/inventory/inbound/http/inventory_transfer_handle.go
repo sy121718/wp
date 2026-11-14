@@ -103,12 +103,12 @@ func (h *inventoryTransferPageHandle) InventoryTransferDetail(c *gin.Context) {
 func (h *inventoryTransferPageHandle) CreateTransfer(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
 	// 明细行是真正的结构化输入：明确 JSON 请求（builder 收集行），输出仍是 Jet 片段。
-	req, ok := binding.JSON[inventorydto.CreateTransferReq](c)
-	if !ok {
+	var req inventorydto.CreateTransferReq
+	if err := c.ShouldBindJSON(&req); err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, inventoryErrScene, inventoryenums.Err(inventoryenums.ErrInvalidParam))
 		return
 	}
-	_, err := h.transfers.CreateTransfer(c.Request.Context(), req)
+	_, err := h.transfers.CreateTransfer(c.Request.Context(), &req)
 	if err != nil {
 		pageview.FailScene(c, inventoryErrScene, err)
 		return

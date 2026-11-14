@@ -1,6 +1,7 @@
 package templates
 
 import (
+	"go_wp/pkg/facing"
 	"regexp"
 	"strings"
 	"testing"
@@ -28,7 +29,7 @@ func TestMailEmptyDescriptionsExplainNextStep(t *testing.T) {
 		},
 		{
 			name: "campaign", tpl: "admin/mail/mail_campaign",
-			data: map[string]any{"Err": "", "R": map[string]any{
+			data: map[string]any{"Err": facing.Msg{}, "R": map[string]any{
 				"Campaign": map[string]any{"Name": "活动", "Status": "draft", "Subject": "主题"},
 				"Links":    []any{}, "Recipients": []any{}, "Total": 0,
 			}},
@@ -40,7 +41,7 @@ func TestMailEmptyDescriptionsExplainNextStep(t *testing.T) {
 		{
 			name: "automation", tpl: "admin/mail/mail_automation",
 			data: map[string]any{
-				"Err": "", "Ok": "", "AutoTotal": 0, "Automations": []any{},
+				"Err": facing.Msg{}, "Ok": "", "AutoTotal": 0, "Automations": []any{},
 			},
 			pairs: [][2]string{
 				{"还没有流程", "先新建一条，比如「新订阅 → 等 1 天 → 发欢迎邮件 → 打上 welcomed 标签」。"},
@@ -50,7 +51,7 @@ func TestMailEmptyDescriptionsExplainNextStep(t *testing.T) {
 
 			name: "automation_runs", tpl: "admin/mail/mail_automation_runs",
 			data: map[string]any{
-				"Err": "", "Ok": "", "Done": "",
+				"Err": facing.Msg{}, "Ok": "", "Done": "",
 				"Runs": []any{}, "RunTotal": 0, "FilterID": "", "FilterRun": "",
 				"CountRunning": 0, "CountWaiting": 0, "CountCompleted": 0, "CountFailed": 0, "CountStopped": 0,
 			},

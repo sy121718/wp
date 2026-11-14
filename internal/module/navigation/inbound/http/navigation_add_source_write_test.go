@@ -135,8 +135,9 @@ func TestNavigationAddSourceMultiRejectionUsesBatchMessage(t *testing.T) {
 		if !strings.Contains(body, tc.want) {
 			t.Fatalf("%s：多项请求的主消息应是公共整批文案 %q，实际 %s", tc.lang, tc.want, body)
 		}
-		if strings.Contains(body, "<ul>") || strings.Contains(body, "pg-2") || strings.Contains(body, "nope") {
-			t.Fatalf("%s：失败区不逐条列明细（明细只进 data.items）：%s", tc.lang, body)
+		// 明细必须可定位：缺失项要出现在本响应里（HTML 没有另一份 JSON data）。
+		if !strings.Contains(body, "nope") && !strings.Contains(body, "pg-2") {
+			t.Fatalf("%s：整批拒绝应给出可定位明细：%s", tc.lang, body)
 		}
 	}
 	if len(stub.calls) != 2 {

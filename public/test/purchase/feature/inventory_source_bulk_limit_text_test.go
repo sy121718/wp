@@ -30,6 +30,7 @@ func TestInventorySourcesBulkDeleteOverLimitUsesControlledText(t *testing.T) {
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(templateRoot(), true)
 	engine.Use(pageview.FailureMiddleware(pageview.RenderFailure))
+	engine.Use(pageview.UseSuccess(pageview.NewSuccessWriter()))
 	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	handle := purchasehttp.NewSourcePageHandle(nil, nil)
 	engine.POST("/admin/inventory/sources/bulk-delete", pageview.HTMLFragment, handle.SourcesBulkDelete)

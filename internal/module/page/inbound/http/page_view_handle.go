@@ -103,7 +103,11 @@ type PageHistoryListResp struct {
 	Error any
 }
 
+// TranslationErrorsResp 是译文保存的逐行失败片段数据。
+//
+// Title 是归口标题的消息事实，Errors 是每行的标识与原因；两者都由模板取词。
 type TranslationErrorsResp struct {
+	Title  facing.Msg
 	Errors []TranslationRowErrorResp
 }
 

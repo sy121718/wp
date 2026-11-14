@@ -2,31 +2,43 @@ package projecthttp
 
 import (
 	json "go_wp/pkg/jsonx"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
 	projectcontract "go_wp/internal/module/project/contract"
+	"go_wp/internal/templates"
+	pageview "go_wp/pkg/view"
+	text "go_wp/pkg/view/jet"
 
-	"github.com/CloudyKit/jet/v6"
+	"github.com/gin-gonic/gin"
 )
 
 const siteSettingsScriptsTemplateDir = "../../../../templates"
 
 const siteSettingsScriptsSample = "<script async src=\"https://cdn.example.com/tag.js\"></script>"
 
+// 站点设置页经应用渲染器渲染：公共 UI partial（sidebar 等）在 pkg/view/ui 一侧，
+// 裸 OSFileSystemLoader 只挂应用目录，会漏掉它们 —— 测出来的失败与页面本身无关。
 func renderSiteSettings(t *testing.T, data map[string]any) string {
 	t.Helper()
-	loader := jet.NewOSFileSystemLoader(siteSettingsScriptsTemplateDir)
-	set := jet.NewSet(loader, jet.WithTemplateNameExtensions([]string{"", ".html"}))
-	tpl, err := set.GetTemplate("admin/project/settings")
-	if err != nil {
-		t.Fatalf("站点设置页模板解析失败: %v", err)
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	engine.HTMLRender = templates.NewJetHTMLRender(siteSettingsScriptsTemplateDir, true)
+	engine.Use(pageview.FailureMiddleware(pageview.RenderFailure))
+	engine.Use(pageview.UseSuccess(pageview.NewSuccessWriter()))
+	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
+	engine.GET("/admin/settings", pageview.Slot("admin/project/settings", pageview.RenderPage), func(c *gin.Context) {
+		pageview.Render(c, data)
+	})
+
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/settings", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("站点设置页渲染失败（状态 %d）：%s", rec.Code, rec.Body.String())
 	}
-	var sb strings.Builder
-	if err := tpl.Execute(&sb, nil, data); err != nil {
-		t.Fatalf("站点设置页渲染失败: %v", err)
-	}
-	return sb.String()
+	return rec.Body.String()
 }
 
 func siteSettingsScriptsData() map[string]any {

@@ -6,7 +6,9 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	ginbinding "github.com/gin-gonic/gin/binding"
 	"github.com/google/uuid"
+	"net/http"
 
 	"go_wp/internal/middleware/builtin"
 	projectcontract "go_wp/internal/module/project/contract"
@@ -187,8 +189,9 @@ func (h *purchasePageHandle) fillPurchaseOrders(c *gin.Context, f *purchaseOrder
 }
 
 func (h *purchasePageHandle) PurchaseCreate(c *gin.Context) {
-	form, ok := binding.Form[purchasedto.PurchaseCreateFormReq](c)
-	if !ok {
+	var form purchasedto.PurchaseCreateFormReq
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, purchaseErrScene, purchaseenums.Err(purchaseenums.ErrInvalidParam))
 		return
 	}
 	req := form.CreateReq(builtin.GetUsername(c))
@@ -200,8 +203,9 @@ func (h *purchasePageHandle) PurchaseCreate(c *gin.Context) {
 }
 
 func (h *purchasePageHandle) PurchaseUpdate(c *gin.Context) {
-	form, ok := binding.Form[purchasedto.PurchaseCreateFormReq](c)
-	if !ok {
+	var form purchasedto.PurchaseCreateFormReq
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, purchaseErrScene, purchaseenums.Err(purchaseenums.ErrInvalidParam))
 		return
 	}
 
@@ -223,8 +227,9 @@ func (h *purchasePageHandle) PurchaseUpdate(c *gin.Context) {
 }
 
 func (h *purchasePageHandle) PurchaseReceipt(c *gin.Context) {
-	form, ok := binding.Form[purchasedto.PurchaseReceiptFormReq](c)
-	if !ok {
+	var form purchasedto.PurchaseReceiptFormReq
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, purchaseErrScene, purchaseenums.Err(purchaseenums.ErrInvalidParam))
 		return
 	}
 	if _, err := h.purchase.RegisterReceipt(c.Request.Context(), form.RegisterReq(builtin.GetUsername(c))); err != nil {
@@ -235,8 +240,9 @@ func (h *purchasePageHandle) PurchaseReceipt(c *gin.Context) {
 }
 
 func (h *purchasePageHandle) PurchaseProduction(c *gin.Context) {
-	form, ok := binding.Form[purchasedto.ProductionFormReq](c)
-	if !ok {
+	var form purchasedto.ProductionFormReq
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, purchaseErrScene, purchaseenums.Err(purchaseenums.ErrInvalidParam))
 		return
 	}
 	if _, err := h.purchase.RegisterProductionInbound(c.Request.Context(), form.ProductionReq(builtin.GetUsername(c))); err != nil {
@@ -247,8 +253,9 @@ func (h *purchasePageHandle) PurchaseProduction(c *gin.Context) {
 }
 
 func (h *purchasePageHandle) PurchaseFinish(c *gin.Context) {
-	form, ok := binding.Form[purchasedto.PurchaseStatusFormReq](c)
-	if !ok {
+	var form purchasedto.PurchaseStatusFormReq
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, purchaseErrScene, purchaseenums.Err(purchaseenums.ErrInvalidParam))
 		return
 	}
 	if _, err := h.purchase.FinishPurchaseOrder(c.Request.Context(), form.StatusReq()); err != nil {
@@ -259,8 +266,9 @@ func (h *purchasePageHandle) PurchaseFinish(c *gin.Context) {
 }
 
 func (h *purchasePageHandle) PurchaseCancel(c *gin.Context) {
-	form, ok := binding.Form[purchasedto.PurchaseStatusFormReq](c)
-	if !ok {
+	var form purchasedto.PurchaseStatusFormReq
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, purchaseErrScene, purchaseenums.Err(purchaseenums.ErrInvalidParam))
 		return
 	}
 	if _, err := h.purchase.CancelPurchaseOrder(c.Request.Context(), form.StatusReq()); err != nil {
@@ -271,8 +279,9 @@ func (h *purchasePageHandle) PurchaseCancel(c *gin.Context) {
 }
 
 func (h *purchasePageHandle) PurchasePlace(c *gin.Context) {
-	form, ok := binding.Form[purchasedto.PurchaseStatusFormReq](c)
-	if !ok {
+	var form purchasedto.PurchaseStatusFormReq
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, purchaseErrScene, purchaseenums.Err(purchaseenums.ErrInvalidParam))
 		return
 	}
 	if _, err := h.purchase.PlacePurchaseOrder(c.Request.Context(), form.StatusReq()); err != nil {
@@ -283,8 +292,9 @@ func (h *purchasePageHandle) PurchasePlace(c *gin.Context) {
 }
 
 func (h *purchasePageHandle) PurchaseException(c *gin.Context) {
-	form, ok := binding.Form[purchasedto.PurchaseStatusFormReq](c)
-	if !ok {
+	var form purchasedto.PurchaseStatusFormReq
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, purchaseErrScene, purchaseenums.Err(purchaseenums.ErrInvalidParam))
 		return
 	}
 	if _, err := h.purchase.MarkPurchaseOrderException(c.Request.Context(), form.StatusReq()); err != nil {
@@ -295,8 +305,9 @@ func (h *purchasePageHandle) PurchaseException(c *gin.Context) {
 }
 
 func (h *purchasePageHandle) PurchaseResume(c *gin.Context) {
-	form, ok := binding.Form[purchasedto.PurchaseStatusFormReq](c)
-	if !ok {
+	var form purchasedto.PurchaseStatusFormReq
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, purchaseErrScene, purchaseenums.Err(purchaseenums.ErrInvalidParam))
 		return
 	}
 	if _, err := h.purchase.ResumePurchaseOrder(c.Request.Context(), form.StatusReq()); err != nil {
@@ -360,7 +371,7 @@ func purchaseOrderRowView(o *purchasedto.PurchaseOrderResp) purchasedto.Purchase
 		SourceName: o.SourceName, SourceType: o.SourceType,
 		WarehouseName: o.WarehouseName,
 		Status:        o.Status,
-		OrderedAt: o.OrderedAt, ExpectedAt: o.ExpectedAt,
+		OrderedAt:     o.OrderedAt, ExpectedAt: o.ExpectedAt,
 		Remark: o.Remark, OperatorID: o.OperatorID,
 		TotalQuantity: o.TotalQuantity, ReceivedQuantity: o.ReceivedQuantity,
 		OutstandingQuantity: o.OutstandingQuantity, ProgressPercent: o.ProgressPercent,
@@ -391,8 +402,8 @@ func (h *purchasePageHandle) purchaseHistoryRows(c *gin.Context, projectID, sku 
 		out = append(out, purchasedto.PurchaseHistoryViewResp{
 			ReceiptCode: r.ReceiptCode, Kind: r.Kind,
 			OrderCode: r.OrderCode, SourceName: r.SourceName,
-			SourceType: r.SourceType,
-			WarehouseName:   r.WarehouseName, SKUCode: r.SKUCode,
+			SourceType:    r.SourceType,
+			WarehouseName: r.WarehouseName, SKUCode: r.SKUCode,
 			Quantity: r.Quantity, UnitPrice: strconv.FormatFloat(r.UnitPrice, 'f', 2, 64),
 			CostUpdated: r.CostUpdated, Remark: r.Remark,
 			OperatorID: r.OperatorID, ReceivedAt: r.ReceivedAt,

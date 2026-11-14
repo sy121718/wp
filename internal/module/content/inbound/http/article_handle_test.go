@@ -16,6 +16,8 @@ import (
 	contentdto "go_wp/internal/module/content/dto"
 	contentenums "go_wp/internal/module/content/enums"
 	"go_wp/internal/templates"
+	pageview "go_wp/pkg/view"
+	text "go_wp/pkg/view/jet"
 )
 
 type articleUpdateContentStub struct {
@@ -41,7 +43,10 @@ func articleUpdateTestEngine(s *articleUpdateContentStub) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	e := gin.New()
 	e.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
-	e.POST("/admin/articles/update", (&articlePageHandle{contents: s}).ArticleUpdate)
+	e.Use(pageview.FailureMiddleware(pageview.RenderFailure))
+	e.Use(pageview.UseSuccess(pageview.NewSuccessWriter()))
+	e.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
+	e.POST("/admin/articles/update", pageview.HTMLFragment, (&articlePageHandle{contents: s}).ArticleUpdate)
 	return e
 }
 
@@ -53,7 +58,8 @@ func articleUpdatePost(e *gin.Engine, form url.Values) *httptest.ResponseRecorde
 	return rec
 }
 
-func TestArticleUpdateFailureReturnsJSON(t *testing.T) {
+// 文章更新是普通表单写：失败交共享失败出口（HTML 错误区），不再是 JSON。
+func TestArticleUpdateFailureReturnsHTMLFragment(t *testing.T) {
 	old := &contentdto.ContentResp{ID: "a1", Slug: "original-slug", Revision: 7, UpdatedAt: "2026-09-19 12:30:45", Data: map[string]any{
 		"title": "数据库旧标题", "body": "<p>数据库旧正文</p>",
 	}}
@@ -75,8 +81,11 @@ func TestArticleUpdateFailureReturnsJSON(t *testing.T) {
 			if rec.Code != tc.status {
 				t.Fatalf("状态码应为 %d，实际 %d：%s", tc.status, rec.Code, rec.Body.String())
 			}
-			if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "application/json") {
-				t.Errorf("写动作失败应回 JSON，得到 %q", ct)
+			if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "text/html") {
+				t.Errorf("写动作失败应回 HTML 片段，得到 %q", ct)
+			}
+			if !strings.Contains(rec.Body.String(), `data-ui-error`) {
+				t.Errorf("失败应是单根错误区：%s", rec.Body.String())
 			}
 			if loc := rec.Header().Get("Location"); loc != "" {
 				t.Errorf("失败不该发 302，得到 Location=%q", loc)
@@ -101,7 +110,7 @@ func TestArticleUpdateFailureReturnsJSON(t *testing.T) {
 	}
 }
 
-func TestArticleUpdateMissingIDReturnsJSON(t *testing.T) {
+func TestArticleUpdateMissingIDReturnsHTMLFragment(t *testing.T) {
 
 	s := &articleUpdateContentStub{}
 	form := url.Values{"id": {""}, "title": {"标题"}, "body": {"<p>正文</p>"}}
@@ -118,21 +127,21 @@ func TestArticleUpdateMissingIDReturnsJSON(t *testing.T) {
 	}
 }
 
-func TestArticleUpdateSuccessReturnsJSON(t *testing.T) {
+func TestArticleUpdateSuccessReturnsHTMLFragment(t *testing.T) {
 	s := &articleUpdateContentStub{item: &contentdto.ContentResp{ID: "a1"}}
 	rec := articleUpdatePost(articleUpdateTestEngine(s), url.Values{"id": {"a1"}, "title": {"更新"}})
 	if rec.Code != http.StatusOK {
-		t.Fatalf("成功应回 200 JSON，实际 status=%d location=%q", rec.Code, rec.Header().Get("Location"))
+		t.Fatalf("成功应回 200，实际 status=%d location=%q", rec.Code, rec.Header().Get("Location"))
 	}
 	if loc := rec.Header().Get("Location"); loc != "" {
 		t.Errorf("成功不该发 302（导航归前端 data-write-nav），得到 Location=%q", loc)
 	}
-	if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "application/json") {
-		t.Errorf("成功应回 JSON，得到 %q", ct)
+	if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "text/html") {
+		t.Errorf("成功应回 HTML 片段，得到 %q", ct)
 	}
 	body := rec.Body.String()
 
-	for _, want := range []string{"已保存", `"id":"a1"`} {
+	for _, want := range []string{"已保存", `role="status"`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("成功响应缺少 %q：%s", want, body)
 		}

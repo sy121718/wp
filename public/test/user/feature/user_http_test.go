@@ -2,7 +2,6 @@ package feature
 
 import (
 	mw "go_wp/pkg/middleware"
-	json "go_wp/pkg/jsonx"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -158,11 +157,9 @@ func loginAs(t *testing.T, env *userHTTPEnv, account, password string) []*http.C
 	t.Helper()
 	state := env.get(t, "/api/site/user/session", nil)
 	cookies := siteCookies(nil, state)
-	body, err := json.Marshal(map[string]string{"account": account, "password": password})
-	if err != nil {
-		t.Fatal(err)
-	}
-	rec := siteJSON(t, env, "/api/site/user/login", string(body), state.Header().Get("X-CSRF-Token"), cookies)
+	rec := siteForm(t, env, "/api/site/user/login",
+		map[string]string{"account": account, "password": password},
+		state.Header().Get("X-CSRF-Token"), cookies)
 	siteData(t, rec, http.StatusOK)
 	return siteCookies(cookies, rec)
 }

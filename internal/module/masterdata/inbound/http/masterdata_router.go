@@ -24,7 +24,7 @@ func SetupMasterDataRoutes(rg *mw.RouteGroup, pages *gin.RouterGroup, db *gorm.D
 	g.GET("/change/entities", masterdataenums.MasterdataChangeEntities, handle.ListEntities)
 	g.GET("/change/entity", masterdataenums.MasterdataChangeEntity, handle.EntityTimeline)
 
-	SetupMasterDataPages(pages, svc, project)
+	SetupMasterDataPages(rg.Registry(), pages, svc, project)
 
 	return svc
 }

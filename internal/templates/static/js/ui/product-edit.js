@@ -96,9 +96,8 @@
     if (!ui || !ui.writeBase) return;
     ui.writeBase.registerPayloadBuilder('product-category', function (form) {
         var fields = new FormData(form);
-        return {
+        var payload = {
             projectId: fields.get('projectId') || '',
-            id: fields.get('id') || '',
             name: fields.get('name') || '',
             slug: fields.get('slug') || '',
             parentId: fields.get('parentId') || '',
@@ -106,5 +105,8 @@
             image: fields.get('image') || '',
             description: fields.get('description') || ''
         };
+        // 新建抽屉没有 id；空 id 不属于 create DTO 的字段表。
+        if (fields.get('id')) payload.id = fields.get('id');
+        return payload;
     });
 })(window);

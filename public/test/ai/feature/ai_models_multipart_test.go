@@ -28,6 +28,8 @@ func saveModelsJSON(t *testing.T, h *aihttp.Handle, fields map[string]string) *h
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 	engine.Use(pageview.FailureMiddleware(pageview.RenderFailure))
+	engine.Use(pageview.UseSuccess(pageview.NewSuccessWriter()))
+	engine.Use(pageview.UseRenderer(pageview.RenderFragment))
 	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	engine.POST("/api/ai/provider/models/save", pageview.HTMLFragment, h.SaveModels)
 

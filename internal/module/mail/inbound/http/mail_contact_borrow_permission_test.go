@@ -1,6 +1,7 @@
 package mailhttp
 
 import (
+	mw "go_wp/pkg/middleware"
 	"os"
 	"regexp"
 	"testing"
@@ -45,7 +46,7 @@ func TestMailPagePostRoutesAreRegistered(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	pages := r.Group("/admin")
-	setupMailPageRoutes(pages, &mailPageRegisterStub{})
+	setupMailPageRoutes(mw.NewRegistry(), pages, &mailPageRegisterStub{})
 
 	registered := map[string]bool{}
 	for _, route := range r.Routes() {

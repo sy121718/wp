@@ -92,14 +92,23 @@ func (s *Service) runSideEffect(ctx context.Context, task adminmodel.SideEffectT
 // 立刻先跑一轮，把上次进程退出时没来得及执行的任务补上。
 // ctx 取消即返回：装配点传的是进程级可取消 ctx（见 internal/routers 的 worker 接线），
 // 进程收尾时先 cancel 再 Shutdown，循环不会在关库之后还去领任务。
-func (s *Service) StartSideEffectWorker(ctx context.Context, interval time.Duration) {
+// 返回的 stop 取消循环并等待在途一轮结束：调用方必须在关闭数据库之前调用它。
+func (s *Service) StartSideEffectWorker(ctx context.Context, interval time.Duration) func() {
 	if s == nil || s.st == nil {
-		return
+		return func() {}
 	}
 	if interval <= 0 {
 		interval = sideEffectInterval
 	}
-	go s.runSideEffectLoop(ctx, interval)
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		s.runSideEffectLoop(ctx, interval)
+	}()
+	return func() { <-done }
 }
 
 func (s *Service) runSideEffectLoop(ctx context.Context, interval time.Duration) {

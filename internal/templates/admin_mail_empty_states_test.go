@@ -1,6 +1,7 @@
 package templates
 
 import (
+	"go_wp/pkg/facing"
 	"regexp"
 	"strings"
 	"testing"
@@ -15,7 +16,7 @@ func TestMailEmptyStatesByFilter(t *testing.T) {
 		desc      string
 		clear     bool
 	}{
-		{"templates", "admin/mail/mail_templates", map[string]any{"Templates": []any{}}, 0,
+		{"templates", "admin/mail/mail_templates", map[string]any{"Templates": []any{}, "Err": facing.Msg{}}, 0,
 			"还没有邮件模板", "新建邮件模板，填写主题与正文。", false},
 
 		{"contacts/no-filter", "admin/mail/mail_contacts", marketingProbeData(nil), 0,

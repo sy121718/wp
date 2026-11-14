@@ -477,3 +477,47 @@ func TestSideEffectReleaseDoesNotClearNewerLease(t *testing.T) {
 		t.Fatal("新持有者的完成状态没有写回")
 	}
 }
+
+// TestPolicyReloadTaskPropagatesNewPolicyAcrossInstances 证明「A 写策略 → B 生效」的传播链：
+// 策略行写入数据库后，另一个实例只能通过副作用任务重载才看见它。
+//
+// pkg/casbin 的 enforcer 是进程级单例（无 watcher），所以这里模拟两个独立装配实例：
+// A 用独立 enforcer 实例把新策略写进库，B 的 enforcer 在重载前看不到；B 领取并执行
+// SideEffectPolicyReload 任务后，HasPermissionPolicies 才能查到新权限码。
+// 真实跨进程传播仍依赖部署侧的 worker 间隔（默认 30s），本测试不声称覆盖进程间网络传播。
+func TestPolicyReloadTaskPropagatesNewPolicyAcrossInstances(t *testing.T) {
+	db := support.NewMigratedPGTestDB(t)
+	initAdminPolicyTest(t, db)
+	ctx := context.Background()
+
+	const newCode = "probe:multi_instance_reload"
+	// A 实例：写入一条新策略（模拟管理端保存权限后落库）。
+	if err := db.WithContext(ctx).Exec(
+		`INSERT INTO sys_casbin_rule (ptype, v0, v1, v2, v3) VALUES ('p', 'role_probe', '/api/probe/reload', 'POST', ?)`,
+		newCode).Error; err != nil {
+		t.Fatalf("写入新策略失败: %v", err)
+	}
+	// B 实例的 enforcer 尚未重载：看不到这条策略。
+	if has, err := casbin.HasPermissionPolicies(newCode); err != nil {
+		t.Fatalf("查询策略失败: %v", err)
+	} else if has {
+		t.Fatal("重载前 B 不应看见新策略（说明测试没有真正隔离重载时机）")
+	}
+
+	// 登记并执行重载任务（生产由业务事务登记、worker 领取）。
+	svc := adminservice.NewService(db)
+	id, err := svc.AppendPolicyReloadForTest(ctx)
+	if err != nil {
+		t.Fatalf("登记重载任务失败: %v", err)
+	}
+	svc.FlushSideEffect(ctx, id)
+
+	// 重载后 B 应能查到新策略。
+	has, err := casbin.HasPermissionPolicies(newCode)
+	if err != nil {
+		t.Fatalf("重载后查询策略失败: %v", err)
+	}
+	if !has {
+		t.Fatal("重载任务执行后 B 仍看不到新策略 —— DB 任务到策略重载的传播链断了")
+	}
+}

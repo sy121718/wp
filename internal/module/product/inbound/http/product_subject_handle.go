@@ -105,13 +105,14 @@ func (h *ProductHandle) CreateVariant(c *gin.Context) {
 }
 
 func (h *ProductHandle) UpdateVariant(c *gin.Context) {
-	req, ok := binding.JSON[productdto.UpdateVariantReq](c)
-	if !ok {
+	var req productdto.UpdateVariantReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ParamError(c)
 		return
 	}
 
 	req.OperatorID = builtin.OperatorName(c)
-	res, err := h.svc.UpdateVariant(c.Request.Context(), req)
+	res, err := h.svc.UpdateVariant(c.Request.Context(), &req)
 	if err != nil {
 		response.ErrorStatusAuto(c, "product", err)
 		return
@@ -122,18 +123,21 @@ func (h *ProductHandle) UpdateVariant(c *gin.Context) {
 func (h *ProductHandle) DeleteVariant(c *gin.Context) {
 	runProductWriteErrWith(c,
 		func(c *gin.Context, req *productdto.DeleteVariantReq) { req.OperatorID = builtin.OperatorName(c) },
-		func(ctx context.Context, req *productdto.DeleteVariantReq) error { return h.svc.DeleteVariant(ctx, req) },
+		func(ctx context.Context, req *productdto.DeleteVariantReq) error {
+			return h.svc.DeleteVariant(ctx, req)
+		},
 		productWriteOK)
 }
 
 func (h *ProductHandle) GenerateVariants(c *gin.Context) {
-	req, ok := binding.JSON[productdto.GenerateVariantsReq](c)
-	if !ok {
+	var req productdto.GenerateVariantsReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ParamError(c)
 		return
 	}
 
 	req.OperatorID = builtin.OperatorName(c)
-	res, err := h.svc.GenerateVariants(c.Request.Context(), req)
+	res, err := h.svc.GenerateVariants(c.Request.Context(), &req)
 	if err != nil {
 		response.ErrorStatusAuto(c, "product", err)
 		return
@@ -296,8 +300,11 @@ func (h *ProductPageHandle) ProductDetailPage(c *gin.Context) {
 }
 
 func (h *ProductPageHandle) PreviewVariant(c *gin.Context) {
-	form, ok := binding.JSON[productdto.VariantPreviewFormReq](c)
-	if !ok {
+	// 变体预览由 product_variant_write.js 以 FormData 提交；显式表单入口保留
+	// DTO 的 BindForm 钩子（attr:<id> 重复键 → Selections）。
+	form, err := binding.ParseForm[productdto.VariantPreviewFormReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	res, err := h.products.PreviewVariantCombinations(c.Request.Context(), form.ServiceReq())
@@ -309,13 +316,14 @@ func (h *ProductPageHandle) PreviewVariant(c *gin.Context) {
 }
 
 func (h *ProductHandle) SaveVariantList(c *gin.Context) {
-	req, ok := binding.JSON[productdto.SaveVariantListReq](c)
-	if !ok {
+	var req productdto.SaveVariantListReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
 		return
 	}
 
 	req.OperatorID = builtin.OperatorName(c)
-	res, err := h.svc.SaveVariantList(c.Request.Context(), req)
+	res, err := h.svc.SaveVariantList(c.Request.Context(), &req)
 	if err != nil {
 		response.ErrorStatusAuto(c, "product", err)
 		return
@@ -336,7 +344,9 @@ func (h *ProductHandle) AddRating(c *gin.Context) {
 // DeleteRating 将删除后的评分事实交同一 Jet 区域，失败保留当前输入。
 func (h *ProductHandle) DeleteRating(c *gin.Context) {
 	runProductWriteResult(c, nil,
-		func(ctx context.Context, req *productdto.DeleteRatingReq) (any, error) { return h.svc.DeleteRating(ctx, req) },
+		func(ctx context.Context, req *productdto.DeleteRatingReq) (any, error) {
+			return h.svc.DeleteRating(ctx, req)
+		},
 		func(c *gin.Context, res any) {
 			pageview.RenderTemplate(c, "admin/product/product_rating_panel.html", pageview.Objects(pageview.Object("Rating", res)))
 		})

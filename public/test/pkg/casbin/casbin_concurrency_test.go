@@ -82,6 +82,12 @@ func TestCasbinConcurrentEnforceAndPolicyMutation(t *testing.T) {
 	if err := activateRole(roleCode); err != nil {
 		t.Fatalf("启用角色失败: %v", err)
 	}
+	// 启用标记是事务内落库（g2），内存 enforcer 不会自动看见；生产侧 RoleCreate /
+	// RoleUpdate 在事务成功后显式调 ReloadPolicy，这里同样补一次 —— 否则基线
+	// Enforce 的 g2(p.sub,"active") 恒不成立，后面的并发阶段失去比较意义。
+	if err := pkgcasbin.ReloadPolicy(); err != nil {
+		t.Fatalf("启用角色后重载策略失败: %v", err)
+	}
 
 	ok, err := pkgcasbin.GetEnforcer().Enforce(userID, path, "GET")
 	if err != nil || !ok {

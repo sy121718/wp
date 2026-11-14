@@ -88,18 +88,3 @@ func truncateRunes(s string, maxBytes int) string {
 	}
 	return s[:cut] + "…"
 }
-
-func blockRefErrText(c *gin.Context, err error) string {
-	msg := blockErrText(c, err)
-	if detail := blockRefUsageText(c, err); detail != "" {
-		msg = truncateRunes(msg+"："+detail, blockRefTextMaxBytes-1)
-	}
-	return msg
-}
-
-func blockRefErrorMessage(c *gin.Context, err error) string {
-	if blockRefUsageText(c, err) == "" {
-		return blockErrorMessage(err)
-	}
-	return blockRefErrText(c, err)
-}

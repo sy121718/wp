@@ -1,11 +1,11 @@
 package feature
 
 import (
-	pageview "go_wp/pkg/view"
-	text "go_wp/pkg/view/jet"
 	"context"
 	"fmt"
 	json "go_wp/pkg/jsonx"
+	pageview "go_wp/pkg/view"
+	text "go_wp/pkg/view/jet"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -14,7 +14,6 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 	contenttemplatehttp "go_wp/internal/module/contenttemplate/inbound/http"
 	contenttemplatemodel "go_wp/internal/module/contenttemplate/model"
 	contenttemplateservice "go_wp/internal/module/contenttemplate/service"
@@ -30,6 +29,7 @@ import (
 	bulkids "go_wp/pkg/bulkids"
 	"go_wp/pkg/i18n"
 	"go_wp/public/test/support"
+	"gorm.io/gorm"
 )
 
 const contentTemplateInternalLeakToken = "SQLSTATE"
@@ -193,5 +193,63 @@ func TestContentTemplatesBulkDeleteKeepsControlledLimitText(t *testing.T) {
 	}
 	if !strings.Contains(body, "一次最多操作") {
 		t.Fatalf("受控提示应保持可见，body=%s", body)
+	}
+}
+
+// 不同语言的并发请求不得串词：提示都是模板按请求作用域取词，
+// 英文请求不能看到中文兜底，反之亦然。
+func TestContentTemplatesMessagesDoNotCrossLanguages(t *testing.T) {
+	env := newContentTemplateErrorLeakEnv(t)
+	if env == nil {
+		return
+	}
+	tm := contenttemplatemodel.NewModel(env.db)
+	if err := tm.Create(context.Background(), &contenttemplatemodel.TemplateEntity{
+		ID: "88888888-8888-8888-8888-888888888888", ProjectID: env.projectID,
+		Name: "商品详情模板", EntityType: "product", TemplateRole: "detail",
+		DraftDocument: json.RawMessage("{}"), DraftVersion: 1,
+	}); err != nil {
+		t.Fatalf("准备模板行失败：%v", err)
+	}
+
+	// 词库注入中英两套：中文兜底是「工程内还没有商品…」，英文是独立句子。
+	i18n.InjectForTest(map[string]map[string]string{
+		"ctHintNoProd": {
+			"zh-CN": "工程内还没有商品，无法预览商品详情模板",
+			"en-US": "This project has no products yet.",
+		},
+	}, nil)
+	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
+
+	type result struct{ lang, body string }
+	run := func(lang string, ch chan<- result) {
+		req := httptest.NewRequest(http.MethodGet, "/admin/content-templates?project="+env.projectID, nil)
+		req.Header.Set("Accept-Language", lang)
+		rec := httptest.NewRecorder()
+		env.engine.ServeHTTP(rec, req)
+		ch <- result{lang: lang, body: rec.Body.String()}
+	}
+
+	const rounds = 8
+	ch := make(chan result, rounds*2)
+	for i := 0; i < rounds; i++ {
+		go run("zh-CN", ch)
+		go run("en-US", ch)
+	}
+	for i := 0; i < rounds*2; i++ {
+		r := <-ch
+		switch r.lang {
+		case "zh-CN":
+			if !strings.Contains(r.body, "工程内还没有商品") {
+				t.Errorf("中文请求没有拿到中文提示（串词或没取到词）")
+			}
+		case "en-US":
+			if !strings.Contains(r.body, "This project has no products yet.") {
+				t.Errorf("英文请求没有拿到英文提示（串词或没取到词）")
+			}
+			if strings.Contains(r.body, "工程内还没有商品") {
+				t.Errorf("英文请求里出现了中文提示 —— 请求作用域串词")
+			}
+		}
 	}
 }

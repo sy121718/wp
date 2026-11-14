@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	ginbinding "github.com/gin-gonic/gin/binding"
 	"go_wp/internal/middleware/builtin"
 	blockcontract "go_wp/internal/module/block/contract"
 	navigationcontract "go_wp/internal/module/navigation/contract"
@@ -16,7 +17,6 @@ import (
 	navigationenums "go_wp/internal/module/navigation/enums"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/pkg/backpath"
-	"go_wp/pkg/binding"
 	"go_wp/pkg/facing"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
@@ -310,16 +310,6 @@ func normalizeNavKind(kind string) string {
 	return navKindHeader
 }
 
-// bindNavEditForm 绑定导航编辑抽屉的表单；失败按本域既有出口写 400。
-func bindNavEditForm(c *gin.Context) (*navigationdto.PanelForm, bool) {
-	form, err := binding.ParseForm[navigationdto.PanelForm](c)
-	if err != nil {
-		c.String(http.StatusBadRequest, "%s", response.MsgText(c, navInvalidParamMsg))
-		return nil, false
-	}
-	return form, true
-}
-
 // navEditEchoOf 把绑定结果投影成回显事实（重渲抽屉时原样带回用户输入）。
 func navEditEchoOf(form *navigationdto.PanelForm) navEditEcho {
 	if form == nil {
@@ -332,24 +322,46 @@ func navEditEchoOf(form *navigationdto.PanelForm) navEditEcho {
 	}
 }
 
+// bindNavEditForm 绑定导航编辑抽屉的表单；失败已按本域出口写出响应。
+//
+// 绑定是原生显式的（ShouldBindWith FormPost，只读 body），不是同义绑定包装；
+// 「缺少 id / 版本戳」的既有回显与提示仍由调用方决定。
+func (h *navigationPageHandle) bindNavEditForm(c *gin.Context) (*navigationdto.PanelForm, bool) {
+	var form navigationdto.PanelForm
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		c.String(http.StatusBadRequest, "%s", response.MsgText(c, navInvalidParamMsg))
+		return nil, false
+	}
+	return &form, true
+}
+
+// navEditMissingID 处理「表单没有 id」：HTMX 请求重渲抽屉，普通请求给提示。
+func (h *navigationPageHandle) navEditMissingID(c *gin.Context, echo navEditEcho) {
+	if navEditHTMX(c) {
+		h.renderNavigationEdit(c, echo, navInvalidParamMsg)
+		return
+	}
+	navNotify(c, false, navInvalidParamMsg)
+}
+
+// navEditStaleVersion 处理「表单没带版本戳」：按既有出口写 400。
+func navEditStaleVersion(c *gin.Context) {
+	c.String(http.StatusBadRequest, "%s", response.MsgText(c, navInvalidParamMsg))
+}
+
 func (h *navigationPageHandle) NavigationUpdate(c *gin.Context) {
-	form, ok := bindNavEditForm(c)
+	form, ok := h.bindNavEditForm(c)
 	if !ok {
 		return
 	}
 	id := strings.TrimSpace(form.ID)
-
 	echo := navEditEchoOf(form)
 	if id == "" {
-		if navEditHTMX(c) {
-			h.renderNavigationEdit(c, echo, navInvalidParamMsg)
-		} else {
-			navNotify(c, false, navInvalidParamMsg)
-		}
+		h.navEditMissingID(c, echo)
 		return
 	}
 	if strings.TrimSpace(echo.UpdatedAt) == "" {
-		c.String(http.StatusBadRequest, "%s", response.MsgText(c, navInvalidParamMsg))
+		navEditStaleVersion(c)
 		return
 	}
 	if !h.navEditOwnedRow(c, echo) {
@@ -392,23 +404,18 @@ func (h *navigationPageHandle) SetBlockPanelPort(p BlockPanelPort) {
 }
 
 func (h *navigationPageHandle) PanelSet(c *gin.Context) {
-	form, ok := bindNavEditForm(c)
+	form, ok := h.bindNavEditForm(c)
 	if !ok {
 		return
 	}
 	id := strings.TrimSpace(form.ID)
-
 	echo := navEditEchoOf(form)
 	if id == "" {
-		if navEditHTMX(c) {
-			h.renderNavigationEdit(c, echo, navInvalidParamMsg)
-		} else {
-			navNotify(c, false, navInvalidParamMsg)
-		}
+		h.navEditMissingID(c, echo)
 		return
 	}
 	if strings.TrimSpace(echo.UpdatedAt) == "" {
-		c.String(http.StatusBadRequest, "%s", response.MsgText(c, navInvalidParamMsg))
+		navEditStaleVersion(c)
 		return
 	}
 	if !h.navEditOwnedRow(c, echo) {
@@ -433,8 +440,9 @@ func (h *navigationPageHandle) PanelSet(c *gin.Context) {
 
 func (h *navigationPageHandle) PanelCreate(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	form, ok := bindNavEditForm(c)
-	if !ok {
+	var form navigationdto.PanelForm
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		c.String(http.StatusBadRequest, "%s", response.MsgText(c, navInvalidParamMsg))
 		return
 	}
 	projectID := strings.TrimSpace(form.ProjectID)

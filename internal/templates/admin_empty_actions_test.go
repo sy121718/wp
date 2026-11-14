@@ -1,6 +1,7 @@
 package templates
 
 import (
+	"go_wp/pkg/facing"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -220,7 +221,7 @@ func TestAdminEmptyStateHasActions(t *testing.T) {
 
 	t.Run("mail_automation_run→刷新", func(t *testing.T) {
 		out := renderAdminEmptyProbe(t, "admin/mail/mail_automation_run", map[string]any{
-			"Err": "",
+			"Err": facing.Msg{},
 			"D": map[string]any{
 				"Explain": "流程：欢迎邮件", "Timeline": []any{}, "DoneNodes": 0, "TotalNodes": 3,
 				"Run": map[string]any{"Status": "pending"},
@@ -233,7 +234,7 @@ func TestAdminEmptyStateHasActions(t *testing.T) {
 
 	t.Run("mail_campaign/链接与收件人都为空→回群发活动页", func(t *testing.T) {
 		out := renderAdminEmptyProbe(t, "admin/mail/mail_campaign", map[string]any{
-			"Err": "",
+			"Err": facing.Msg{},
 			"R": map[string]any{
 				"Campaign": map[string]any{"Name": "九月活动", "Status": "draft", "Subject": "上新"},
 				"Links":    []any{}, "Recipients": []any{}, "Total": 0,

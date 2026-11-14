@@ -16,6 +16,14 @@
 {{end}}
 <div role="alert" data-ui-error>
     <p>{{if !.Fact.Business}}{{fallback}}{{else if len(.Args) > 0}}{{tf(.Fact.Key, .Fact.Fallback, .Args)}}{{else if .Fact.Fallback != "" && .Fact.Fallback != .Fact.Key}}{{t(.Fact.Key, .Fact.Fallback)}}{{else}}{{t(.Fact.Key, fallback)}}{{end}}</p>
-    {* 失败只播报一句：逐条 id / 名称 / 原因属业务数据，随响应 data 返回，
-       不在这里渲染成列表 —— 提示组件只负责「失败了」这件事。 *}
+    {* 批量拒绝的逐条事实（id / 名称 / 原因）随错误事实一起到达，就在本响应里渲染：
+       HTML 页面没有另一份「未发送的 JSON data」，不能只写一句「失败了」让用户无从定位。
+       单条业务失败没有 Items 时仍只播报一句。 *}
+    {{if len(.Items) > 0}}
+    <ul class="form-error-list">
+        {{range _, it := .Items}}
+        <li>{{if it.Name}}{{it.Name}}：{{else}}{{it.ID}}：{{end}}{{t(it.ReasonKey, it.Fallback)}}</li>
+        {{end}}
+    </ul>
+    {{end}}
 </div>

@@ -1675,10 +1675,6 @@ func customerDetailBackURL(c *gin.Context) string {
 
 const userErrScene = "user"
 
-func customerBulkIDsText(c *gin.Context, err error) string {
-	return pageview.BulkIDsFacingText(c, err)
-}
-
 func customerQueryID(raw string) uint64 {
 	id, err := strconv.ParseUint(strings.TrimSpace(raw), 10, 64)
 	if err != nil {

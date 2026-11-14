@@ -79,6 +79,9 @@ type AuthzContextService interface {
 
 	ExistsEnabledCode(ctx context.Context, code string) (bool, error)
 
+	// ListByPathMethod 返回 api_path/api_method 命中的目录项（含被停用的）。
+	ListByPathMethod(ctx context.Context, path, method string) ([]admindto.PermBrief, error)
+
 	EffectivePermissionCodes(ctx context.Context, userID uint64) ([]string, error)
 
 	AuthorizedButtonCodes(ctx context.Context, codes []string) ([]string, error)

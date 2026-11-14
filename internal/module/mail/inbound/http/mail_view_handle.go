@@ -1,6 +1,9 @@
 package mailhttp
 
-import "go_wp/pkg/pagination"
+import (
+	"go_wp/pkg/facing"
+	"go_wp/pkg/pagination"
+)
 
 type CampaignsPageResp struct {
 	Title         string
@@ -12,27 +15,27 @@ type CampaignsPageResp struct {
 
 	ListQuery string
 
-	Err string
+	Err facing.Msg
 
 	Pagination pagination.Page
 }
 
-func NewCampaignsPageError(title, errText string) *CampaignsPageResp {
+func NewCampaignsPageError(title string, errFact facing.Msg) *CampaignsPageResp {
 	return &CampaignsPageResp{
 		Title:     title,
 		Campaigns: []any{},
 		Accounts:  []any{},
 		Templates: []any{},
-		Err:       errText,
+		Err:       errFact,
 	}
 }
 
 type AutomationRowResp struct {
-	ID           uint64
-	Name         string
-	Description  string
-	Status       string
-	Version      int
+	ID          uint64
+	Name        string
+	Description string
+	Status      string
+	Version     int
 	TriggerType string
 }
 
@@ -41,7 +44,7 @@ type AutomationListPageResp struct {
 	Page      int
 	ListQuery string
 
-	Err string
+	Err facing.Msg
 
 	Automations []AutomationRowResp
 	AutoTotal   int64
@@ -102,7 +105,7 @@ type AutomationEditPageResp struct {
 	Triggers   []OptionResp
 	CanAddStep bool
 
-	Err       string
+	Err       facing.Msg
 	Templates []any
 }
 
@@ -143,7 +146,7 @@ type AutomationRunsPageResp struct {
 	FilterRun string
 
 	RunsQuery string
-	Err       string
+	Err       facing.Msg
 
 	Runs           []any
 	RunTotal       int64
@@ -168,7 +171,7 @@ type ContactsPageResp struct {
 	TagOptions []any
 
 	ListQuery string
-	Err       string
+	Err       facing.Msg
 
 	Pagination pagination.Page
 }
@@ -176,7 +179,7 @@ type ContactsPageResp struct {
 type AccountsPageResp struct {
 	Title    string
 	Accounts []any
-	Err      string
+	Err      facing.Msg
 
 	Pagination pagination.Page
 }
@@ -185,7 +188,7 @@ type TemplatesPageResp struct {
 	Title         string
 	Templates     []any
 	TemplateTotal int64
-	Err           string
+	Err           facing.Msg
 
 	Pagination pagination.Page
 }

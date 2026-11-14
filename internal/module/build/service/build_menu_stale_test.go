@@ -73,8 +73,10 @@ func TestBuildEnumsDeclareKeysWithoutBundledText(t *testing.T) {
 		if fact.Key != key {
 			t.Fatalf("%s 的 key 形状不符: %q", key, fact.Key)
 		}
-		if fact.Fallback != fact.Key {
-			t.Fatalf("%s 不该自带成品句兜底，实际兜底 %q", key, fact.Fallback)
+		// 判据是「enums 只声明 key、文案归词库」：兜底必须为空。
+		// 写成 != fact.Key 会把「Fallback 被填成 key」也当成合规，方向反了。
+		if fact.Fallback != "" {
+			t.Fatalf("%s 内嵌了兜底文案 %q —— enums 只声明 key，文案归词库", key, fact.Fallback)
 		}
 	}
 	if got, ok := builddto.MenuStaleSourceID("3F0F1E3A-6D9A-4C0F-9A7E-6F6B1C2D3E4F", "header"); !ok ||

@@ -3,9 +3,9 @@ package contenthttp
 import (
 	"testing"
 
-	view "go_wp/pkg/view"
 	"go_wp/internal/templates"
 	"go_wp/pkg/pagination"
+	view "go_wp/pkg/view"
 )
 
 func TestArticleTranslationsMapperCarriesPaginationFacts(t *testing.T) {

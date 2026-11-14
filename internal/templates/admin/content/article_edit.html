@@ -92,9 +92,9 @@
 
     {* Err 只剩一处写侧：保存失败原地重渲时带回的保存错误（articleUpdateFailure）。
        成功回执不再进模板（走 shell.RenderJump 的整页提示，见 content_err.go）。 *}
-    {{if isset(.Err)}}{{if .Err.Key != ""}}
+    {{if isset(.Err) && .Err.Key != ""}}
     <p class="badge badge-warning" role="alert" id="article-edit-error">{{ .["t"]("admin.article.edit.lastError", "上一次操作未完成：") }}{{ .["t"](.Err.Key, .Err.Fallback) }}</p>
-    {{end}}{{end}}
+    {{end}}
     {{if .EditUnavailable}}
     <p class="badge badge-warning" role="alert">{{ .["t"]("admin.article.edit.unavailable", "文章信息暂时不可用；以下是本次提交内容，请保留后返回列表重新打开文章。") }}</p>
     {{end}}
@@ -104,19 +104,17 @@
        原来这里是一层 repeat(auto-fit, minmax(340px,1fr)) 的内联 grid：它按容器宽自动铺列，
        于是「两栏」实际是「自动列数里的一格」—— 换成显式的 panes，列宽才是可控的那 35%。 *}
     <div class="article-edit-panes">
-        {* 两种提交各有明确协议：
-           新建走共享写基座（HTML 结论片段进 data-write-result，下一步按片段里的实体链接导航）；
-           更新只回 JSON 结论，页面一个字段都不动（失败也一样，不重渲、不回填）。
-           从前这里是原生 method="post"：失败会跳到一个白屏，服务端不得不重渲整页回填输入 ——
-           那条路是把「表单是原生提交」的技术债写成了设计理由。 *}
+        {* 两种提交都是普通表单写，统一走共享写基座：结论进 data-write-result；
+           新建在片段里给出实体链接并声明下一步导航，更新只交共享成功提示（页面字段保持不变）。
+           失败进入同一宿主的错误区 —— 不再有「更新只回 JSON」的第二套协议。 *}
         <form class="article-edit-main"
               id="article-form"
               hx-post="{{if .IsNew}}/admin/articles/create{{else}}/admin/articles/update{{end}}"
               {{if .IsNew}}data-write hx-target="find [data-write-result]" hx-swap="innerHTML"
-              hx-sync="this:drop" data-write-nav="[data-article-created-link]"{{else}}hx-swap="none"{{end}}
+              hx-sync="this:drop" data-write-nav="[data-article-created-link]"{{else}}data-write hx-target="find [data-write-result]" hx-swap="innerHTML" hx-sync="this:drop"{{end}}
               hx-disable="find button[type=submit]">
-            {{if .IsNew}}<div class="form-hint" data-write-status role="status" hidden></div>
-            <div data-write-result></div>{{end}}
+            <div class="form-hint" data-write-status role="status" hidden></div>
+            <div data-write-result></div>
             {{if .EditUnavailable}}<fieldset disabled style="border:0;padding:0;margin:0;min-width:0">{{end}}
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             {{if !.IsNew}}<input type="hidden" name="id" value="{{form.ID}}">{{end}}
@@ -166,7 +164,7 @@
                 {* 正文编辑器统一走 partials/rich_editor.html（Trix 本地 vendor + 本项目的 rich-editor
                    扩展）：隐藏 input（name=body）、trix-editor 与扩展入口都由片段给出，本页不再自己
                    接一套（工具条、表格 / 折叠块附件、CSS 因此三处同源）。落库前仍过
-                   core.SanitizeRichHTML 白名单清洗。 *}
+                   richtext 白名单清洗。 *}
                 {{yield richEditor(field="body", key="article", value=form.Body)}}
 
                 <div class="field-label-row">

@@ -1,13 +1,13 @@
 package adminhttp
 
 import (
+	"go_wp/pkg/safepath"
+	view "go_wp/pkg/view"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
-	view "go_wp/pkg/view"
-	"go_wp/pkg/safepath"
 
 	"github.com/gin-gonic/gin"
 )

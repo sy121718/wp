@@ -54,5 +54,7 @@ type BuildService interface {
 
 	RegisterExecutor(sourceType string, fn Executor)
 
-	StartWorkers(ctx context.Context, n int)
+	// StartWorkers 返回的 stop 取消循环并等待在途任务退出；
+	// 调用方必须在关闭数据库之前调用它。
+	StartWorkers(ctx context.Context, n int) func()
 }

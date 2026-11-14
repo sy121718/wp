@@ -11,12 +11,12 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"go_wp/pkg/mcp"
 	aidto "go_wp/internal/module/ai/dto"
 	aienums "go_wp/internal/module/ai/enums"
 	orderenums "go_wp/internal/module/order/enums"
 	pageenums "go_wp/internal/module/page/enums"
 	"go_wp/internal/templates"
+	"go_wp/pkg/mcp"
 	"go_wp/pkg/utils"
 )
 
@@ -248,6 +248,16 @@ type stubPermDirectory struct {
 func (s stubPermDirectory) Exists(_ context.Context, code string) (bool, error) {
 	_, ok := s.names[code]
 	return ok, nil
+}
+
+// ListByPathMethod 在桩里按名称反查：测试只关心「目录有没有这一行」，
+// 不需要真实的 api_path/api_method 匹配。
+func (s stubPermDirectory) ListByPathMethod(_ context.Context, _, _ string) ([]aicontract.PermEntry, error) {
+	out := make([]aicontract.PermEntry, 0, len(s.names))
+	for code, n := range s.names {
+		out = append(out, aicontract.PermEntry{Code: code, Name: n, Status: 1})
+	}
+	return out, nil
 }
 
 func (s stubPermDirectory) List(_ context.Context, codes []string) ([]aicontract.PermEntry, error) {

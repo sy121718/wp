@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	ginbinding "github.com/gin-gonic/gin/binding"
 	"golang.org/x/crypto/bcrypt"
 
 	blockcontract "go_wp/internal/module/block/contract"
@@ -23,10 +24,11 @@ import (
 	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
 	"go_wp/internal/siteurl"
 	"go_wp/pkg/backpath"
-	"go_wp/pkg/binding"
 	"go_wp/pkg/builder"
+	"go_wp/pkg/facing"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
+	"go_wp/pkg/reqparams"
 	"go_wp/pkg/response"
 	seoscore "go_wp/pkg/seo"
 	"go_wp/pkg/seo/scoreview"
@@ -107,21 +109,32 @@ func themePathString(obj map[string]any, path string) string {
 
 type scoreView = scoreview.View
 
+// workbenchSettingsPanel 是复杂编辑器面板：输入是明确 JSON 对象（整份编辑器文档），
+// 输出是 HTML 片段。用显式 JSON 绑定声明唯一输入协议，不按 Content-Type 自动选择。
 func workbenchSettingsPanel(c *gin.Context) {
-	doc := json.RawMessage(c.PostForm("document"))
-	view := settingsViewOf(doc)
-	if pwd := c.PostForm("access-password"); pwd != "" {
-		patched, hash, err := applyAccessPassword(doc, pwd)
+	// 原生 JSON 绑定：面板只收 application/json，不按 Content-Type 自动选择。
+	var req projectdto.SettingsPanelReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, "project", err)
+		return
+	}
+	pageview.Render(c, settingsPanelViewOf(req))
+}
+
+// settingsPanelViewOf 由整份文档与（可选的）新访问密码构造面板视图。
+// 密码只在服务端 bcrypt，回填的是哈希；明文不进文档、不进响应。
+func settingsPanelViewOf(req projectdto.SettingsPanelReq) *projectdto.SettingsPanelView {
+	view := settingsViewOf(req.Document)
+	if pwd := req.AccessPassword; pwd != "" {
+		patched, hash, err := applyAccessPassword(req.Document, pwd)
 		if err != nil {
 			view.AccessError = err.Error()
 		} else {
-			doc = patched
-			view = settingsViewOf(doc)
+			view = settingsViewOf(patched)
 			view.AccessHash = hash
 		}
 	}
-
-	pageview.Render(c, &projectdto.SettingsPanelView{Settings: view})
+	return &projectdto.SettingsPanelView{Settings: view}
 }
 
 func applyAccessPassword(doc json.RawMessage, password string) (json.RawMessage, string, error) {
@@ -160,8 +173,12 @@ func applyAccessPassword(doc json.RawMessage, password string) (json.RawMessage,
 }
 
 func workbenchSeoScorePanel(c *gin.Context) {
-	doc := json.RawMessage(c.PostForm("document"))
-	pageview.Render(c, &projectdto.SeoScorePanelView{Score: scoreViewOf(doc, c.PostForm("url"), requestScoreLang(c), projectTr(c))})
+	var req projectdto.SeoScorePanelReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, "project", err)
+		return
+	}
+	pageview.Render(c, &projectdto.SeoScorePanelView{Score: scoreViewOf(req.Document, req.URL, requestScoreLang(c), projectTr(c))})
 }
 
 func settingsViewOf(doc json.RawMessage) settingsView {
@@ -260,6 +277,9 @@ type urlPatternRow struct {
 	Label   string
 	Value   string
 	Default string
+	// Field 是该种类在表单里的**静态**控件名（urlPattern_<kind>）。
+	// 模板直接读它，不拼字符串；这样字段门禁能静态对账，也不需要运行时拼键。
+	Field string
 }
 
 func buildURLPatternRows(configured map[string]string) []urlPatternRow {
@@ -270,6 +290,7 @@ func buildURLPatternRows(configured map[string]string) []urlPatternRow {
 			Label:   k.Label,
 			Value:   strings.TrimSpace(configured[k.Kind]),
 			Default: siteurl.PatternOf(k.Kind, nil),
+			Field:   "urlPattern_" + k.Kind,
 		})
 	}
 	return rows
@@ -407,9 +428,33 @@ func langURLOffWarning(mode string, rows []localeRow) bool {
 	return enabled > 1
 }
 
+// siteURLPatterns 校验并归一站点设置表单里的 URL 规则（urlPattern_<kind>）。
+//
+// 字段表由 DTO 显式声明（种类是编译期常量），这里只做校验与归一；
+// 校验走 siteurl 的正式入口，不在控制器里重写规则。
+func siteURLPatterns(values map[string]string) (map[string]string, error) {
+	out := make(map[string]string, len(values))
+	for _, k := range siteurl.KnownKinds {
+		raw := strings.TrimSpace(values[k.Kind])
+		if raw == "" {
+			continue
+		}
+		if perr := siteurl.ValidatePattern(raw); perr != nil {
+			return nil, perr
+		}
+		out[k.Kind] = pathkit.NormalizeSitePath(raw)
+	}
+	return out, nil
+}
+
 func (h *siteSettingsAdminHandle) SaveSiteSettings(c *gin.Context) {
-	projectID := strings.TrimSpace(c.PostForm("projectId"))
-	name := strings.TrimSpace(c.PostForm("name"))
+	var form projectdto.SiteSettingsForm
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, "project", err)
+		return
+	}
+	projectID := strings.TrimSpace(form.ProjectID)
+	name := strings.TrimSpace(form.Name)
 
 	if projectID == "" {
 		projectJump(c, false, projectMsgOf(projectenums.ErrProjectRequired, "请先选择要操作的站点工程"),
@@ -435,22 +480,14 @@ func (h *siteSettingsAdminHandle) SaveSiteSettings(c *gin.Context) {
 		return
 	}
 
-	patterns := map[string]string{}
-	for _, k := range siteurl.KnownKinds {
-		raw := strings.TrimSpace(c.PostForm("urlPattern_" + k.Kind))
-		if raw == "" {
-			continue
-		}
-		if perr := siteurl.ValidatePattern(raw); perr != nil {
-
-			projectJump(c, false, projectErrMsg(c, "site_settings", projectenums.ErrProjectInternal, perr),
-				back, siteSettingsBackMsg)
-			return
-		}
-		patterns[k.Kind] = pathkit.NormalizeSitePath(raw)
+	patterns, patErr := siteURLPatterns(form.URLPatterns())
+	if patErr != nil {
+		projectJump(c, false, projectErrMsg(c, "site_settings", projectenums.ErrProjectInternal, patErr),
+			back, siteSettingsBackMsg)
+		return
 	}
 	ga4ID := ""
-	if raw := strings.TrimSpace(c.PostForm("ga4MeasurementId")); raw != "" {
+	if raw := strings.TrimSpace(form.GA4MeasurementID); raw != "" {
 		id, ok := builder.NormalizeGA4MeasurementID(raw)
 		if !ok {
 			projectJump(c, false, projectMsgOf(projectenums.ErrGA4IDInvalid, "GA4 测量 ID 格式不合法（形如 G-XXXXXXXXXX，只允许字母与数字）"),
@@ -461,7 +498,7 @@ func (h *siteSettingsAdminHandle) SaveSiteSettings(c *gin.Context) {
 	}
 
 	searchConsoleToken := ""
-	if raw := strings.TrimSpace(c.PostForm("searchConsoleVerification")); raw != "" {
+	if raw := strings.TrimSpace(form.SearchConsoleVerification); raw != "" {
 		token, ok := builder.NormalizeSearchConsoleVerification(raw)
 		if !ok {
 			projectJump(c, false, projectMsgOf(projectenums.ErrGSCVerificationInvalid, "Search Console 验证 token 格式不合法（base64url：字母、数字、- 与 _，8~128 位）"),
@@ -471,8 +508,8 @@ func (h *siteSettingsAdminHandle) SaveSiteSettings(c *gin.Context) {
 		searchConsoleToken = token
 	}
 
-	rawHead := strings.TrimSpace(c.PostForm("headScripts"))
-	rawBody := strings.TrimSpace(c.PostForm("bodyScripts"))
+	rawHead := strings.TrimSpace(form.HeadScripts)
+	rawBody := strings.TrimSpace(form.BodyScripts)
 	headScripts, headOK := builder.NormalizeHeadScripts(rawHead)
 	bodyScripts, bodyOK := builder.NormalizeBodyScripts(rawBody)
 	if (rawHead != "" && !headOK) || (rawBody != "" && !bodyOK) {
@@ -489,13 +526,13 @@ func (h *siteSettingsAdminHandle) SaveSiteSettings(c *gin.Context) {
 		return
 	}
 
-	baseCents, baseErr := projectdto.ParseYuanToCents(c.PostForm("shippingBaseFee"))
+	baseCents, baseErr := projectdto.ParseYuanToCents(form.ShippingBaseFee)
 	if baseErr != nil {
 		projectJump(c, false, projectMsgOf(projectenums.ErrShippingBaseFeeInvalid, "基础运费金额不合法（负数 / 非数字 / 超上限）"),
 			back, siteSettingsBackMsg)
 		return
 	}
-	thresholdCents, thresholdErr := projectdto.ParseYuanToCents(c.PostForm("shippingFreeThreshold"))
+	thresholdCents, thresholdErr := projectdto.ParseYuanToCents(form.ShippingFreeThreshold)
 	if thresholdErr != nil {
 		projectJump(c, false, projectMsgOf(projectenums.ErrShippingFreeThresholdInvalid, "满额免运费门槛金额不合法（同上）"),
 			back, siteSettingsBackMsg)
@@ -508,20 +545,20 @@ func (h *siteSettingsAdminHandle) SaveSiteSettings(c *gin.Context) {
 		return
 	}
 
-	notFoundHTML := strings.TrimSpace(c.PostForm("notFoundHtml"))
+	notFoundHTML := strings.TrimSpace(form.NotFoundHTML)
 	if len(notFoundHTML) > maxNotFoundHTMLLen {
 		projectJump(c, false, projectMsgOf(projectenums.ErrNotFoundHTMLTooLong, "自定义 404 页内容过长（上限 32 KiB）"),
 			back, siteSettingsBackMsg)
 		return
 	}
 	settingsJSON, err := mergeSiteSettings(project.Settings, projectcontract.SiteSettings{
-		SiteName:         strings.TrimSpace(c.PostForm("siteName")),
-		SiteDesc:         strings.TrimSpace(c.PostForm("siteDesc")),
-		ContactEmail:     strings.TrimSpace(c.PostForm("contactEmail")),
+		SiteName:         strings.TrimSpace(form.SiteName),
+		SiteDesc:         strings.TrimSpace(form.SiteDesc),
+		ContactEmail:     strings.TrimSpace(form.ContactEmail),
 		GA4MeasurementID: ga4ID,
 
 		SearchConsoleVerification: searchConsoleToken,
-		IndexNowKey:               strings.TrimSpace(c.PostForm("indexNowKey")),
+		IndexNowKey:               strings.TrimSpace(form.IndexNowKey),
 
 		HeadScripts:  headScripts,
 		BodyScripts:  bodyScripts,
@@ -675,25 +712,24 @@ func (h *siteSettingsAdminHandle) localeRowsOf(c *gin.Context, projectID string)
 	return out
 }
 
-func parseLocaleRows(c *gin.Context) []localeRow {
-	langs := c.PostFormArray("langs")
-	if len(langs) == 0 {
+func parseLocaleRows(form *projectdto.LocalesForm) []localeRow {
+	if form == nil || len(form.Langs) == 0 {
 		return nil
 	}
 	enabled := map[int]bool{}
-	for _, raw := range c.PostFormArray("enabledIndex") {
+	for _, raw := range form.EnabledIndex {
 		if i, err := strconv.Atoi(strings.TrimSpace(raw)); err == nil && i >= 0 {
 			enabled[i] = true
 		}
 	}
 	defaultIdx := -1
-	if raw := strings.TrimSpace(c.PostForm("defaultIndex")); raw != "" {
-		if i, err := strconv.Atoi(raw); err == nil && i >= 0 && i < len(langs) {
+	if raw := strings.TrimSpace(form.DefaultIndex); raw != "" {
+		if i, err := strconv.Atoi(raw); err == nil && i >= 0 && i < len(form.Langs) {
 			defaultIdx = i
 		}
 	}
-	rows := make([]localeRow, 0, len(langs))
-	for i, lang := range langs {
+	rows := make([]localeRow, 0, len(form.Langs))
+	for i, lang := range form.Langs {
 		rows = append(rows, localeRow{
 			Lang:      strings.TrimSpace(lang),
 			IsDefault: i == defaultIdx,
@@ -704,13 +740,18 @@ func parseLocaleRows(c *gin.Context) []localeRow {
 }
 
 func (h *siteSettingsAdminHandle) LocaleRowsFragment(c *gin.Context) {
-	rows := parseLocaleRows(c)
-	switch strings.TrimSpace(c.PostForm("action")) {
+	var form projectdto.LocalesForm
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, "project", err)
+		return
+	}
+	rows := parseLocaleRows(&form)
+	switch strings.TrimSpace(form.Action) {
 	case "add":
-		lang := strings.TrimSpace(c.PostForm("newLang"))
+		lang := strings.TrimSpace(form.NewLang)
 		rows = append(rows, localeRow{Lang: lang, Enabled: true})
 	case "remove":
-		if idx, err := strconv.Atoi(strings.TrimSpace(c.PostForm("removeIndex"))); err == nil && idx >= 0 && idx < len(rows) {
+		if idx, err := strconv.Atoi(strings.TrimSpace(form.RemoveIndex)); err == nil && idx >= 0 && idx < len(rows) {
 			removedDefault := rows[idx].IsDefault
 			rows = append(rows[:idx:idx], rows[idx+1:]...)
 			if removedDefault {
@@ -730,7 +771,12 @@ func (h *siteSettingsAdminHandle) LocaleRowsFragment(c *gin.Context) {
 }
 
 func (h *siteSettingsAdminHandle) SaveSiteLocales(c *gin.Context) {
-	projectID := strings.TrimSpace(c.PostForm("projectId"))
+	var form projectdto.LocalesForm
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, "project", err)
+		return
+	}
+	projectID := strings.TrimSpace(form.ProjectID)
 	if projectID == "" {
 		projectJump(c, false, projectMsgOf(projectenums.ErrProjectRequired, "请先选择要操作的站点工程"),
 			backpath.FromRequest(c.Request.URL.Query(), "/admin/settings", "/admin", "project"), siteSettingsBackMsg)
@@ -742,7 +788,7 @@ func (h *siteSettingsAdminHandle) SaveSiteLocales(c *gin.Context) {
 	if err != nil {
 		logger.Scene("settings").With("project", projectID).Error(err, "读取语言清单失败，按已变更处理")
 	}
-	rows := parseLocaleRows(c)
+	rows := parseLocaleRows(&form)
 	req := &projectdto.LocalesSaveReq{ProjectID: projectID, Locales: make([]projectdto.LocaleItem, 0, len(rows))}
 	for _, r := range rows {
 		enabled := r.Enabled
@@ -751,7 +797,7 @@ func (h *siteSettingsAdminHandle) SaveSiteLocales(c *gin.Context) {
 		})
 	}
 
-	modeRaw := strings.TrimSpace(c.PostForm("langURLMode"))
+	modeRaw := strings.TrimSpace(form.LangURLMode)
 	modeChanged := false
 	if modeRaw != "" {
 		mode, merr := i18n.ParseSiteLangURLMode(modeRaw)
@@ -936,19 +982,10 @@ func (h *themeAdminHandle) ThemeManage(c *gin.Context) {
 	h.renderThemeManage(c, data)
 }
 
-// bindThemeCreateForm 绑定新建主题表单；失败已由这里按域错误出口写回。
-func bindThemeCreateForm(c *gin.Context) (*projectdto.ThemeCreateReq, bool) {
-	form, err := binding.ParseForm[projectdto.ThemeCreateReq](c)
-	if err != nil {
-		pageview.FailStatus(c, http.StatusBadRequest, "project", err)
-		return nil, false
-	}
-	return form, true
-}
-
 func (h *themeAdminHandle) CreateTheme(c *gin.Context) {
-	form, ok := bindThemeCreateForm(c)
-	if !ok {
+	var form projectdto.ThemeCreateReq
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, "project", err)
 		return
 	}
 	projectID, name := form.ProjectID, form.Name
@@ -979,20 +1016,11 @@ func (h *themeAdminHandle) CreateTheme(c *gin.Context) {
 	projectJump(c, true, themeCreatedMsg, back, themesBackMsg)
 }
 
-// bindThemeForm 绑定主题写表单；失败已由这里按域错误出口写回。
-func bindThemeForm(c *gin.Context) (*projectdto.ThemeActivateReq, bool) {
-	req, err := binding.ParseForm[projectdto.ThemeActivateReq](c)
-	if err != nil || req.ID == "" {
+func (h *themeAdminHandle) ActivateTheme(c *gin.Context) {
+	var form projectdto.ThemeActivateReq
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil || form.ID == "" {
 		projectJump(c, false, projectMsgOf(projectenums.ErrThemeIDRequired, "缺少主题 id"),
 			themesBack(c), themesBackMsg)
-		return nil, false
-	}
-	return req, true
-}
-
-func (h *themeAdminHandle) ActivateTheme(c *gin.Context) {
-	form, ok := bindThemeForm(c)
-	if !ok {
 		return
 	}
 	id := form.ID
@@ -1090,8 +1118,10 @@ func themeSnapshots(settings json.RawMessage) (themeJSON, structureJSON json.Raw
 }
 
 func (h *themeAdminHandle) DeleteTheme(c *gin.Context) {
-	form, ok := bindThemeForm(c)
-	if !ok {
+	var form projectdto.ThemeActivateReq
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil || form.ID == "" {
+		projectJump(c, false, projectMsgOf(projectenums.ErrThemeIDRequired, "缺少主题 id"),
+			themesBack(c), themesBackMsg)
 		return
 	}
 	id := form.ID
@@ -1421,18 +1451,36 @@ func propString(obj map[string]any, path string) string {
 }
 
 func workbenchGlobalPanel(c *gin.Context) {
-	themeID := strings.TrimSpace(c.PostForm("themeId"))
-	if themeID == "" {
-
-		pageview.Render(c, &projectdto.GlobalPanelView{ThemeID: ""})
+	var req projectdto.GlobalPanelReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, "project", err)
 		return
 	}
-	var settings map[string]any
-	if raw := c.PostForm("settings"); raw != "" {
-		_ = json.Unmarshal([]byte(raw), &settings)
-	}
+	pageview.Render(c, globalPanelViewOf(req))
+}
 
-	pageview.Render(c, &projectdto.GlobalPanelView{ThemeID: themeID, Groups: buildThemeGroups(settings)})
+// globalPanelViewOf 由主题标识与该主题的设置对象构造面板视图。
+// 未挂主题时给空态（ThemeID 为空），由模板显示「未挂接主题」提示。
+//
+// 面板只负责渲染设置文档里的设计令牌；页眉/页脚/公告槽这些**面板不渲染**的
+// 绑定事实必须原样带回去再提交 —— 保存端点是整份主题设置，缺键会被当成
+// 「本页未编辑」而按零值覆盖。
+func globalPanelViewOf(req projectdto.GlobalPanelReq) *projectdto.GlobalPanelView {
+	themeID := strings.TrimSpace(req.ThemeID)
+	if themeID == "" {
+		return &projectdto.GlobalPanelView{ThemeID: ""}
+	}
+	var settings map[string]any
+	if len(req.Settings) > 0 {
+		_ = json.Unmarshal(req.Settings, &settings)
+	}
+	view := &projectdto.GlobalPanelView{ThemeID: themeID, Groups: buildThemeGroups(settings)}
+	view.HeaderBlockID = propString(settings, "headerBlockId")
+	view.FooterBlockID = propString(settings, "footerBlockId")
+	if slots, ok := settings["slots"].(map[string]any); ok {
+		view.AnnouncementBlockID, _ = slots["announcement"].(string)
+	}
+	return view
 }
 
 const (
@@ -1442,6 +1490,13 @@ const (
 const themeSettingsSavedTextFallback = "主题设置已保存，该主题下页面已标记待重建 —— 重新构建后新样式才会出现在访问面。"
 
 const themeSettingsFieldInvalidFallback = "这个值不合法：只能填颜色（#3d444f）、尺寸（16px）这类 CSS 值。"
+
+// PageStatus 让失败重渲带上真实业务状态码（pkg/view.Result）。
+// 校验失败是受控 4xx；内部错误（落库/序列化失败）仍报 500。
+func (d *themeSettingsData) PageStatus() int { return d.Status }
+
+// PageNoStore 让失败的设置页不被缓存：同一个 URL 下一次可能已是成功重渲。
+func (d *themeSettingsData) PageNoStore() bool { return d.Status >= 400 }
 
 type themeSettingsData struct {
 	Title     string
@@ -1457,7 +1512,14 @@ type themeSettingsData struct {
 	BdColor    string
 	FontFamily string
 
-	ThemeSettingsJSON string
+	// 模板按 .ThemeSettings 取这份 JSON（回显脚本读同一段）。键名由 view tag 决定，
+	// 字段名 ThemeSettingsJSON 对模板不可见 —— 缺这条 tag 时 Jet 在缺键处中断，
+	// 保存失败的整页重渲会退化成 500，用户既看不到原因也拿不回输入。
+	ThemeSettingsJSON string `view:"ThemeSettings"`
+
+	// Status 是失败重渲时的真实 HTTP 状态（0 = 200）。模板不读它，
+	// 由 pkg/view.RenderPage 经 Result 接口取走，避免把校验失败报成 200。
+	Status int
 
 	Groups []themeFieldGroupView
 
@@ -1619,7 +1681,14 @@ func (h *themeAdminHandle) loadThemeSettings(c *gin.Context, themeID string) *th
 }
 
 func (h *themeAdminHandle) SaveThemeSettings(c *gin.Context) {
-	themeID := strings.TrimSpace(c.PostForm("id"))
+	// 主表单绑定成显式 DTO：点号键逐字映射（gin 的 form tag 按字面匹配，不折嵌套路径）。
+	// 普通 urlencoded 表单用 Gin 原生 FormPost，失败不写响应，仍由本域页面出口给 400。
+	var form projectdto.ThemeSettingsFormReq
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, "project", err)
+		return
+	}
+	themeID := strings.TrimSpace(form.ID)
 
 	if themeID == "" {
 		projectJump(c, false, projectMsgOf(projectenums.ErrThemeIDRequired, "缺少主题 id"),
@@ -1638,95 +1707,106 @@ func (h *themeAdminHandle) SaveThemeSettings(c *gin.Context) {
 	ts := &builder.ThemeSettings{
 
 		Images: builder.ThemeImages{
-			LazyLoad: strings.TrimSpace(c.PostForm("images.lazyLoad")),
-			Skeleton: strings.TrimSpace(c.PostForm("images.skeleton")) == "true",
+			LazyLoad: strings.TrimSpace(form.ImagesLazyLoad),
+			Skeleton: strings.TrimSpace(form.ImagesSkeleton) == "true",
 		},
 		Colors: builder.ThemeColors{
-			Primary:    strings.TrimSpace(c.PostForm("colors.primary")),
-			Secondary:  strings.TrimSpace(c.PostForm("colors.secondary")),
-			Accent:     strings.TrimSpace(c.PostForm("colors.accent")),
-			Success:    strings.TrimSpace(c.PostForm("colors.success")),
-			Warning:    strings.TrimSpace(c.PostForm("colors.warning")),
-			Danger:     strings.TrimSpace(c.PostForm("colors.danger")),
-			Text:       strings.TrimSpace(c.PostForm("colors.text")),
-			Heading:    strings.TrimSpace(c.PostForm("colors.heading")),
-			Background: strings.TrimSpace(c.PostForm("colors.background")),
-			Surface:    strings.TrimSpace(c.PostForm("colors.surface")),
-			Border:     strings.TrimSpace(c.PostForm("colors.border")),
+			Primary:    strings.TrimSpace(form.ColorPrimary),
+			Secondary:  strings.TrimSpace(form.ColorSecondary),
+			Accent:     strings.TrimSpace(form.ColorAccent),
+			Success:    strings.TrimSpace(form.ColorSuccess),
+			Warning:    strings.TrimSpace(form.ColorWarning),
+			Danger:     strings.TrimSpace(form.ColorDanger),
+			Text:       strings.TrimSpace(form.ColorText),
+			Heading:    strings.TrimSpace(form.ColorHeading),
+			Background: strings.TrimSpace(form.ColorBackground),
+			Surface:    strings.TrimSpace(form.ColorSurface),
+			Border:     strings.TrimSpace(form.ColorBorder),
 		},
 		Typography: builder.ThemeTypography{
 			Heading: builder.ThemeHeadingStyle{
-				Color:      strings.TrimSpace(c.PostForm("typography.heading.color")),
-				FontWeight: strings.TrimSpace(c.PostForm("typography.heading.weight")),
-				FontSize:   strings.TrimSpace(c.PostForm("typography.heading.size")),
-				Spacing:    strings.TrimSpace(c.PostForm("typography.heading.spacing")),
-				FontFamily: strings.TrimSpace(c.PostForm("typography.heading.font")),
+				Color:      strings.TrimSpace(form.HeadingColor),
+				FontWeight: strings.TrimSpace(form.HeadingFontWeight),
+				FontSize:   strings.TrimSpace(form.HeadingFontSize),
+				Spacing:    strings.TrimSpace(form.HeadingSpacing),
+				FontFamily: strings.TrimSpace(form.HeadingFontFamily),
 			},
 			Body: builder.ThemeBodyStyle{
-				Color:      strings.TrimSpace(c.PostForm("typography.body.color")),
-				FontSize:   strings.TrimSpace(c.PostForm("typography.body.size")),
-				LineHeight: strings.TrimSpace(c.PostForm("typography.body.line")),
-				FontFamily: strings.TrimSpace(c.PostForm("typography.body.font")),
+				Color:      strings.TrimSpace(form.BodyColor),
+				FontSize:   strings.TrimSpace(form.BodyFontSize),
+				LineHeight: strings.TrimSpace(form.BodyLineHeight),
+				FontFamily: strings.TrimSpace(form.BodyFontFamily),
 			},
 			Link: builder.ThemeLinkStyle{
-				Color:      strings.TrimSpace(c.PostForm("typography.link.color")),
-				HoverColor: strings.TrimSpace(c.PostForm("typography.link.hover")),
-				Underline:  strings.TrimSpace(c.PostForm("typography.link.underline")),
+				Color:      strings.TrimSpace(form.LinkColor),
+				HoverColor: strings.TrimSpace(form.LinkHoverColor),
+				Underline:  strings.TrimSpace(form.LinkUnderline),
 			},
 		},
 		Button: builder.ThemeButton{
-			Background:      strings.TrimSpace(c.PostForm("button.background")),
-			Color:           strings.TrimSpace(c.PostForm("button.color")),
-			Radius:          strings.TrimSpace(c.PostForm("button.radius")),
-			FontWeight:      strings.TrimSpace(c.PostForm("button.weight")),
-			PaddingY:        strings.TrimSpace(c.PostForm("button.py")),
-			PaddingX:        strings.TrimSpace(c.PostForm("button.px")),
-			HoverBackground: strings.TrimSpace(c.PostForm("button.hoverBg")),
-			HoverColor:      strings.TrimSpace(c.PostForm("button.hoverColor")),
-			BorderWidth:     strings.TrimSpace(c.PostForm("button.borderWidth")),
-			BorderStyle:     strings.TrimSpace(c.PostForm("button.borderStyle")),
-			BorderColor:     strings.TrimSpace(c.PostForm("button.borderColor")),
-			Shadow:          strings.TrimSpace(c.PostForm("button.shadow")),
+			Background:      strings.TrimSpace(form.ButtonBackground),
+			Color:           strings.TrimSpace(form.ButtonColor),
+			Radius:          strings.TrimSpace(form.ButtonRadius),
+			FontWeight:      strings.TrimSpace(form.ButtonFontWeight),
+			PaddingY:        strings.TrimSpace(form.ButtonPaddingY),
+			PaddingX:        strings.TrimSpace(form.ButtonPaddingX),
+			HoverBackground: strings.TrimSpace(form.ButtonHoverBackground),
+			HoverColor:      strings.TrimSpace(form.ButtonHoverColor),
+			BorderWidth:     strings.TrimSpace(form.ButtonBorderWidth),
+			BorderStyle:     strings.TrimSpace(form.ButtonBorderStyle),
+			BorderColor:     strings.TrimSpace(form.ButtonBorderColor),
+			Shadow:          strings.TrimSpace(form.ButtonShadow),
 		},
 		Surface: builder.ThemeSurface{
-			Radius:      strings.TrimSpace(c.PostForm("surface.radius")),
-			BorderWidth: strings.TrimSpace(c.PostForm("surface.borderWidth")),
-			BorderColor: strings.TrimSpace(c.PostForm("surface.borderColor")),
-			Shadow:      strings.TrimSpace(c.PostForm("surface.shadow")),
+			Radius:      strings.TrimSpace(form.SurfaceRadius),
+			BorderWidth: strings.TrimSpace(form.SurfaceBorderWidth),
+			BorderColor: strings.TrimSpace(form.SurfaceBorderColor),
+			Shadow:      strings.TrimSpace(form.SurfaceShadow),
 		},
 		Motion: builder.ThemeMotion{
-			TransitionDuration: strings.TrimSpace(c.PostForm("motion.duration")),
-			Easing:             strings.TrimSpace(c.PostForm("motion.easing")),
-			DefaultEntrance:    strings.TrimSpace(c.PostForm("motion.entrance")),
+			TransitionDuration: strings.TrimSpace(form.MotionTransitionDuration),
+			Easing:             strings.TrimSpace(form.MotionEasing),
+			DefaultEntrance:    strings.TrimSpace(form.MotionDefaultEntrance),
 		},
+	}
+
+	slotTemplates, slotErr := themeSlotTemplateFormValues(&form, data.SlotTemplates)
+	if slotErr != nil {
+		themeSettingsFailPage(c, data, http.StatusBadRequest,
+			projectErrMsg(c, "theme", projectenums.MsgThemeSettingsInvalid, slotErr), nil, nil)
+		return
 	}
 
 	settingsJSON, err := json.Marshal(themeSettingsJSON{
 		ThemeSettings: *ts,
-		HeaderBlockID: strings.TrimSpace(c.PostForm("headerBlockId")),
-		FooterBlockID: strings.TrimSpace(c.PostForm("footerBlockId")),
-		Slots:         themeSlotFormValues(c),
+		HeaderBlockID: strings.TrimSpace(form.HeaderBlockID),
+		FooterBlockID: strings.TrimSpace(form.FooterBlockID),
+		Slots:         themeSlotsFromForm(&form),
 
-		HeaderTemplateID: structureTemplateFormValue(c, "headerTemplateId", data.HeaderTemplateID),
-		FooterTemplateID: structureTemplateFormValue(c, "footerTemplateId", data.FooterTemplateID),
-		SlotTemplates:    themeSlotTemplateFormValues(c, data.SlotTemplates),
+		// 结构模板键的「哨兵 + 空串 = 主动解绑」语义保留在原归并函数里，只把读取值换成 DTO 字段。
+		HeaderTemplateID: structureTemplateFormValue(form.StructureTemplateFields, form.HeaderTemplateID, data.HeaderTemplateID),
+		FooterTemplateID: structureTemplateFormValue(form.StructureTemplateFields, form.FooterTemplateID, data.FooterTemplateID),
+		SlotTemplates:    slotTemplates,
 	})
 	if err != nil {
 
-		themeSettingsFailPage(c, data, projectErrMsg(c, "theme", projectenums.ErrThemeInternal, err), nil, nil)
+		themeSettingsFailPage(c, data, http.StatusInternalServerError,
+			projectErrMsg(c, "theme", projectenums.ErrThemeInternal, err), nil, nil)
 		return
 	}
 
 	if _, verr := builder.ParseThemeSettings(settingsJSON); verr != nil {
 
 		logger.Scene("theme").With("theme_id", themeID).Error(verr, "主题设置校验失败")
-		themeSettingsFailPage(c, data, projectMsgOf(projectenums.MsgThemeSettingsInvalid, "主题设置不合法"), verr, settingsJSON)
+		themeSettingsFailPage(c, data, http.StatusBadRequest,
+			projectMsgOf(projectenums.MsgThemeSettingsInvalid, "主题设置不合法"), verr, settingsJSON)
 		return
 	}
 	if _, err := h.projects.UpdateTheme(c.Request.Context(), &projectcontract.ThemeUpdateReq{
 		ID: themeID, Name: data.ThemeName, Settings: settingsJSON,
 	}); err != nil {
-		themeSettingsFailPage(c, data, projectErrMsg(c, "theme", projectenums.ErrThemeInternal, err), nil, settingsJSON)
+		themeSettingsFailPage(c, data, http.StatusInternalServerError,
+			projectErrMsg(c, "theme", projectenums.ErrThemeInternal, err), nil, settingsJSON)
 		return
 	}
 
@@ -1741,9 +1821,21 @@ func (h *themeAdminHandle) SaveThemeSettings(c *gin.Context) {
 	projectJump(c, true, themeSettingsSavedMsg, back, themeSettingsBackMsg)
 }
 
-func themeSettingsFailPage(c *gin.Context, data *themeSettingsData, msg projectMsg, fieldErr error, echoSettings json.RawMessage) {
-
+// themeSettingsFailPage 是保存失败的唯一出口，按**发起方**给两种受控响应：
+//
+//   - HTMX 请求（工作台全局面板）：4xx + 共享失败片段，写基座把它写进宿主状态行，
+//     正在编辑的字段不替换（输入保留由基座保证）；
+//   - 普通表单提交（后台主题设置页）：4xx + 就地重渲整页，带回全部已填值与字段级错误。
+//
+// 以前这里无条件重渲整页且不给状态码：HTMX 拿到整页 HTML 被判非法响应，
+// 非 HTMX 拿到 200 的「失败页」，两边都不是「受控 4xx + 保留输入」。
+func themeSettingsFailPage(c *gin.Context, data *themeSettingsData, status int, msg projectMsg, fieldErr error, echoSettings json.RawMessage) {
+	if reqparams.IsHXRequest(c) {
+		pageview.FailStatus(c, status, "project", facing.NewMessage(msg.Key, msg.Fallback))
+		return
+	}
 	data.Err = msg
+	data.Status = status
 	if len(echoSettings) > 0 {
 		data.ThemeSettingsJSON = string(echoSettings)
 	}
@@ -1755,24 +1847,28 @@ func themeSettingsFailPage(c *gin.Context, data *themeSettingsData, msg projectM
 	pageview.Render(c, data)
 }
 
+// themeSettingsEchoForm 是保存失败后的就地回显：它只决定页面上显示什么，
+// 不参与落库，因此仍按原始表单区分「键缺失」与「提交了空串」（前者保留库里值）。
 func themeSettingsEchoForm(c *gin.Context, data *themeSettingsData) {
 	_ = c.Request.ParseForm()
-	form := c.Request.PostForm
-	data.Groups = themeSettingsEchoGroups(form, data.Groups)
-	if v, ok := themeSettingsFormValue(form, "headerBlockId"); ok {
+	values := c.Request.PostForm
+	data.Groups = themeSettingsEchoGroups(values, data.Groups)
+	if v, ok := themeSettingsFormValue(values, "headerBlockId"); ok {
 		data.HeaderBlockID = v
 	}
-	if v, ok := themeSettingsFormValue(form, "footerBlockId"); ok {
+	if v, ok := themeSettingsFormValue(values, "footerBlockId"); ok {
 		data.FooterBlockID = v
 	}
-	if v, ok := themeSettingsFormValue(form, "slots.announcement"); ok {
+	if v, ok := themeSettingsFormValue(values, "slots.announcement"); ok {
 		data.AnnouncementBlockID = v
 	}
-	data.HeaderTemplateID = structureTemplateFormValue(c, "headerTemplateId", data.HeaderTemplateID)
-	data.FooterTemplateID = structureTemplateFormValue(c, "footerTemplateId", data.FooterTemplateID)
+	// 回显只决定页面显示、不落库：values.Get 对缺失返回空串，与本函数只用值归并的语义一致。
+	data.HeaderTemplateID = structureTemplateFormValue(values.Get("structureTemplateFields"), values.Get("headerTemplateId"), data.HeaderTemplateID)
+	data.FooterTemplateID = structureTemplateFormValue(values.Get("structureTemplateFields"), values.Get("footerTemplateId"), data.FooterTemplateID)
 	themeSettingsMarkTemplateSelected(data.HeaderTemplateOptions, data.HeaderTemplateID)
 	themeSettingsMarkTemplateSelected(data.FooterTemplateOptions, data.FooterTemplateID)
-	if slots := themeSlotTemplateFormValues(c, data.SlotTemplates); slots != nil {
+	// 回显只按原始表单读静态平行数组；配不上时不改显示值（不制造假回显）。
+	if slots, err := echoThemeSlotTemplates(values); err == nil && slots != nil {
 		data.SlotTemplates = slots
 	}
 }
@@ -1855,11 +1951,17 @@ func themeSettingsMarkInvalid(groups []themeFieldGroupView, name string, msg pro
 	}
 }
 
-func structureTemplateFormValue(c *gin.Context, key, current string) string {
-	if strings.TrimSpace(c.PostForm("structureTemplateFields")) != "1" {
-		return firstNonEmpty(strings.TrimSpace(c.PostForm(key)), current)
+// structureTemplateFormValue 归并结构模板的一个绑定键。
+//
+// 哨兵 structureTemplateFields=1 表示本次提交带了结构模板区块：此时空串就是主动解绑；
+// 没有哨兵时（旧表单 / 脚本只提交单键）空值视为「未改」，保留当前绑定。
+// 绑定后的 DTO 对「缺失」与「空串」都给出零值，而本函数只按值归并，
+// 因此两种来源（DTO 字段 / 回显时读原始表单）都可以直接传入。
+func structureTemplateFormValue(sentinel, value, current string) string {
+	if strings.TrimSpace(sentinel) != "1" {
+		return firstNonEmpty(strings.TrimSpace(value), current)
 	}
-	return strings.TrimSpace(c.PostForm(key))
+	return strings.TrimSpace(value)
 }
 
 func firstNonEmpty(values ...string) string {
@@ -1871,37 +1973,79 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
-func themeSlotTemplateFormValues(c *gin.Context, current map[string]string) map[string]string {
-	const prefix = "slotTemplates."
-	_ = c.Request.ParseForm()
-	out := map[string]string{}
-	for key, values := range c.Request.PostForm {
-		if !strings.HasPrefix(key, prefix) || len(values) == 0 {
-			continue
-		}
-		slot := strings.TrimSpace(strings.TrimPrefix(key, prefix))
-		if id := strings.TrimSpace(values[0]); slot != "" && id != "" {
-			out[slot] = id
-		}
+// themeSlotTemplateFormValues 把静态平行数组还原成「槽位名 → 模板 id」。
+//
+// 线上是 slotTemplateSlot / slotTemplateID 两个同名数组，按 DOM 顺序配对。
+// 配对失败返回错误：缺值会让槽位串位，整份设置必须拒绝；没有提交任何槽位时
+// 返回 current（保留库里已有绑定），这是「本页未编辑额外槽位」的合法语义。
+// 空 id 表示清空该槽位绑定。
+func themeSlotTemplateFormValues(form *projectdto.ThemeSettingsFormReq, current map[string]string) (map[string]string, error) {
+	if len(form.SlotTemplateSlot) == 0 && len(form.SlotTemplateID) == 0 {
+		return current, nil
 	}
-	if len(out) == 0 {
-		return current
+	if len(form.SlotTemplateSlot) != len(form.SlotTemplateID) {
+		return nil, errThemeSlotMismatch
 	}
-	return out
+	out := make(map[string]string, len(form.SlotTemplateSlot))
+	for i, rawSlot := range form.SlotTemplateSlot {
+		slot := strings.TrimSpace(rawSlot)
+		if !validThemeSlotName(slot) {
+			return nil, errThemeSlotMismatch
+		}
+		if _, dup := out[slot]; dup {
+			return nil, errThemeSlotMismatch
+		}
+		out[slot] = strings.TrimSpace(form.SlotTemplateID[i])
+	}
+	return out, nil
 }
 
-func themeSlotFormValues(c *gin.Context) map[string]string {
-	const prefix = "slots."
-	_ = c.Request.ParseForm()
+// validThemeSlotName 只接受小写字母、数字与下划线：槽位名会作为设置对象的键，
+// 不接受斜杠、点号或空白。
+func validThemeSlotName(slot string) bool {
+	if slot == "" || len(slot) > 64 {
+		return false
+	}
+	for _, r := range slot {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '_':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+var errThemeSlotMismatch = errors.New("theme slot template rows are not pairable")
+
+// echoThemeSlotTemplates 从原始表单读静态平行数组，供保存失败后的就地回显。
+func echoThemeSlotTemplates(values url.Values) (map[string]string, error) {
+	slots, ids := values["slotTemplateSlot"], values["slotTemplateID"]
+	if len(slots) == 0 && len(ids) == 0 {
+		return nil, nil
+	}
+	if len(slots) != len(ids) {
+		return nil, errThemeSlotMismatch
+	}
+	out := make(map[string]string, len(slots))
+	for i, raw := range slots {
+		slot := strings.TrimSpace(raw)
+		if !validThemeSlotName(slot) {
+			return nil, errThemeSlotMismatch
+		}
+		out[slot] = strings.TrimSpace(ids[i])
+	}
+	return out, nil
+}
+
+// themeSlotsFromForm 从 DTO 的具名槽位字段组装槽位绑定。
+//
+// 不再按 "slots." 前缀扫描原始表单：线上字段已在 DTO 里逐字声明，
+// 双轨读取会让新增槽位悄悄绕过绑定与契约。
+func themeSlotsFromForm(form *projectdto.ThemeSettingsFormReq) map[string]string {
 	out := map[string]string{}
-	for key, values := range c.Request.PostForm {
-		if !strings.HasPrefix(key, prefix) || len(values) == 0 {
-			continue
-		}
-		slot := strings.TrimSpace(strings.TrimPrefix(key, prefix))
-		if id := strings.TrimSpace(values[0]); slot != "" && id != "" {
-			out[slot] = id
-		}
+	if id := strings.TrimSpace(form.AnnouncementBlockID); id != "" {
+		out["announcement"] = id
 	}
 	if len(out) == 0 {
 		return nil

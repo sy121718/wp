@@ -21,11 +21,12 @@ func NewHandle(svc blueprintcontract.BlueprintService) *Handle {
 }
 
 func (h *Handle) Create(c *gin.Context) {
-	req, ok := binding.JSON[blueprintdto.CreateReq](c)
-	if !ok {
+	var req blueprintdto.CreateReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ParamError(c)
 		return
 	}
-	res, err := h.svc.Create(c.Request.Context(), req)
+	res, err := h.svc.Create(c.Request.Context(), &req)
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "blueprint", err)
 		return
@@ -34,11 +35,12 @@ func (h *Handle) Create(c *gin.Context) {
 }
 
 func (h *Handle) Update(c *gin.Context) {
-	req, ok := binding.JSON[blueprintdto.UpdateReq](c)
-	if !ok {
+	var req blueprintdto.UpdateReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ParamError(c)
 		return
 	}
-	res, err := h.svc.Update(c.Request.Context(), req)
+	res, err := h.svc.Update(c.Request.Context(), &req)
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "blueprint", err)
 		return
@@ -47,11 +49,12 @@ func (h *Handle) Update(c *gin.Context) {
 }
 
 func (h *Handle) Publish(c *gin.Context) {
-	req, ok := binding.JSON[blueprintdto.PublishReq](c)
-	if !ok {
+	var req blueprintdto.PublishReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ParamError(c)
 		return
 	}
-	res, err := h.svc.Publish(c.Request.Context(), req)
+	res, err := h.svc.Publish(c.Request.Context(), &req)
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "blueprint", err)
 		return
@@ -60,8 +63,9 @@ func (h *Handle) Publish(c *gin.Context) {
 }
 
 func (h *Handle) Get(c *gin.Context) {
-	req, ok := binding.Form[blueprintdto.GetReq](c)
-	if !ok {
+	req, err := binding.ParseForm[blueprintdto.GetReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	res, err := h.svc.Get(c.Request.Context(), req)
@@ -73,8 +77,9 @@ func (h *Handle) Get(c *gin.Context) {
 }
 
 func (h *Handle) List(c *gin.Context) {
-	req, ok := binding.Form[blueprintdto.ListReq](c)
-	if !ok {
+	req, err := binding.ParseForm[blueprintdto.ListReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	list, err := h.svc.List(c.Request.Context(), req)
@@ -86,11 +91,12 @@ func (h *Handle) List(c *gin.Context) {
 }
 
 func (h *Handle) Delete(c *gin.Context) {
-	req, ok := binding.JSON[blueprintdto.DeleteReq](c)
-	if !ok {
+	var req blueprintdto.DeleteReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ParamError(c)
 		return
 	}
-	if err := h.svc.Delete(c.Request.Context(), req); err != nil {
+	if err := h.svc.Delete(c.Request.Context(), &req); err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "blueprint", err)
 		return
 	}
@@ -98,8 +104,9 @@ func (h *Handle) Delete(c *gin.Context) {
 }
 
 func (h *Handle) Init(c *gin.Context) {
-	req, ok := binding.Form[blueprintdto.GetReq](c)
-	if !ok {
+	req, err := binding.ParseForm[blueprintdto.GetReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	doc, err := h.svc.InitPageDocument(c.Request.Context(), req.ID)

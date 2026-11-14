@@ -10,8 +10,6 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	"golang.org/x/net/html"
-	"gorm.io/gorm"
 	adminenums "go_wp/internal/module/admin/enums"
 	adminhttp "go_wp/internal/module/admin/inbound/http"
 	adminmodel "go_wp/internal/module/admin/model"
@@ -23,6 +21,8 @@ import (
 	text "go_wp/pkg/view/jet"
 	"go_wp/public/migrations"
 	"go_wp/public/test/support"
+	"golang.org/x/net/html"
+	"gorm.io/gorm"
 )
 
 // newDrawerEngine 装配真实 Service、Jet 与请求级失败出口，覆盖授权抽屉的读取和保存。
@@ -55,6 +55,7 @@ func newDrawerEngine(t *testing.T, db *gorm.DB) *gin.Engine {
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 	engine.Use(view.FailureMiddleware(view.RenderFailure))
+	engine.Use(view.UseSuccess(view.NewSuccessWriter()))
 	engine.Use(templates.FailedRenderMiddleware(func(c *gin.Context, err error) { view.FailScene(c, "template", err) }))
 	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	engine.GET("/admin/administrators/roles/drawer", view.HTMLFragment, h.AdministratorRolesDrawer)

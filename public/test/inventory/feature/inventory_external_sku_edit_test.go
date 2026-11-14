@@ -32,6 +32,7 @@ func newExternalSKUEditEngine(t *testing.T) (*gin.Engine, *invFixture) {
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(templateRoot(), true)
 	// 生产装配在基础层挂失败出口与请求取词；缺了它们片段渲染为空。
+	engine.Use(pageview.UseSuccess(pageview.NewSuccessWriter()))
 	engine.Use(pageview.FailureMiddleware(pageview.RenderFailure))
 	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	engine.Use(func(c *gin.Context) {
@@ -271,7 +272,8 @@ func TestExternalSKUEditUnauthorizedBlocked(t *testing.T) {
 	newEngine := func(userID any) *gin.Engine {
 		e := gin.New()
 		e.HTMLRender = templates.NewJetHTMLRender(templateRoot(), true)
-		// 生产装配在基础层挂失败出口与请求取词；缺了它们成功片段渲染为空。
+		// 生产装配在基础层挂成功/失败出口与请求取词；缺了它们写片段渲染为空。
+		e.Use(pageview.UseSuccess(pageview.NewSuccessWriter()))
 		e.Use(pageview.FailureMiddleware(pageview.RenderFailure))
 		e.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 		if userID != nil {

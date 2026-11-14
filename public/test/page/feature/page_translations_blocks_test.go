@@ -77,6 +77,8 @@ func newBlockTranslationEnv(t *testing.T) (*gin.Engine, *gorm.DB, string, string
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 	router.Use(pageview.FailureMiddleware(pageview.RenderFailure))
 	router.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
+	// 生产装配里成功出口由 routers 装一次；最小引擎同样要装，否则成功路径落 500。
+	router.Use(pageview.UseSuccess(pageview.NewSuccessWriter()))
 	router.GET("/admin/pages/translations", pageview.Slot(pagehttp.PageTranslationsTemplate, pageview.RenderPage), handle.PageTranslations)
 	router.POST("/api/page/translations/save", pageview.HTMLFragment, handle.SavePageTranslations)
 	return router, db, project.ID, pageID, header.ID

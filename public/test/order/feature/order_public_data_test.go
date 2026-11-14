@@ -102,11 +102,9 @@ func TestOrderPublicDataProtocol(t *testing.T) {
 		if account == nil || password == nil {
 			t.Fatal("缺少真实开号邮件夹具")
 		}
-		body, err := json.Marshal(map[string]any{"account": account, "password": password})
-		if err != nil {
-			t.Fatal(err)
-		}
-		request("POST", "/api/site/user/login", "application/json", string(body), csrf, 200)
+		// 站点登录是显式表单协议；JSON 已被收窄拒绝。
+		form := url.Values{"account": {fmt.Sprint(account)}, "password": {fmt.Sprint(password)}}
+		request("POST", "/api/site/user/login", "application/x-www-form-urlencoded", form.Encode(), csrf, 200)
 	}
 	login("order-json-owner@example.com")
 	listRec := request("GET", base+"&userId=999999", "", "", "", 200)
@@ -157,14 +155,27 @@ func TestOrderPublicDataProtocol(t *testing.T) {
 		t.Fatal("付费订单的可退事实应由服务提供")
 	}
 	requestID := uuid.NewString()
-	body := fmt.Sprintf(`{"projectId":%q,"orderId":%d,"items":[{"orderItemId":%d,"quantity":1}],"reason":"尺码不合适","requestId":%q,"userId":999999}`, f.projectID, orderID, itemID, requestID)
-	request("POST", "/api/site/orders/returns", "application/json", body, "", 403)
-	request("POST", "/api/site/orders/returns", "application/json", strings.Replace(body, `"quantity":1`, `"quantity":0`, 1), csrf, 400)
-	request("POST", "/api/site/orders/returns", "application/json", strings.Replace(body, `"reason":"尺码不合适"`, `"reason":""`, 1), csrf, 400)
+	// 退货申请声明为表单协议：items 用 orderItemId/quantity 平行数组表达。
+	baseReturnForm := func() url.Values {
+		return url.Values{
+			"projectId": {f.projectID}, "orderId": {fmt.Sprint(orderID)},
+			"orderItemId": {fmt.Sprint(itemID)}, "quantity": {"1"},
+			"reason": {"尺码不合适"}, "requestId": {requestID},
+			// 客户端伪造的可信字段必须被服务端忽略。
+			"userId": {"999999"},
+		}
+	}
+	request("POST", "/api/site/orders/returns", "application/x-www-form-urlencoded", baseReturnForm().Encode(), "", 403)
+	zeroQty := baseReturnForm()
+	zeroQty.Set("quantity", "0")
+	request("POST", "/api/site/orders/returns", "application/x-www-form-urlencoded", zeroQty.Encode(), csrf, 400)
+	noReason := baseReturnForm()
+	noReason.Set("reason", "")
+	request("POST", "/api/site/orders/returns", "application/x-www-form-urlencoded", noReason.Encode(), csrf, 400)
 	if after := readAvailable(); after.ReturnableTotal != before.ReturnableTotal {
 		t.Fatal("失败申请不得占用可退数量")
 	}
-	created := request("POST", "/api/site/orders/returns", "application/json", body, csrf, 200)
+	created := request("POST", "/api/site/orders/returns", "application/x-www-form-urlencoded", baseReturnForm().Encode(), csrf, 200)
 	var first struct {
 		Data orderdto.VisitorReturnResp `json:"data"`
 	}
@@ -189,9 +200,11 @@ func TestOrderPublicDataProtocol(t *testing.T) {
 		Data orderdto.VisitorReturnResp `json:"data"`
 	}
 	if err := json.Unmarshal(replay.Body.Bytes(), &second); err != nil || second.Data.ID != first.Data.ID || second.Data.RefundAmount != first.Data.RefundAmount || second.Data.RefundAmount != detail.Data.Items[0].UnitPrice {
-		t.Fatalf("JSON与FormData重试须返回同一申请和服务金额: first=%+v second=%+v err=%v", first.Data, second.Data, err)
+		t.Fatalf("urlencoded 与 FormData 重试须返回同一申请和服务金额: first=%+v second=%+v err=%v", first.Data, second.Data, err)
 	}
-	request("POST", "/api/site/orders/returns", "application/json", strings.Replace(body, `"quantity":1`, `"quantity":2`, 1), csrf, 409)
+	overQty := baseReturnForm()
+	overQty.Set("quantity", "2")
+	request("POST", "/api/site/orders/returns", "application/x-www-form-urlencoded", overQty.Encode(), csrf, 409)
 	var returns struct {
 		Data orderdto.VisitorReturnListResp `json:"data"`
 	}
@@ -208,12 +221,14 @@ func TestOrderPublicDataProtocol(t *testing.T) {
 	if readAvailable().CanRequest {
 		t.Fatal("未付款不得显示可申请事实")
 	}
-	request("POST", "/api/site/orders/returns", "application/json", strings.Replace(body, requestID, uuid.NewString(), 1), csrf, 400)
+	otherRequest := baseReturnForm()
+	otherRequest.Set("requestId", uuid.NewString())
+	request("POST", "/api/site/orders/returns", "application/x-www-form-urlencoded", otherRequest.Encode(), csrf, 400)
 
 	cookies = map[string]*http.Cookie{}
 	request("GET", "/api/site/user/session", "", "", "", 200)
 	login("order-json-other@example.com")
-	foreignReplay := request("POST", "/api/site/orders/returns", "application/json", body, csrf, 404)
+	foreignReplay := request("POST", "/api/site/orders/returns", "application/x-www-form-urlencoded", baseReturnForm().Encode(), csrf, 404)
 	if foreignReplay.Body.String() != notFound {
 		t.Fatal("已知幂等键不能探测他人申请")
 	}

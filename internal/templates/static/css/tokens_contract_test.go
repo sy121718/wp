@@ -7,9 +7,11 @@ import (
 	"testing"
 )
 
+// theme.css 的属主是 pkg/view/ui/assets/css（公共 UI 资产），应用侧不再保留副本。
+// 测试从实体所在处读，避免资产搬迁后留下一条永远读不到文件的死断言。
 func readTheme(t *testing.T) string {
 	t.Helper()
-	b, err := os.ReadFile("theme.css")
+	b, err := os.ReadFile("../../../../pkg/view/ui/assets/css/theme.css")
 	if err != nil {
 		t.Fatalf("读 theme.css 失败: %v", err)
 	}

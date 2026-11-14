@@ -24,6 +24,7 @@ import (
 	"go_wp/pkg/builder/core"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
+	"go_wp/pkg/richtext"
 	seoutil "go_wp/pkg/seo"
 	"go_wp/pkg/upload"
 )
@@ -562,11 +563,11 @@ var blockBoundaryRe = regexp.MustCompile(`(?i)</(p|div|li|h[1-6]|tr|td|th|blockq
 
 func seoPlainText(v string) string {
 	v = strings.TrimSpace(v)
-	if v == "" || !core.HasRichMarkup(v) {
+	if v == "" || !richtext.HasRichMarkup(v) {
 		return v
 	}
 	v = blockBoundaryRe.ReplaceAllString(v, " ")
-	return strings.TrimSpace(core.StripRichTags(v))
+	return strings.TrimSpace(richtext.StripRichTags(v))
 }
 
 func seoDescriptionText(v string) string {

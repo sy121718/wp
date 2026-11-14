@@ -82,15 +82,16 @@ func (h *Handle) Move(c *gin.Context) {
 // UpdateTranslations 是译文批量的明确 JSON 输入（行是 context/hash/target 三元组）。
 func (h *Handle) UpdateTranslations(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	env, ok := binding.JSON[navigationdto.UpdateEnvelope](c)
-	if !ok {
+	var env navigationdto.UpdateEnvelope
+	if err := c.ShouldBindJSON(&env); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, navigationErrScene, navigationenums.Err(navigationenums.ErrInvalidParam))
 		return
 	}
 	if err := env.Validate(); err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, navigationErrScene, navigationenums.Err(navigationenums.ErrInvalidParam))
 		return
 	}
-	h.updateTranslations(c, env)
+	h.updateTranslations(c, &env)
 }
 
 func (h *Handle) updateTranslations(c *gin.Context, env *navigationdto.UpdateEnvelope) {

@@ -557,17 +557,20 @@ func (s *Service) buildAndStoreDataRuleSnapshot(ctx context.Context) (*dataruleS
 	return snap, nil
 }
 
-func (s *Service) StartDataRuleSnapshotAutoRefresh(ctx context.Context) {
+// 返回的 stop 等待循环退出：调用方必须在关闭数据库之前调用它。
+func (s *Service) StartDataRuleSnapshotAutoRefresh(ctx context.Context) func() {
 	if s == nil || s.ruleSnapshot == nil {
-		return
+		return func() {}
 	}
 	if utils.IsTestProcess() {
-		return
+		return func() {}
 	}
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	done := make(chan struct{})
 	go func() {
+		defer close(done)
 		ticker := time.NewTicker(DataRuleSnapshotRefreshInterval)
 		defer ticker.Stop()
 		for {
@@ -583,6 +586,7 @@ func (s *Service) StartDataRuleSnapshotAutoRefresh(ctx context.Context) {
 			}
 		}
 	}()
+	return func() { <-done }
 }
 
 func (s *Service) reloadDataRuleSnapshot(ctx context.Context, trigger string) {

@@ -15,7 +15,8 @@
 {* 拿不到侧栏导航所需的 NavGroups，故自带最小外壳与返回后台的链接。 *}
 {{import "../partials/bulk_bar.html"}}
 {{tr := .["t"]}}
-{{pagePath := .PagePath}}
+{* 写端点直接写字面量：它必须是可静态对账的本站路径。经由 Jet 变量中转时，
+   扫描器只看到变量拼接、无法判定端点，字段门禁只能报未检查。 *}
 {{csrfToken := .["csrf_token"]}}
 {{selectedProject := .SelectedProject}}
 {{errKey := .ErrKey}}
@@ -50,7 +51,7 @@
                 </div>
                 <div class="page-actions">
                     {{if len(projects) > 1}}
-                    <form class="page-context" method="get" action="{{pagePath}}">
+                    <form class="page-context" method="get" action="/api/page/redirect">
                         <label class="sr-only" for="project-select">{{tr("admin.redirect.label.project", "站点")}}</label>
                         <select class="form-select" id="project-select" name="project" onchange="this.form.submit()">
                             {{range _, p := projects}}
@@ -184,14 +185,14 @@
 
             {* 行内表单放表格外：HTML 不允许 form 嵌套，塞进 <td> 会被解析器提前闭合表格。 *}
             {{range i, it := items}}
-            <form id="redirect-del-{{i}}" class="hidden-form" method="post" action="{{pagePath}}/delete?project={{selectedProject}}"
+            <form id="redirect-del-{{i}}" class="hidden-form" method="post" action="/api/page/redirect/delete?project={{selectedProject}}"
                   data-confirm="{{tr("admin.redirect.msg.delete_confirm", "删除这条重定向？旧路径将直接返回 404（可以再手动加回来）。")}}" data-confirm-danger>
                 <input type="hidden" name="csrf_token" value="{{csrfToken}}">
                 <input type="hidden" name="project" value="{{selectedProject}}">
                 <input type="hidden" name="path" value="{{it.SourcePath}}">
             </form>
             {{if it.MultiHop}}
-            <form id="redirect-merge-{{i}}" class="hidden-form" method="post" action="{{pagePath}}/merge?project={{selectedProject}}">
+            <form id="redirect-merge-{{i}}" class="hidden-form" method="post" action="/api/page/redirect/merge?project={{selectedProject}}">
                 <input type="hidden" name="csrf_token" value="{{csrfToken}}">
                 <input type="hidden" name="project" value="{{selectedProject}}">
                 <input type="hidden" name="path" value="{{it.SourcePath}}">
@@ -220,7 +221,7 @@
                     {{if createFailed}}
                     <p class="badge badge-danger" role="alert">{{tr(errKey, "操作未完成")}}</p>
                     {{end}}
-                    <form method="post" action="{{pagePath}}/create?project={{selectedProject}}">
+                    <form method="post" action="/api/page/redirect/create?project={{selectedProject}}">
                         <input type="hidden" name="csrf_token" value="{{csrfToken}}">
                         <input type="hidden" name="project" value="{{selectedProject}}">
                         <div class="form-row"><div class="form-group">

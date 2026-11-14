@@ -179,18 +179,6 @@ func (h *blockPageHandle) SaveBlockContent(c *gin.Context) {
 
 const blockErrScene = "block"
 
-func blockErrFact(c *gin.Context, err error) pageview.ErrFact {
-	return pageview.PageErrorFactQuiet(c, blockErrScene, err)
-}
-
-func blockErrText(c *gin.Context, err error) string {
-	if err == nil {
-
-		return response.MsgText(c, pageview.InternalMsg())
-	}
-	return pageview.ErrorFactText(c, blockErrFact(c, err))
-}
-
 const blockStalePageLimit = 8
 
 var (

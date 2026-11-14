@@ -306,8 +306,9 @@ func TestNavigationDeleteBulkMixedIDsRejectsWholeBatch(t *testing.T) {
 	if !strings.Contains(body, `data-ui-error`) {
 		t.Fatalf("整批拒绝应渲染共享错误片段：%s", body)
 	}
-	if strings.Contains(body, "<ul>") || strings.Contains(body, missing) {
-		t.Fatalf("失败区不逐条列明细（明细只进 data.items）：%s", body)
+	// 明细必须可定位：HTML 响应里就要看到缺失的 id。
+	if !strings.Contains(body, missing) {
+		t.Fatalf("整批拒绝应给出可定位明细：%s", body)
 	}
 	for _, id := range []string{goneA, goneB, kept} {
 		if !navItemExists(t, env, id) {
@@ -418,7 +419,7 @@ func TestNavigationDeleteBulkRejectsNonUUIDInRequestLanguage(t *testing.T) {
 
 	const badID = "not-a-uuid"
 
-	// 多项请求：主消息是公共整批文案，具体原因只进 data.items。
+	// 多项请求：主消息是公共整批文案，具体原因也要能在本响应里定位。
 	for _, tc := range []struct{ name, lang, wantInvalid string }{
 		{"中文", "zh-CN", "合成-整批未执行"},
 		{"英文", "en-US", "synth-batch-rejected"},
@@ -432,11 +433,12 @@ func TestNavigationDeleteBulkRejectsNonUUIDInRequestLanguage(t *testing.T) {
 				t.Fatalf("含非 uuid 的整批应按参数错误 400，实际 %d: %s", recorder.Code, recorder.Body.String())
 			}
 			body := recorder.Body.String()
-			if !strings.Contains(body, tc.wantInvalid) || strings.Contains(body, "合成-参数无效") {
+			// 主消息是公共整批文案；逐条原因作为明细同时出现（不挤进主句）。
+			if !strings.Contains(body, tc.wantInvalid) {
 				t.Fatalf("%s 多项请求的主消息应为公共整批文案 %q，实际 %s", tc.lang, tc.wantInvalid, body)
 			}
-			if strings.Contains(body, "<ul>") || strings.Contains(body, badID) {
-				t.Fatalf("失败区不逐条列明细：%s", body)
+			if !strings.Contains(body, badID) {
+				t.Fatalf("整批拒绝应给出可定位明细（缺失的 id）：%s", body)
 			}
 			navAssertNoLeak(t, body)
 			if !navItemExists(t, env, gone) {

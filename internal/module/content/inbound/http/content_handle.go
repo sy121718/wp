@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	ginbinding "github.com/gin-gonic/gin/binding"
 
 	contentcontract "go_wp/internal/module/content/contract"
 	contentdto "go_wp/internal/module/content/dto"
@@ -92,11 +93,12 @@ func articleLinkSuggestions(ctx context.Context, h *articlePageHandle, projectID
 
 // bindArticleLinkRequest 绑定内链建议表单；失败按「没有建议」的既有口径兜底。
 func bindArticleLinkRequest(c *gin.Context) (*contentdto.ArticleLinkReq, bool) {
-	form, err := binding.ParseForm[contentdto.ArticleLinkReq](c)
-	if err != nil {
+	var form contentdto.ArticleLinkReq
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
 		return nil, false
 	}
-	return form, true
+	form.Normalize()
+	return &form, true
 }
 
 func (h *articlePageHandle) linkSuggestProjectID(ctx context.Context, formProjectID string) (string, bool) {
@@ -124,11 +126,12 @@ func NewHandle(svc contentcontract.ContentService) *Handle { return &Handle{svc:
 func (h *Handle) SetCollectionSchemas(p core.CollectionSchemaProvider) { h.collections = p }
 
 func (h *Handle) Create(c *gin.Context) {
-	req, ok := binding.JSON[contentdto.CreateReq](c)
-	if !ok {
+	var req contentdto.CreateReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ParamError(c)
 		return
 	}
-	res, err := h.svc.Create(c.Request.Context(), req)
+	res, err := h.svc.Create(c.Request.Context(), &req)
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "content", err)
 		return
@@ -137,11 +140,12 @@ func (h *Handle) Create(c *gin.Context) {
 }
 
 func (h *Handle) Update(c *gin.Context) {
-	req, ok := binding.JSON[contentdto.UpdateReq](c)
-	if !ok {
+	var req contentdto.UpdateReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ParamError(c)
 		return
 	}
-	res, err := h.svc.Update(c.Request.Context(), req)
+	res, err := h.svc.Update(c.Request.Context(), &req)
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "content", err)
 		return
@@ -150,8 +154,9 @@ func (h *Handle) Update(c *gin.Context) {
 }
 
 func (h *Handle) Get(c *gin.Context) {
-	req, ok := binding.Form[contentdto.GetReq](c)
-	if !ok {
+	req, err := binding.ParseForm[contentdto.GetReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	res, err := h.svc.Get(c.Request.Context(), req)
@@ -163,8 +168,9 @@ func (h *Handle) Get(c *gin.Context) {
 }
 
 func (h *Handle) List(c *gin.Context) {
-	req, ok := binding.Form[contentdto.ListReq](c)
-	if !ok {
+	req, err := binding.ParseForm[contentdto.ListReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	list, err := h.svc.List(c.Request.Context(), req)
@@ -220,8 +226,9 @@ func collectionSchemasForJSON(c *gin.Context, items []core.CollectionSchema) []c
 }
 
 func (h *Handle) Delete(c *gin.Context) {
-	req, ok := binding.Form[contentdto.DeleteReq](c)
-	if !ok {
+	req, err := binding.ParseForm[contentdto.DeleteReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	if err := h.svc.Delete(c.Request.Context(), req); err != nil {

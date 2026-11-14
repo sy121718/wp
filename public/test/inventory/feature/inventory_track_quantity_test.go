@@ -555,6 +555,8 @@ func newTrackQuantityPageEngine(t *testing.T) (*gin.Engine, *invFixture) {
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(templateRoot(), true)
 	// 生产装配在基础层挂失败出口与请求取词；缺了它们片段渲染为空。
+	engine.Use(pageview.UseSuccess(pageview.NewSuccessWriter()))
+	engine.Use(pageview.FailureMiddleware(pageview.RenderFailure))
 	engine.Use(pageview.FailureMiddleware(pageview.RenderFailure))
 	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	engine.Use(func(c *gin.Context) {

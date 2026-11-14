@@ -401,8 +401,10 @@ func TestTaxonomyPermissionsAndMenusSeeded(t *testing.T) {
 		  AND (permission_code LIKE 'product:category_%' OR permission_code LIKE 'product:brand_%')`).Scan(&n).Error; err != nil {
 		t.Fatalf("查询权限点失败: %v", err)
 	}
-	if n != 10 {
-		t.Fatalf("迁移 089 应 seed 10 个分类/品牌权限点，实际 %d", n)
+	// 089 播种 10 个基础分类/品牌权限点；743 权限目录回补又补了
+	// brand_seo_score / category_parents / category_bulk_delete / brand_bulk_delete / category_seo_score。
+	if n != 15 {
+		t.Fatalf("分类/品牌应有 15 个权限点（089 的 10 个 + 743 回补的 5 个），实际 %d", n)
 	}
 	if err := f.db.Raw(`SELECT COUNT(*) FROM sys_menus
 		WHERE type = 2 AND title IN ('商品分类', '商品品牌') AND deleted_at IS NULL`).Scan(&n).Error; err != nil {

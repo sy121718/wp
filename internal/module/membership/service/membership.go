@@ -3,6 +3,7 @@ package membershipservice
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"gorm.io/gorm"
@@ -10,6 +11,7 @@ import (
 	"go_wp/internal/module/membership/dto"
 	"go_wp/internal/module/membership/enums"
 	"go_wp/internal/module/membership/model"
+	"go_wp/pkg/lifecycle"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/utils"
 )
@@ -263,39 +265,69 @@ func (s *Service) RecalcAllProjects(ctx context.Context) (total *membershipdto.R
 	return total, lastErr
 }
 
-func (s *Service) StartRecalcScheduler() {
+// StartRecalcScheduler 启动会员归属日结；返回的 stop 取消循环并等待在途一轮结束。
+//
+// ctx 是进程/装配级上下文：收尾时先 cancel，再 stop 等待，最后关数据库。
+// 每轮超时从父 ctx 派生，取消后不再启动新轮。
+func (s *Service) StartRecalcScheduler(ctx context.Context) func() {
 	if utils.IsTestProcess() {
-		return
+		return func() {}
 	}
 	if s == nil {
-		return
+		return func() {}
 	}
 	if s.purchases == nil {
-
 		logger.Scene(errScene).Warn(
 			"会员归属日结未启动：消费额批量只读端口（membershipcontract.PurchaseSource）尚未注入，" +
 				"归属重算整体不可用（等订单侧接线后调用 SetPurchaseSource + StartRecalcScheduler）")
-		return
+		return func() {}
 	}
-	s.recalcOnce.Do(func() {
-		go func() {
-			run := func() {
-				ctx, cancel := context.WithTimeout(context.Background(), recalcTimeout)
-				defer cancel()
-				res, err := s.RecalcAllProjects(ctx)
-				if err != nil {
-					logger.Scene(errScene).Error(err, "会员归属日结执行失败（部分工程已跳过）")
-				}
-				logger.Scene(errScene).
-					With("scanned", res.Scanned).With("changed", res.Changed).With("skipped", res.Skipped).
-					Info("会员归属日结完成")
-			}
-			run()
-			ticker := time.NewTicker(recalcInterval)
-			defer ticker.Stop()
-			for range ticker.C {
-				run()
-			}
-		}()
-	})
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	// 停止句柄归实例持有：重复 Start 返回同一幂等句柄，不会启动第二个循环。
+	s.recalcMu.Lock()
+	defer s.recalcMu.Unlock()
+	if s.recalcStop != nil {
+		return s.recalcStop
+	}
+
+	s.recalcStop = startRecalcLoop(ctx, recalcInterval, s.runRecalcRound)
+	return s.recalcStop
+}
+
+// runRecalcRound 是日结的一轮业务：每轮超时由循环原语从父 ctx 派生。
+func (s *Service) runRecalcRound(runCtx context.Context) {
+	res, err := s.RecalcAllProjects(runCtx)
+	if err != nil {
+		logger.Scene(errScene).Error(err, "会员归属日结执行失败（部分工程已跳过）")
+	}
+	logger.Scene(errScene).
+		With("scanned", res.Scanned).With("changed", res.Changed).With("skipped", res.Skipped).
+		Info("会员归属日结完成")
+}
+
+// startRecalcLoop 启动可等待的日结循环：返回的 stop 取消循环并等待在途一轮结束。
+//
+// 循环 ctx 从应用 ctx 派生：父 ctx 取消后不再启动新轮；
+// stop 只等任务真正退出，不因 ctx 已取消而提前返回（调用方之后才关数据库）。
+func startRecalcLoop(ctx context.Context, interval time.Duration, round func(context.Context)) func() {
+	if interval <= 0 {
+		interval = recalcInterval
+	}
+	loopCtx, cancelLoop := context.WithCancel(ctx)
+	wait := lifecycle.PeriodicTask{
+		Interval: interval,
+		Timeout:  recalcTimeout,
+		Round:    round,
+	}.Start(loopCtx)
+
+	var stopOnce sync.Once
+	return func() {
+		stopOnce.Do(func() {
+			cancelLoop()
+			wait()
+		})
+	}
 }

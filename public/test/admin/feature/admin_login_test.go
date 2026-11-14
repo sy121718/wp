@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -254,5 +255,40 @@ func TestAdminLoginSuccessReturnsCSRFToken(t *testing.T) {
 	if statusWithToken != http.StatusOK || stdLogout.Code != 200 {
 		t.Fatalf("携带登录响应 csrf_token 的 POST 应放行，got http=%d body=%s",
 			statusWithToken, recorder.Body.String())
+	}
+}
+
+// 登录端点的输入协议唯一为 JSON：表单编码不能再被悄悄接受。
+//
+// 这条用例守住「输入协议与响应协议分开」：登录响应仍是 JSON，但输入不能
+// 因为请求头不同就在两套 binder 之间切换 —— 否则契约永远是 unknown，
+// 字段门禁也就无从对账。
+func TestAdminLoginRejectsFormEncodedInput(t *testing.T) {
+	db := support.NewMigratedPGTestDB(t)
+	if err := auth.Init(viper.New()); err != nil {
+		t.Fatalf("初始化会话存储失败: %v", err)
+	}
+	t.Cleanup(func() { _ = auth.Close() })
+
+	engine, _ := newLoginEngine(t, db)
+	captchaID, code := captcha.Get().Generate()
+
+	form := url.Values{
+		"username":   {"someone"},
+		"password":   {"whatever"},
+		"captcha_id": {captchaID},
+		"captcha":    {code},
+	}
+	recorder, err := support.SendRequest(engine, support.RequestOptions{
+		Method:  http.MethodPost,
+		Path:    "/api/admin/login",
+		RawBody: []byte(form.Encode()),
+		Headers: map[string]string{"Content-Type": "application/x-www-form-urlencoded"},
+	})
+	if err != nil {
+		t.Fatalf("请求失败: %v", err)
+	}
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("表单编码应被拒为 400（协议唯一为 JSON），实际 %d: %s", recorder.Code, recorder.Body.String())
 	}
 }

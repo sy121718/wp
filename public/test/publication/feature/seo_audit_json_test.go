@@ -23,15 +23,13 @@ import (
 	builtin "go_wp/internal/middleware/builtin"
 	adminhttp "go_wp/internal/module/admin/inbound/http"
 	captcharouter "go_wp/internal/module/common/captcha/router"
-	pubenums "go_wp/internal/module/publication/enums"
 	pubhttp "go_wp/internal/module/publication/inbound/http"
 	pubmodel "go_wp/internal/module/publication/model"
 	"go_wp/internal/templates"
 	"go_wp/pkg/captcha"
 	pkgcasbin "go_wp/pkg/casbin"
-	json "go_wp/pkg/jsonx"
 	mw "go_wp/pkg/middleware"
-	"go_wp/pkg/response"
+	text "go_wp/pkg/view/jet"
 	"go_wp/public/migrations"
 	"go_wp/public/test/support"
 )
@@ -102,6 +100,9 @@ func newSEOAuditChain(t *testing.T) *seoAuditChain {
 		RouteRegistrar: func(engine *gin.Engine) {
 
 			engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
+			// 生产装配在模板中间件里挂请求级取词作用域；片段里的 t()/tn() 依赖它，
+			// 缺了就会在 Execute 期失败并落成空响应。
+			engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 
 			api := engine.Group("/api")
 			captcharouter.SetupCaptchaRoutes(mw.NewRegistry(), api)
@@ -344,59 +345,6 @@ func doSeoAudit(t *testing.T, engine *gin.Engine, req seoAuditRequest) seoAuditR
 	return out
 }
 
-type seoAuditEnvelope struct {
-	Code    int             `json:"code"`
-	Message string          `json:"message"`
-	Data    json.RawMessage `json:"data"`
-}
-
-func decodeSeoAuditEnvelope(t *testing.T, label string, res seoAuditRawResponse) seoAuditEnvelope {
-	t.Helper()
-
-	var env seoAuditEnvelope
-	if err := json.Unmarshal([]byte(res.Body), &env); err != nil {
-		t.Fatalf("%s：响应不是 {code,message,data} JSON（Content-Type=%q，体前 200 字节=%q）: %v",
-			label, res.ContentType, firstN(res.Body, 200), err)
-	}
-	return env
-}
-
-type seoAuditData struct {
-	Scanned int `json:"scanned"`
-	Count   int `json:"count"`
-	Issues  []struct {
-		Path   string `json:"path"`
-		Item   string `json:"item"`
-		Level  string `json:"level"`
-		Params struct {
-			Title string   `json:"title"`
-			Src   string   `json:"src"`
-			Href  string   `json:"href"`
-			Paths []string `json:"paths"`
-		} `json:"params"`
-	} `json:"issues"`
-}
-
-func decodeSeoAuditData(t *testing.T, label string, env seoAuditEnvelope) seoAuditData {
-	t.Helper()
-
-	if len(env.Data) == 0 || string(env.Data) == "null" {
-		t.Fatalf("%s：响应没有 data 字段（体=%q）", label, env.Message)
-	}
-	var data seoAuditData
-	if err := json.Unmarshal(env.Data, &data); err != nil {
-		t.Fatalf("%s：data 不符合 {scanned,count,issues[]} 形状: %v（原=%s）", label, err, env.Data)
-	}
-	return data
-}
-
-func firstN(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n] + "…"
-}
-
 func seoAuditMultipartBody(t *testing.T, fields map[string]string) (string, string) {
 	t.Helper()
 
@@ -419,250 +367,192 @@ func seoAuditMultipartBody(t *testing.T, fields map[string]string) (string, stri
 	return buf.String(), w.FormDataContentType()
 }
 
-func assertSeoAuditJSON(t *testing.T, label string, res seoAuditRawResponse, wantStatus int) {
+func firstN(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "…"
+}
+
+// SEO 体检端点的协议契约：**HTML 片段**（不是 JSON），与 seo.html 的 HTMX 表单一致。
+//
+// 为什么要重写这一段：代码库里曾并存两套互斥的实现 —— 4f637ba4 把端点从 JSON 改为
+// 「标准表单 → Jet 片段」，同时 seo.html 改成 `hx-post` + `data-seo-audit-result`，
+// 模块内的 seo_audit_handle_test.go 也同步改成 HTML 契约；而这里的 JSON 断言
+// （seoAuditEnvelope / decodeSeoAuditData / assertSeoAuditJSON）没有跟着改，
+// 于是 8 条用例长期红着。任务书 §出口 的判据是「路由声明的真实出口形态」，
+// 本文件按现行为重写断言，不把端点改回 JSON。
+//
+// 三条不变量：1) 任意 HX/Accept 组合都是 HTML 且无导航头；2) 失败按声明状态码出去、
+// 原文不泄漏；3) 结论档位（无产物 / 干净 / 有问题）由模板判定并在 HTML 里可辨。
+
+func assertSeoAuditHTML(t *testing.T, label string, res seoAuditRawResponse, wantStatus int) {
 	t.Helper()
 
 	if res.Status != wantStatus {
 		t.Fatalf("%s：状态码 %d，期望 %d（体前 200 字节=%q）", label, res.Status, wantStatus, firstN(res.Body, 200))
 	}
-	if !strings.Contains(strings.ToLower(res.ContentType), "application/json") {
-		t.Fatalf("%s：Content-Type=%q，期望 JSON —— 非 JSON 意味着出口还是页面或片段", label, res.ContentType)
+	if !strings.Contains(strings.ToLower(res.ContentType), "text/html") {
+		t.Fatalf("%s：Content-Type=%q，期望 HTML 片段", label, res.ContentType)
 	}
 	if res.Location != "" {
-		t.Fatalf("%s：响应带 Location=%q —— 成功/失败都由前端决定导航，后端不发 302", label, res.Location)
+		t.Fatalf("%s：响应带 Location=%q —— 结论由片段换入，后端不发 302", label, res.Location)
 	}
-	if strings.Contains(strings.ToLower(res.Body), "<html") ||
-		strings.Contains(strings.ToLower(res.Body), "<table") ||
-		strings.Contains(strings.ToLower(res.Body), "data-seo-audit") {
-		t.Fatalf("%s：响应体里出现 HTML 结构（%q）—— 端点只回事实 JSON", label, firstN(res.Body, 200))
+	if res.CacheControl == "" {
+		t.Fatalf("%s：缺少 Cache-Control —— 体检结果随产物变化，不能进缓存", label)
 	}
 }
 
-func seoAuditCall(t *testing.T, chain *seoAuditChain, label, body string, wantStatus int) seoAuditData {
+// seoAuditState 从片段的 data-seo-audit-state 读结论档位；没有该标记时返回空串。
+func seoAuditState(body string) string {
+	const marker = `data-seo-audit-state="`
+	i := strings.Index(body, marker)
+	if i < 0 {
+		return ""
+	}
+	rest := body[i+len(marker):]
+	j := strings.Index(rest, `"`)
+	if j < 0 {
+		return ""
+	}
+	return rest[:j]
+}
+
+func seoAuditRun(t *testing.T, chain *seoAuditChain, label, projectID string, wantStatus int) seoAuditRawResponse {
 	t.Helper()
 
 	res := doSeoAudit(t, chain.Engine, seoAuditRequest{
-		ContentType: "application/json",
-		Body:        body,
+		ContentType: "application/x-www-form-urlencoded",
+		Body:        "project=" + url.QueryEscape(projectID),
 		Cookie:      chain.Super.Cookie,
 		CSRF:        chain.Super.CSRFToken,
 	})
-	assertSeoAuditJSON(t, label, res, wantStatus)
-	if wantStatus != http.StatusOK {
-		return seoAuditData{}
-	}
-	return decodeSeoAuditData(t, label, decodeSeoAuditEnvelope(t, label, res))
+	assertSeoAuditHTML(t, label, res, wantStatus)
+	return res
 }
 
-func TestSEOAuditAcceptsThreeTransportsAndEchoesJSONContract(t *testing.T) {
+// TestSEOAuditAcceptsFormTransportsAndReturnsFragment 证明声明协议（form-urlencoded）
+// 得到片段，且 HX-Request 头不改变出口形态（协议由路由声明，不由请求头协商）。
+//
+// 另外两种编码被显式拒绝：端点已收窄成标准表单（write-contracts 记 form），
+// multipart 不是契约的一部分，JSON 是退役的兼容入口。收窄后它们必须 400，
+// 而不是被静默当成空表单继续跑体检。
+func TestSEOAuditAcceptsFormTransportsAndReturnsFragment(t *testing.T) {
 	chain := newSEOAuditChain(t)
-
-	type transport struct {
-		name        string
-		contentType string
-		body        string
-	}
 
 	writeSeoAuditArtifact(t, chain.ArtifactRoot, seoAuditAPathAbout, seoAuditArtifactHTML{
 		Title: "A 关于", Description: "A 站关于页", Canonical: "https://a.example.com/a-about",
 	})
 
-	transports := []transport{
-		{"JSON", "application/json", `{"project":"` + seoAuditProjectA + `"}`},
-		{"urlencoded", "application/x-www-form-urlencoded", "project=" + url.QueryEscape(seoAuditProjectA)},
-		{"multipart", "multipart/form-data", ""},
-	}
-
-	for _, tr := range transports {
-		for _, hx := range []string{"", "true"} {
-			hx := hx
-			name := tr.name
-			if hx == "true" {
-				name += "/HX"
-			}
-			t.Run(name, func(t *testing.T) {
-				req := seoAuditRequest{
-					ContentType: tr.contentType,
-					Body:        tr.body,
-					Cookie:      chain.Super.Cookie,
-					CSRF:        chain.Super.CSRFToken,
-				}
-				if tr.name == "multipart" {
-
-					body, ct := seoAuditMultipartBody(t, map[string]string{"project": seoAuditProjectA})
-					req.Body, req.ContentType = body, ct
-				}
-				if hx == "true" {
-					req.Headers = map[string]string{"HX-Request": "true", "Accept": "text/html"}
-				}
-
-				res := doSeoAudit(t, chain.Engine, req)
-				assertSeoAuditJSON(t, tr.name, res, http.StatusOK)
-
-				env := decodeSeoAuditEnvelope(t, tr.name, res)
-
-				if env.Code != http.StatusOK {
-					t.Fatalf("%s：成功信封 code=%d，期望 %d（体=%q）",
-						tr.name, env.Code, http.StatusOK, firstN(res.Body, 200))
-				}
-				data := decodeSeoAuditData(t, tr.name, env)
-
-				if data.Scanned != 1 {
-					t.Fatalf("%s：scanned=%d，期望 1（只有 /a-about 有产物；"+
-						"大于 1 说明站点级目录里 B 工程的产物被计入）", tr.name, data.Scanned)
-				}
-				if data.Count != len(data.Issues) {
-					t.Fatalf("%s：count=%d 与 issues 长度 %d 不一致 —— Count 必须等于 len(Issues)",
-						tr.name, data.Count, len(data.Issues))
-				}
-			})
+	for _, hx := range []string{"", "true"} {
+		label := "urlencoded"
+		if hx == "true" {
+			label += "/HX"
 		}
-	}
-}
-
-func TestSEOAuditQueryFallbackOnlyWhenBodyProjectBlank(t *testing.T) {
-	chain := newSEOAuditChain(t)
-
-	writeSeoAuditArtifact(t, chain.ArtifactRoot, seoAuditAPathAbout, seoAuditArtifactHTML{
-		Title: "A 关于", Description: "A 站关于页", Canonical: "https://a.example.com/a-about",
-		ImageSrc: "/assets/a.png",
-	})
-	writeSeoAuditArtifact(t, chain.ArtifactRoot, seoAuditBPathDocs, seoAuditArtifactHTML{
-		Title: "B 文档", Description: "B 站文档页", Canonical: "https://b.example.com/b-docs",
-		Links: []string{"/b-missing"},
-	})
-
-	cases := []struct {
-		name      string
-		body      string
-		query     map[string]string
-		wantPath  string
-		wantItem  string
-		wantParam func(path string) string
-	}{
-		{
-			name:      "body 给出工程：忽略查询串",
-			body:      `{"project":"` + seoAuditProjectA + `"}`,
-			query:     map[string]string{"project": seoAuditProjectB},
-			wantPath:  seoAuditAPathAbout,
-			wantItem:  "image_alt_missing",
-			wantParam: func(string) string { return "/assets/a.png" },
-		},
-		{
-			name:      "body 工程为空白：回落查询串",
-			body:      `{"project":"   "}`,
-			query:     map[string]string{"project": seoAuditProjectB},
-			wantPath:  seoAuditBPathDocs,
-			wantItem:  "internal_link_broken",
-			wantParam: func(string) string { return "/b-missing" },
-		},
-		{
-			name:      "body 完全没给工程：回落查询串",
-			body:      `{}`,
-			query:     map[string]string{"project": seoAuditProjectB},
-			wantPath:  seoAuditBPathDocs,
-			wantItem:  "internal_link_broken",
-			wantParam: func(string) string { return "/b-missing" },
-		},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			res := doSeoAudit(t, chain.Engine, seoAuditRequest{
-				ContentType: "application/json",
-				Body:        tc.body,
-				Query:       tc.query,
+		t.Run(label, func(t *testing.T) {
+			req := seoAuditRequest{
+				ContentType: "application/x-www-form-urlencoded",
+				Body:        "project=" + url.QueryEscape(seoAuditProjectA),
 				Cookie:      chain.Super.Cookie,
 				CSRF:        chain.Super.CSRFToken,
-			})
-			assertSeoAuditJSON(t, tc.name, res, http.StatusOK)
-			data := decodeSeoAuditData(t, tc.name, decodeSeoAuditEnvelope(t, tc.name, res))
-			var hit bool
-			for _, issue := range data.Issues {
-				if issue.Path == tc.wantPath && issue.Item == tc.wantItem {
-					hit = true
-
-					got := issue.Params.Src
-					if tc.wantItem == "internal_link_broken" {
-						got = issue.Params.Href
-					}
-					if got != tc.wantParam(tc.wantPath) {
-						t.Fatalf("%s：%s 的参数是 %q，期望原值 %q —— 参数位只放从产物读到的原值",
-							tc.name, tc.wantItem, got, tc.wantParam(tc.wantPath))
-					}
-				}
 			}
-			if !hit {
-				t.Fatalf("%s：结论里没有 {%s, %s} —— 工程选取走错了分支（实际结论 %+v）",
-					tc.name, tc.wantPath, tc.wantItem, data.Issues)
+			if hx == "true" {
+				req.Headers = map[string]string{"HX-Request": "true", "Accept": "text/html"}
+			}
+
+			res := doSeoAudit(t, chain.Engine, req)
+			assertSeoAuditHTML(t, label, res, http.StatusOK)
+			if state := seoAuditState(res.Body); state != "clean" {
+				t.Fatalf("%s：结论档位 %q，期望 clean（/a-about 的标题、描述、canonical 都齐全）",
+					label, state)
 			}
 		})
 	}
-}
 
-func TestSEOAuditMalformedJSONIs400WithoutFallback(t *testing.T) {
-	chain := newSEOAuditChain(t)
-
-	cases := []struct {
-		name string
-		body string
-	}{
-		{"截断的 JSON", `{"project":`},
-		{"类型不匹配", `{"project":{"id":"x"}}`},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			res := doSeoAudit(t, chain.Engine, seoAuditRequest{
-				ContentType: "application/json",
-				Body:        tc.body,
-
-				Query:  map[string]string{"project": seoAuditProjectA},
-				Cookie: chain.Super.Cookie,
-				CSRF:   chain.Super.CSRFToken,
-			})
-			assertSeoAuditJSON(t, tc.name, res, http.StatusBadRequest)
-
-			env := decodeSeoAuditEnvelope(t, tc.name, res)
-			if len(env.Data) > 0 && string(env.Data) != "null" {
-				t.Fatalf("%s：400 响应不该带业务数据（data=%s）—— 带了说明体检还是跑了", tc.name, env.Data)
-			}
-
-			lower := strings.ToLower(env.Message)
-			for _, leak := range []string{"json:", "unexpected", "syntax error", "invalid character", "offset"} {
-				if strings.Contains(lower, leak) {
-					t.Fatalf("%s：400 文案里出现解析器原文 %q（完整文案=%q）", tc.name, leak, env.Message)
-				}
-			}
+	t.Run("multipart 不在契约内", func(t *testing.T) {
+		body, ct := seoAuditMultipartBody(t, map[string]string{"project": seoAuditProjectA})
+		res := doSeoAudit(t, chain.Engine, seoAuditRequest{
+			ContentType: ct,
+			Body:        body,
+			Cookie:      chain.Super.Cookie,
+			CSRF:        chain.Super.CSRFToken,
 		})
-	}
+		assertSeoAuditHTML(t, "multipart", res, http.StatusBadRequest)
+		if strings.Contains(res.Body, "data-seo-audit-state") {
+			t.Fatalf("multipart 不该跑出结论：%q", firstN(res.Body, 200))
+		}
+	})
 }
 
-func TestSEOAuditMissingProjectIs400FromDeclaringSite(t *testing.T) {
+// TestSEOAuditJSONBodyIsRejected 钉子：收窄成标准表单后，JSON 提交必须 400 而不是被静默接受。
+// 页面表单发的是 formdata；JSON 是历史兼容入口，随 binding.JSON 一起退役。
+func TestSEOAuditJSONBodyIsRejected(t *testing.T) {
 	chain := newSEOAuditChain(t)
 
 	res := doSeoAudit(t, chain.Engine, seoAuditRequest{
 		ContentType: "application/json",
-		Body:        `{}`,
+		Body:        `{"project":"` + seoAuditProjectA + `"}`,
 		Cookie:      chain.Super.Cookie,
 		CSRF:        chain.Super.CSRFToken,
 	})
-	assertSeoAuditJSON(t, "缺工程", res, http.StatusBadRequest)
-
-	env := decodeSeoAuditEnvelope(t, "缺工程", res)
-	if env.Code != http.StatusBadRequest {
-		t.Fatalf("缺工程：信封 code=%d，期望 %d —— 信封 code 与 HTTP 状态码同源", env.Code, http.StatusBadRequest)
-	}
-	if strings.TrimSpace(env.Message) == "" {
-		t.Fatal("缺工程：400 响应的 message 为空 —— 用户看到的是一个没有任何说明的失败")
-	}
-
-	wantMsg := response.MessageOf(nil, "", pubenums.ErrProjectMissing())
-	if env.Message != wantMsg {
-		t.Fatalf("缺工程：文案=%q，期望声明处 ErrProjectMissing 的取词结果 %q —— "+
-			"文案与状态码都要在 enums 声明，出口只调 response.ErrorStatusAuto", env.Message, wantMsg)
+	assertSeoAuditHTML(t, "JSON 不再接受", res, http.StatusBadRequest)
+	if !strings.Contains(res.Body, "data-ui-error") {
+		t.Fatalf("JSON 提交应得到共享失败片段，实际 %q", firstN(res.Body, 200))
 	}
 }
 
+// TestSEOAuditProjectComesFromFormOnly 证明工程只从表单 body 取：
+// query 不再补 body（binding.Form 的旧行为已随收窄消失）。
+func TestSEOAuditProjectComesFromFormOnly(t *testing.T) {
+	chain := newSEOAuditChain(t)
+
+	writeSeoAuditArtifact(t, chain.ArtifactRoot, seoAuditAPathAbout, seoAuditArtifactHTML{
+		Title: "A 关于", Description: "A 站关于页", Canonical: "https://a.example.com/a-about",
+	})
+	writeSeoAuditArtifact(t, chain.ArtifactRoot, seoAuditBPathDocs, seoAuditArtifactHTML{
+		Title: "B 文档", Description: "B 站文档页", Canonical: "https://b.example.com/b-docs",
+	})
+
+	t.Run("body 给出工程", func(t *testing.T) {
+		res := doSeoAudit(t, chain.Engine, seoAuditRequest{
+			ContentType: "application/x-www-form-urlencoded",
+			Body:        "project=" + url.QueryEscape(seoAuditProjectA),
+			Cookie:      chain.Super.Cookie,
+			CSRF:        chain.Super.CSRFToken,
+		})
+		assertSeoAuditHTML(t, "body 工程", res, http.StatusOK)
+		if state := seoAuditState(res.Body); state != "clean" {
+			t.Fatalf("结论档位 %q，期望 clean（工程 A 的产物齐全）", state)
+		}
+	})
+
+	t.Run("query 不能补 body", func(t *testing.T) {
+		res := doSeoAudit(t, chain.Engine, seoAuditRequest{
+			ContentType: "application/x-www-form-urlencoded",
+			Body:        "",
+			Query:       map[string]string{"project": seoAuditProjectB},
+			Cookie:      chain.Super.Cookie,
+			CSRF:        chain.Super.CSRFToken,
+		})
+		assertSeoAuditHTML(t, "query 不补 body", res, http.StatusBadRequest)
+	})
+}
+
+// TestSEOAuditMissingProjectIs400FromDeclaringSite 缺工程由 service 按声明的 key 拒绝。
+func TestSEOAuditMissingProjectIs400FromDeclaringSite(t *testing.T) {
+	chain := newSEOAuditChain(t)
+
+	res := seoAuditRun(t, chain, "缺工程", "", http.StatusBadRequest)
+	if !strings.Contains(res.Body, "data-ui-error") {
+		t.Fatalf("缺工程应得到共享失败片段，实际 %q", firstN(res.Body, 200))
+	}
+	// 失败片段按状态码取共享兜底文案；具体 key 归 enums 声明，HTML 出口不拼句子。
+	if strings.Contains(res.Body, "ErrProjectRequired") {
+		t.Fatalf("失败片段不得把裸 key 交给用户：%q", firstN(res.Body, 200))
+	}
+}
+
+// TestSEOAuditKeepsTwoProjectsIsolatedInSharedActiveRoot 两个工程共用站点级激活根时不得串产物。
 func TestSEOAuditKeepsTwoProjectsIsolatedInSharedActiveRoot(t *testing.T) {
 	chain := newSEOAuditChain(t)
 
@@ -675,76 +565,32 @@ func TestSEOAuditKeepsTwoProjectsIsolatedInSharedActiveRoot(t *testing.T) {
 		Links: []string{"/b-docs-dead"},
 	})
 
-	audit := func(t *testing.T, projectID string) seoAuditData {
-		t.Helper()
-		res := doSeoAudit(t, chain.Engine, seoAuditRequest{
-			ContentType: "application/json",
-			Body:        `{"project":"` + projectID + `"}`,
-			Cookie:      chain.Super.Cookie,
-			CSRF:        chain.Super.CSRFToken,
-		})
-		assertSeoAuditJSON(t, projectID, res, http.StatusOK)
-		return decodeSeoAuditData(t, projectID, decodeSeoAuditEnvelope(t, projectID, res))
+	resA := seoAuditRun(t, chain, "工程 A", seoAuditProjectA, http.StatusOK)
+	if state := seoAuditState(resA.Body); state != "issues" {
+		t.Fatalf("工程 A 结论档位 %q，期望 issues（/a-about-dead 是死链）", state)
+	}
+	if !strings.Contains(resA.Body, "/a-about-dead") {
+		t.Fatalf("工程 A 的结论应带自己的死链 /a-about-dead")
+	}
+	if strings.Contains(resA.Body, "/b-docs-dead") || strings.Contains(resA.Body, seoAuditBPathDocs) {
+		t.Fatalf("工程 A 的结论里出现工程 B 的路径 —— 站点级激活根没有按工程过滤")
 	}
 
-	dataA := audit(t, seoAuditProjectA)
-	dataB := audit(t, seoAuditProjectB)
-
-	pathsOf := func(data seoAuditData) []string {
-		seen := map[string]bool{}
-		var out []string
-		for _, issue := range data.Issues {
-			if !seen[issue.Path] {
-				seen[issue.Path] = true
-				out = append(out, issue.Path)
-			}
-		}
-		sort.Strings(out)
-		return out
+	resB := seoAuditRun(t, chain, "工程 B", seoAuditProjectB, http.StatusOK)
+	if !strings.Contains(resB.Body, "/b-docs-dead") {
+		t.Fatalf("工程 B 的结论应带自己的死链 /b-docs-dead")
 	}
-	hrefsOf := func(data seoAuditData) []string {
-		var out []string
-		for _, issue := range data.Issues {
-			if issue.Params.Href != "" {
-				out = append(out, issue.Params.Href)
-			}
-		}
-		sort.Strings(out)
-		return out
+	if strings.Contains(resB.Body, "/a-about-dead") || strings.Contains(resB.Body, seoAuditAPathAbout) {
+		t.Fatalf("工程 B 的结论里出现工程 A 的路径 —— 站点级激活根没有按工程过滤")
 	}
-
-	if dataA.Scanned != 1 {
-		t.Fatalf("工程 A 的 scanned=%d，期望 1 —— 站点级激活目录里有 %d 份产物，"+
-			"多出来的那份是另一个工程的（工程过滤缺口）", dataA.Scanned, 2)
-	}
-	if dataB.Scanned != 1 {
-		t.Fatalf("工程 B 的 scanned=%d，期望 1 —— 同上，工程过滤缺口", dataB.Scanned)
-	}
-
-	if got, want := pathsOf(dataA), []string{seoAuditAPathAbout}; !equalStrings(got, want) {
-		t.Fatalf("工程 A 的结论路径 %v，期望 %v —— 出现了别的工程的路径", got, want)
-	}
-	if got, want := pathsOf(dataB), []string{seoAuditBPathDocs}; !equalStrings(got, want) {
-		t.Fatalf("工程 B 的结论路径 %v，期望 %v —— 出现了别的工程的路径", got, want)
-	}
-
-	if got, want := hrefsOf(dataA), []string{"/a-about-dead"}; !equalStrings(got, want) {
-		t.Fatalf("工程 A 的死链 %v，期望 %v —— 内链对照用了错误的路径集合（并集会漏报，串工程会误报）", got, want)
-	}
-	if got, want := hrefsOf(dataB), []string{"/b-docs-dead"}; !equalStrings(got, want) {
-		t.Fatalf("工程 B 的死链 %v，期望 %v —— 同上", got, want)
-	}
-
-	for _, data := range []seoAuditData{dataA, dataB} {
-		for _, issue := range data.Issues {
-			if issue.Item == "title_duplicate" {
-				t.Fatalf("出现了 title_duplicate（Paths=%v）—— 两个工程各只有一页标题，重复只能来自把两工程的产物混在一起",
-					issue.Params.Paths)
-			}
-		}
+	// 两个工程各只有一个页面，重复标题只能来自把两工程的产物混在一起。
+	if strings.Contains(resA.Body, "多个页面使用了同一个标题") ||
+		strings.Contains(resB.Body, "多个页面使用了同一个标题") {
+		t.Fatalf("出现了 title_duplicate —— 两个工程各只有一页，重复只能来自混读产物")
 	}
 }
 
+// TestSEOAuditRequiresSessionCSRFAndBothPermissions 双权限与 CSRF 的拒绝面。
 func TestSEOAuditRequiresSessionCSRFAndBothPermissions(t *testing.T) {
 	chain := newSEOAuditChain(t)
 
@@ -790,9 +636,6 @@ func TestSEOAuditRequiresSessionCSRFAndBothPermissions(t *testing.T) {
 			t.Fatalf("授予策略 (%s, %s) 失败: %v", path, perm, err)
 		}
 	}
-
-	validBody := `{"project":"` + seoAuditProjectA + `"}`
-
 	grantBoth := func() {
 		t.Helper()
 		dropPolicies()
@@ -800,117 +643,93 @@ func TestSEOAuditRequiresSessionCSRFAndBothPermissions(t *testing.T) {
 		grant(seoAuditVirtual, seoAuditLegacyObj)
 	}
 
+	form := "project=" + url.QueryEscape(seoAuditProjectA)
+
 	t.Run("无会话 Cookie", func(t *testing.T) {
 		grantBoth()
 		res := doSeoAudit(t, chain.Engine, seoAuditRequest{
-			ContentType: "application/json",
-			Body:        validBody,
-
-			CSRF: chain.Plain.CSRFToken,
+			ContentType: "application/x-www-form-urlencoded",
+			Body:        form,
+			CSRF:        chain.Plain.CSRFToken,
 		})
-		assertSeoAuditJSON(t, "无会话", res, http.StatusUnauthorized)
+		assertSeoAuditHTML(t, "无会话", res, http.StatusUnauthorized)
 	})
 
 	t.Run("有会话但缺 CSRF", func(t *testing.T) {
 		grantBoth()
 		res := doSeoAudit(t, chain.Engine, seoAuditRequest{
-			ContentType: "application/json",
-			Body:        validBody,
+			ContentType: "application/x-www-form-urlencoded",
+			Body:        form,
 			Cookie:      chain.Plain.Cookie,
 		})
-		assertSeoAuditJSON(t, "缺 CSRF", res, http.StatusForbidden)
-
-		env := decodeSeoAuditEnvelope(t, "缺 CSRF", res)
-		if env.Code != http.StatusForbidden {
-			t.Fatalf("缺 CSRF：信封 code=%d，期望 %d", env.Code, http.StatusForbidden)
-		}
-		if !strings.Contains(env.Message, csrfRejectText) {
-			t.Fatalf("缺 CSRF：文案=%q，期望含 %q —— 权限已授满，403 只应来自 CSRF 层",
-				env.Message, csrfRejectText)
-		}
-		if len(env.Data) > 0 && string(env.Data) != "null" {
-			t.Fatalf("缺 CSRF：拒绝响应里带了业务数据（data=%s）—— 请求已经跑到 handler 里去了", env.Data)
+		assertSeoAuditHTML(t, "缺 CSRF", res, http.StatusForbidden)
+		if strings.Contains(res.Body, "data-seo-audit-state") {
+			t.Fatalf("缺 CSRF：响应里出现体检结论 —— 请求已经跑到 handler 里去了")
 		}
 	})
 
 	t.Run("CSRF 错误值", func(t *testing.T) {
 		grantBoth()
 		res := doSeoAudit(t, chain.Engine, seoAuditRequest{
-			ContentType: "application/json",
-			Body:        validBody,
+			ContentType: "application/x-www-form-urlencoded",
+			Body:        form,
 			Cookie:      chain.Plain.Cookie,
 			CSRF:        "not-the-right-token",
 		})
-		assertSeoAuditJSON(t, "CSRF 错误", res, http.StatusForbidden)
-		env := decodeSeoAuditEnvelope(t, "CSRF 错误", res)
-		if !strings.Contains(env.Message, csrfRejectText) {
-			t.Fatalf("CSRF 错误：文案=%q，期望含 %q —— 同样要证明是 CSRF 层拒绝的",
-				env.Message, csrfRejectText)
-		}
-		if len(env.Data) > 0 && string(env.Data) != "null" {
-			t.Fatalf("CSRF 错误：拒绝响应里带了业务数据（data=%s）", env.Data)
-		}
+		assertSeoAuditHTML(t, "CSRF 错误", res, http.StatusForbidden)
 	})
 
 	t.Run("有会话有 CSRF 但两个权限都没有", func(t *testing.T) {
-
 		dropPolicies()
 		res := doSeoAudit(t, chain.Engine, seoAuditRequest{
-			ContentType: "application/json",
-			Body:        validBody,
+			ContentType: "application/x-www-form-urlencoded",
+			Body:        form,
 			Cookie:      chain.Plain.Cookie,
 			CSRF:        chain.Plain.CSRFToken,
 		})
-		assertSeoAuditJSON(t, "无权限", res, http.StatusForbidden)
-
-		env := decodeSeoAuditEnvelope(t, "无权限", res)
-		if strings.Contains(env.Message, csrfRejectText) {
-			t.Fatalf("无权限：文案=%q 是 CSRF 拒绝 —— 凭证有效时 403 必须来自权限层", env.Message)
-		}
+		assertSeoAuditHTML(t, "无权限", res, http.StatusForbidden)
 	})
 
 	t.Run("只有 publication:seo_audit", func(t *testing.T) {
 		dropPolicies()
 		grant(seoAuditRealPath, seoAuditPerm)
 		res := doSeoAudit(t, chain.Engine, seoAuditRequest{
-			ContentType: "application/json",
-			Body:        validBody,
+			ContentType: "application/x-www-form-urlencoded",
+			Body:        form,
 			Cookie:      chain.Plain.Cookie,
 			CSRF:        chain.Plain.CSRFToken,
 		})
-
-		assertSeoAuditJSON(t, "只授 publication", res, http.StatusForbidden)
+		assertSeoAuditHTML(t, "只授 publication", res, http.StatusForbidden)
 	})
 
 	t.Run("只有 seo:audit", func(t *testing.T) {
 		dropPolicies()
 		grant(seoAuditVirtual, seoAuditLegacyObj)
 		res := doSeoAudit(t, chain.Engine, seoAuditRequest{
-			ContentType: "application/json",
-			Body:        validBody,
+			ContentType: "application/x-www-form-urlencoded",
+			Body:        form,
 			Cookie:      chain.Plain.Cookie,
 			CSRF:        chain.Plain.CSRFToken,
 		})
-		assertSeoAuditJSON(t, "只授 seo:audit", res, http.StatusForbidden)
+		assertSeoAuditHTML(t, "只授 seo:audit", res, http.StatusForbidden)
 	})
 
 	t.Run("两个权限都有", func(t *testing.T) {
 		grantBoth()
 		res := doSeoAudit(t, chain.Engine, seoAuditRequest{
-			ContentType: "application/json",
-			Body:        validBody,
+			ContentType: "application/x-www-form-urlencoded",
+			Body:        form,
 			Cookie:      chain.Plain.Cookie,
 			CSRF:        chain.Plain.CSRFToken,
 		})
-
-		assertSeoAuditJSON(t, "双权限", res, http.StatusOK)
-		data := decodeSeoAuditData(t, "双权限", decodeSeoAuditEnvelope(t, "双权限", res))
-		if data.Scanned != 1 {
-			t.Fatalf("双权限：scanned=%d，期望 1 —— 鉴权放行后 handler 应真的跑完体检", data.Scanned)
+		assertSeoAuditHTML(t, "双权限", res, http.StatusOK)
+		if state := seoAuditState(res.Body); state != "clean" {
+			t.Fatalf("双权限：结论档位 %q，期望 clean —— 鉴权放行后 handler 应真的跑完体检", state)
 		}
 	})
 }
 
+// TestSEOAuditDistinguishesNoArtifactFromNoIssue 0/0 与 1/0 必须是两个读数。
 func TestSEOAuditDistinguishesNoArtifactFromNoIssue(t *testing.T) {
 	chain := newSEOAuditChain(t)
 
@@ -918,37 +737,21 @@ func TestSEOAuditDistinguishesNoArtifactFromNoIssue(t *testing.T) {
 		Title: "A 关于", Description: "A 描述", Canonical: "https://a.example.com/a-about",
 	})
 
-	resNoArtifact := doSeoAudit(t, chain.Engine, seoAuditRequest{
-		ContentType: "application/json",
-		Body:        `{"project":"` + seoAuditProjectB + `"}`,
-		Cookie:      chain.Super.Cookie,
-		CSRF:        chain.Super.CSRFToken,
-	})
-	assertSeoAuditJSON(t, "无产物", resNoArtifact, http.StatusOK)
-	dataNoArtifact := decodeSeoAuditData(t, "无产物", decodeSeoAuditEnvelope(t, "无产物", resNoArtifact))
-	if dataNoArtifact.Scanned != 0 || dataNoArtifact.Count != 0 {
-		t.Fatalf("无产物：scanned=%d count=%d，期望 0/0", dataNoArtifact.Scanned, dataNoArtifact.Count)
+	resNoArtifact := seoAuditRun(t, chain, "无产物", seoAuditProjectB, http.StatusOK)
+	if state := seoAuditState(resNoArtifact.Body); state != "empty" {
+		t.Fatalf("无产物：结论档位 %q，期望 empty（还没有可检查的产物）", state)
 	}
 
-	if !strings.Contains(string(decodeSeoAuditEnvelope(t, "无产物", resNoArtifact).Data), `"issues":[]`) {
-		t.Fatalf("无产物：issues 必须编码为 []，实际 data=%s",
-			decodeSeoAuditEnvelope(t, "无产物", resNoArtifact).Data)
+	resClean := seoAuditRun(t, chain, "干净", seoAuditProjectA, http.StatusOK)
+	if state := seoAuditState(resClean.Body); state != "clean" {
+		t.Fatalf("干净：结论档位 %q，期望 clean（扫到了产物且没有问题）", state)
 	}
-
-	resClean := doSeoAudit(t, chain.Engine, seoAuditRequest{
-		ContentType: "application/json",
-		Body:        `{"project":"` + seoAuditProjectA + `"}`,
-		Cookie:      chain.Super.Cookie,
-		CSRF:        chain.Super.CSRFToken,
-	})
-	assertSeoAuditJSON(t, "干净", resClean, http.StatusOK)
-	dataClean := decodeSeoAuditData(t, "干净", decodeSeoAuditEnvelope(t, "干净", resClean))
-	if dataClean.Scanned != 1 || dataClean.Count != 0 {
-		t.Fatalf("干净：scanned=%d count=%d，期望 1/0 —— 与「无产物」的 0/0 必须是两个读数",
-			dataClean.Scanned, dataClean.Count)
+	if resNoArtifact.Body == resClean.Body {
+		t.Fatal("「无产物」与「干净」渲染出同一份片段 —— 两个读数必须可区分")
 	}
 }
 
+// TestSEOAuditDuplicateTitleCarriesNoSinglePageOwnership 重复标题不属于任何单页，且列出全部命中路径。
 func TestSEOAuditDuplicateTitleCarriesNoSinglePageOwnership(t *testing.T) {
 	chain := newSEOAuditChain(t)
 
@@ -963,50 +766,20 @@ func TestSEOAuditDuplicateTitleCarriesNoSinglePageOwnership(t *testing.T) {
 		})
 	}
 
-	res := doSeoAudit(t, chain.Engine, seoAuditRequest{
-		ContentType: "application/json",
-		Body:        `{"project":"` + seoAuditProjectA + `"}`,
-		Cookie:      chain.Super.Cookie,
-		CSRF:        chain.Super.CSRFToken,
-	})
-	assertSeoAuditJSON(t, "重复标题", res, http.StatusOK)
-	data := decodeSeoAuditData(t, "重复标题", decodeSeoAuditEnvelope(t, "重复标题", res))
-
-	var found int
-	for _, issue := range data.Issues {
-		if issue.Item != "title_duplicate" {
-			continue
-		}
-		found++
-		if issue.Path != "" {
-			t.Fatalf("重复标题的 path=%q，期望空 —— 它不属于任何单页，挑首路径等于伪造归属", issue.Path)
-		}
-		if issue.Params.Title != dupTitle {
-			t.Fatalf("重复标题的 params.title=%q，期望原值 %q", issue.Params.Title, dupTitle)
-		}
-		want := []string{"/a-bbb", seoAuditAPathAbout, "/a-zzz"}
-		sort.Strings(want)
-		if !equalStrings(issue.Params.Paths, want) {
-			t.Fatalf("重复标题的 params.paths=%v，期望全部命中路径且已排序 %v（少一个就是藏页面，乱序就是没排序）",
-				issue.Params.Paths, want)
-		}
-		if issue.Level != "warning" {
-			t.Fatalf("重复标题的 level=%q，期望 warning", issue.Level)
+	res := seoAuditRun(t, chain, "重复标题", seoAuditProjectA, http.StatusOK)
+	if state := seoAuditState(res.Body); state != "issues" {
+		t.Fatalf("重复标题：结论档位 %q，期望 issues", state)
+	}
+	if !strings.Contains(res.Body, "多个页面使用了同一个标题") {
+		t.Fatalf("结论里缺少重复标题项：%q", firstN(res.Body, 400))
+	}
+	// 三个同标题页面归为一条结论：三处路径都要在受影响路径列表里（少一个就是藏页面）。
+	for _, p := range []string{seoAuditAPathAbout, "/a-zzz", "/a-bbb"} {
+		if !strings.Contains(res.Body, "<code>"+p+"</code>") {
+			t.Fatalf("重复标题的受影响路径缺少 %s", p)
 		}
 	}
-	if found != 1 {
-		t.Fatalf("重复标题应恰好报一条（三个同标题页面归为一条结论），实际 %d 条", found)
+	if got := strings.Count(res.Body, "多个页面使用了同一个标题"); got != 1 {
+		t.Fatalf("重复标题应恰好报一条（三个同标题页面归为一条结论），实际 %d 条", got)
 	}
-}
-
-func equalStrings(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
 }

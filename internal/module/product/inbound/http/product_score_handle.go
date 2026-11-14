@@ -7,8 +7,8 @@ import (
 	pagecontract "go_wp/internal/module/page/contract"
 	productdto "go_wp/internal/module/product/dto"
 	productservice "go_wp/internal/module/product/service"
-	"go_wp/pkg/seo/scoring"
 	"go_wp/pkg/response"
+	"go_wp/pkg/seo/scoring"
 	pageview "go_wp/pkg/view"
 
 	"github.com/gin-gonic/gin"

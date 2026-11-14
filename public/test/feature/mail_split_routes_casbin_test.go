@@ -25,6 +25,7 @@ import (
 	"go_wp/pkg/captcha"
 	pkgcasbin "go_wp/pkg/casbin"
 	mw "go_wp/pkg/middleware"
+	view "go_wp/pkg/view"
 	text "go_wp/pkg/view/jet"
 	"go_wp/public/migrations"
 	"go_wp/public/test/support"
@@ -122,6 +123,9 @@ func newMailSplitRoutesEnv(t *testing.T) *mailSplitRoutesEnv {
 			engine.HTMLRender = templates.NewJetHTMLRender("../../../internal/templates", true)
 			// 生产装配在基础层挂请求取词作用域；缺了它 c.HTML 的片段会在 t 处渲染失败。
 			engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
+			// 成功/失败出口也是生产基础层的一部分：缺了它们写端点一律 500。
+			engine.Use(view.UseSuccess(view.NewSuccessWriter()))
+			engine.Use(view.FailureMiddleware(view.RenderFailure))
 
 			api := engine.Group("/api")
 			captcharouter.SetupCaptchaRoutes(mw.NewRegistry(), api)
@@ -137,7 +141,8 @@ func newMailSplitRoutesEnv(t *testing.T) *mailSplitRoutesEnv {
 			if v, cerr := config.GetViper(); cerr == nil && v != nil {
 				v.Set("app.secret", "qa-mail-split-routes-secret")
 			}
-			mailhttp.SetupMailRoutes(authorizedAPI, db, adminPages)
+			_, stopMail := mailhttp.SetupMailRoutes(context.Background(), authorizedAPI, db, adminPages)
+			t.Cleanup(stopMail)
 		},
 	})
 	if err != nil {
@@ -550,17 +555,21 @@ func TestMailSplitPageWritePostsReturnHTMLFragments(t *testing.T) {
 			marker: []string{`data-ui-error`},
 		},
 		{
-			name:   "活动启动不存在",
-			path:   "/admin/mail/campaign/start",
-			form:   url.Values{"id": {"999999901"}},
-			status: http.StatusBadRequest,
+			name: "活动启动不存在",
+			path: "/admin/mail/campaign/start",
+			form: url.Values{"id": {"999999901"}},
+			// 词条表把「不存在」声明为 404（mail.err.campaignNotFound）；
+			// 这里原先期望 400，与声明冲突。
+			status: http.StatusNotFound,
 			marker: []string{`data-ui-error`},
 		},
 		{
-			name:   "活动删除不存在",
-			path:   "/admin/mail/campaign/delete",
-			form:   url.Values{"id": {"999999902"}},
-			status: http.StatusBadRequest,
+			name: "活动删除不存在",
+			path: "/admin/mail/campaign/delete",
+			form: url.Values{"id": {"999999902"}},
+			// 词条表把「不存在」声明为 404（mail.err.campaignNotFound）；
+			// 这里原先期望 400，与声明冲突。
+			status: http.StatusNotFound,
 			marker: []string{`data-ui-error`},
 		},
 		{
@@ -571,10 +580,11 @@ func TestMailSplitPageWritePostsReturnHTMLFragments(t *testing.T) {
 			marker: []string{`data-ui-error`},
 		},
 		{
-			name:   "流程删除不存在",
-			path:   "/admin/mail/automation/delete",
-			form:   url.Values{"id": {"999999904"}},
-			status: http.StatusBadRequest,
+			name: "流程删除不存在",
+			path: "/admin/mail/automation/delete",
+			form: url.Values{"id": {"999999904"}},
+			// 同上：mail.err.automationNotFound 声明为 404。
+			status: http.StatusNotFound,
 			marker: []string{`data-ui-error`},
 		},
 		{

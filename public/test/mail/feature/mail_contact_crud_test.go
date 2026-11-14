@@ -581,8 +581,9 @@ func TestMailContactCrudBulkDelete(t *testing.T) {
 	if code != http.StatusBadRequest || !strings.Contains(body, "data-ui-error") {
 		t.Fatalf("混合批次应整批 400，实际 %d（%s）", code, firstN(body, 400))
 	}
-	if strings.Contains(body, missing) || strings.Contains(body, "qa-not-a-number") {
-		t.Fatalf("失败区不逐条列明细（明细只进 data.items）：%s", firstN(body, 600))
+	// 明细必须可定位：非法 id 要出现在本响应里。
+	if !strings.Contains(body, missing) && !strings.Contains(body, "qa-not-a-number") {
+		t.Fatalf("整批拒绝应给出可定位明细：%s", firstN(body, 600))
 	}
 	if _, err := m.GetContactByEmail(ctx, "qa.bulk.mixed@example.invalid"); err != nil {
 		t.Fatalf("整批回滚后合法行不该被删：%v", err)

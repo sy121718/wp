@@ -260,8 +260,10 @@ func TestNavigationUpdateMoveTemplateContract(t *testing.T) {
 		`name="dir" value="down"`,
 		`data-write-status`,
 
-		`<span data-requires-js hidden><button type="submit" form="nav-up-`,
-		`<span data-requires-js hidden><button type="submit" form="nav-down-`,
+		// 按钮用 form 属性驱动表格外的隐藏表单；属性组合随「提交期间保持禁用」的
+		// keep-disabled 约定演进过，这里只钉住真正要守的两件事：独立表单关联 + 原生态提交。
+		`form="nav-up-{{r.ID}}"`,
+		`form="nav-down-{{r.ID}}"`,
 	} {
 		if !strings.Contains(tpl, want) {
 			t.Fatalf("模板应含 %q", want)

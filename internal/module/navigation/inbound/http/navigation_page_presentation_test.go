@@ -1,9 +1,9 @@
 package navigationhttp
 
 import (
-	pageview "go_wp/pkg/view"
 	"context"
 	"errors"
+	pageview "go_wp/pkg/view"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -17,8 +17,8 @@ import (
 	"go_wp/internal/templates"
 	"go_wp/pkg/auth"
 	"go_wp/pkg/i18n"
-	"go_wp/pkg/response"
 	"go_wp/pkg/logger"
+	"go_wp/pkg/response"
 
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-contrib/sessions/cookie"

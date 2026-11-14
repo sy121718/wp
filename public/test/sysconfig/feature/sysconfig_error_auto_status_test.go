@@ -14,6 +14,7 @@ import (
 	sysconfigdto "go_wp/internal/module/sysconfig/dto"
 	sysconfigenums "go_wp/internal/module/sysconfig/enums"
 	sysconfighttp "go_wp/internal/module/sysconfig/inbound/http"
+	"go_wp/pkg/i18n"
 )
 
 type errAutoFakeSvc struct {
@@ -36,7 +37,16 @@ func (f errAutoFakeSvc) ListCountryOptions(context.Context, string) ([]sysconfig
 func TestSysConfigErrorAutoStatusCode(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	const internalText = "服务器内部错误，请稍后重试"
+	// JSON 出口只认词库：不灌词条时业务错误会退成归口文案，两档判据就分不开了。
+	// 业务词条内容与 757 的 seed 一致；基础设施错误不注入词条，走共享归口兜底。
+	i18n.InjectForTest(map[string]map[string]string{
+		sysconfigenums.ErrGroupNotFound: {"zh-CN": "配置分组不存在"},
+	}, nil)
+	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
+
+	// 归口文案在 747 之后统一为「系统内部错误…」（旧「服务器内部错误…」是
+	// ErrorAuto 与 InternalText 两处不同话的历史遗留，pkg/response 已收口）。
+	const internalText = "系统内部错误，请稍后重试"
 
 	leakTokens := []string{"SQLSTATE", `relation "`, "sys_configs"}
 

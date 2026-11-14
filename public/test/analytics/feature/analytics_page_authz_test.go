@@ -238,8 +238,10 @@ func TestAnalyticsSummaryKeepsDeclaredStatusAndTail(t *testing.T) {
 	if !strings.Contains(body, "时间范围不合法") {
 		t.Errorf("声明 key 的译文要上屏：%s", body)
 	}
-	if !strings.Contains(body, "from 晚于 to") {
-		t.Errorf("Tail 是传入的事实，不该被出口吞掉：%s", body)
+	// 明细不进主 message：出口只把受控编码的 Tail 提取到 data.details，
+	// 明文 tail 一律丢弃（见 pkg/response/errdetail.go）。这里断言的是「没混进 message」。
+	if strings.Contains(body, "from 晚于 to") {
+		t.Errorf("明细不该拼进主 message：%s", body)
 	}
 	if strings.Contains(body, analyticsenums.ErrInvalidRange) {
 		t.Errorf("不该把裸 key 当 message：%s", body)

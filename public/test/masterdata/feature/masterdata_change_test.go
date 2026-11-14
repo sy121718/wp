@@ -33,6 +33,7 @@ import (
 	purchasemodel "go_wp/internal/module/purchase/model"
 	purchaseservice "go_wp/internal/module/purchase/service"
 
+	"go_wp/pkg/i18n"
 	"go_wp/public/migrations"
 	"go_wp/public/test/support"
 )
@@ -71,10 +72,36 @@ func newMDFixture(t *testing.T) *mdFixture {
 	purchase := purchaseservice.NewService(purchasemodel.NewModel(db), projects)
 	purchase.SetVariantCost(products)
 	purchase.SetMasterDataChanges(changes)
+	// JSON 出口的 message 从词库取词：把本用例库里的词条灌进缓存，
+	// 否则业务错误会退成归口文案（测试模板库只跑结构迁移，seed 由这里显式执行过）。
+	injectMasterDataWords(t, db)
 	return &mdFixture{
 		changes: changes, products: products, inventory: inventory, purchase: purchase,
 		projects: projects, db: db, projectID: project.ID,
 	}
+}
+
+// injectMasterDataWords 把本用例库里的词条灌进 i18n 缓存。
+func injectMasterDataWords(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	var rows []struct {
+		ItemKey string `gorm:"column:item_key"`
+		Lang    string
+		Value   string `gorm:"column:value"`
+	}
+	if err := db.Table("sys_i18n").Select("item_key", "lang", "item_value AS value").
+		Where("status = ?", 1).Scan(&rows).Error; err != nil {
+		t.Fatalf("读取词条失败：%v", err)
+	}
+	words := make(map[string]map[string]string, len(rows))
+	for _, r := range rows {
+		if words[r.ItemKey] == nil {
+			words[r.ItemKey] = map[string]string{}
+		}
+		words[r.ItemKey][r.Lang] = r.Value
+	}
+	i18n.InjectForTest(words, nil)
+	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
 }
 
 func strPtr(s string) *string { return &s }

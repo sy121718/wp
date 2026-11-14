@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
+	"strconv"
 
 	"gorm.io/gorm"
 
@@ -68,6 +69,9 @@ const (
 // 会话吊销在提交之后做，因为它跨库且不可回滚。
 func (s *Service) AdminBulkDelete(ctx context.Context, req *admindto.AdminDeleteReq) (*admindto.AdminDeleteResp, error) {
 	ids := uniqueIDs(req.IDList())
+	if err := checkBulkDeleteLimit(ids); err != nil {
+		return nil, err
+	}
 	if len(ids) == 0 {
 		return nil, facing.WithStatus(facing.New(adminenums.ErrBulkDeleteEmpty), statusBadInput)
 	}
@@ -167,6 +171,9 @@ func (s *Service) AdminBulkDelete(ctx context.Context, req *admindto.AdminDelete
 // 系统内置角色一律打回（沿用 ErrRoleIsSystem），不做「跳过系统角色删其余」。
 func (s *Service) RoleBulkDelete(ctx context.Context, req *admindto.RoleDeleteReq) error {
 	ids := uniqueIDs(req.IDList())
+	if err := checkBulkDeleteLimit(ids); err != nil {
+		return err
+	}
 	if len(ids) == 0 {
 		return facing.WithStatus(facing.New(adminenums.ErrBulkDeleteEmpty), statusBadInput)
 	}
@@ -240,6 +247,9 @@ func (s *Service) RoleBulkDelete(ctx context.Context, req *admindto.RoleDeleteRe
 // 任一不满足即整体打回并列出明细。
 func (s *Service) PermBulkDelete(ctx context.Context, req *admindto.PermDeleteReq) (*admindto.PermDeleteResp, error) {
 	ids := uniqueIDs(req.IDList())
+	if err := checkBulkDeleteLimit(ids); err != nil {
+		return nil, err
+	}
 	if len(ids) == 0 {
 		return nil, facing.WithStatus(facing.New(adminenums.ErrBulkDeleteEmpty), statusBadInput)
 	}
@@ -326,6 +336,9 @@ func (s *Service) PermBulkDelete(ctx context.Context, req *admindto.PermDeleteRe
 // 子节点判定读本事务内的行锁结果，不扩成级联删除。
 func (s *Service) MenuBulkDelete(ctx context.Context, req *admindto.MenuDeleteReq) error {
 	ids := uniqueIDs(req.IDList())
+	if err := checkBulkDeleteLimit(ids); err != nil {
+		return err
+	}
 	if len(ids) == 0 {
 		return facing.WithStatus(facing.New(adminenums.ErrBulkDeleteEmpty), statusBadInput)
 	}
@@ -388,6 +401,9 @@ func (s *Service) MenuBulkDelete(ctx context.Context, req *admindto.MenuDeleteRe
 // 保护语义沿用单条删除：有子部门打回、有成员打回（停用成员也算，按 dept_id 数）。
 func (s *Service) DeptBulkDelete(ctx context.Context, req *admindto.DeptDeleteReq) error {
 	ids := uniqueIDs(req.IDList())
+	if err := checkBulkDeleteLimit(ids); err != nil {
+		return err
+	}
 	if len(ids) == 0 {
 		return facing.WithStatus(facing.New(adminenums.ErrBulkDeleteEmpty), statusBadInput)
 	}
@@ -453,6 +469,9 @@ func (s *Service) DeptBulkDelete(ctx context.Context, req *admindto.DeptDeleteRe
 // RuleBulkDelete 在单个事务里批量删除数据规则与其生效指派。
 func (s *Service) RuleBulkDelete(ctx context.Context, req *admindto.RuleDeleteReq) error {
 	ids := uniqueIDs(req.IDList())
+	if err := checkBulkDeleteLimit(ids); err != nil {
+		return err
+	}
 	if len(ids) == 0 {
 		return facing.WithStatus(facing.New(adminenums.ErrBulkDeleteEmpty), statusBadInput)
 	}
@@ -501,7 +520,24 @@ func (s *Service) RuleBulkDelete(ctx context.Context, req *admindto.RuleDeleteRe
 	return nil
 }
 
-// uniqueIDs 去重并去掉 0：0 不是有效主键，也不是「用户选中的行」。
+// uniqueIDs 去重、去掉 0，并校验条数上限。
+//
+// 归一（去重 / 上限）归 service：控制器只绑请求、调用例、写响应。
+// 0 不是有效主键，也不是「用户选中的行」；超限整批拒绝，只回一句受控提示，
+// 不返回逐条明细 —— 批量写要么全成要么全败。
+// checkBulkDeleteLimit 校验一次批量删除的条数上限。
+//
+// 归一（去重 / 上限）在 service，控制器不碰：批量删除要么全成要么全败，
+// 超限整批拒绝、只回一句受控提示，不返回逐条明细。
+func checkBulkDeleteLimit(ids []uint64) error {
+	raw := make([]string, 0, len(ids))
+	for _, id := range ids {
+		raw = append(raw, strconv.FormatUint(id, 10))
+	}
+	_, err := bulkids.Normalize(raw)
+	return err
+}
+
 func uniqueIDs(ids []uint64) []uint64 {
 	seen := make(map[uint64]struct{}, len(ids))
 	out := make([]uint64, 0, len(ids))

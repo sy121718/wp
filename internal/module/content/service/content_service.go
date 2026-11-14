@@ -20,6 +20,7 @@ import (
 	"go_wp/pkg/bulkids"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
+	"go_wp/pkg/richtext"
 	"go_wp/pkg/upload"
 )
 
@@ -281,7 +282,7 @@ func (s *Service) translateData(ctx context.Context, lang, entityType string, da
 		target := tr.TranslateContent(j.source, j.contextName)
 
 		if target != j.source && contentcontract.IsRichTextField(entityType, j.field) {
-			target = core.SanitizeRichHTML(target)
+			target = richtext.SanitizeRichHTML(target)
 		}
 		out[j.field] = target
 	}

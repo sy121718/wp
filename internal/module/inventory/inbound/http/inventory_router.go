@@ -76,7 +76,7 @@ func SetupInventoryRoutes(rg *mw.RouteGroup, pages *gin.RouterGroup, db *gorm.DB
 	tg.POST("/receive", inventoryenums.InventoryTransferReceive, pageview.HTMLFragment, transferPages.ReceiveTransfer)
 	tg.POST("/cancel", inventoryenums.InventoryTransferCancel, pageview.HTMLFragment, transferPages.CancelTransfer)
 
-	SetupInventoryPages(pages, svc, project)
+	SetupInventoryPages(rg.Registry(), pages, svc, project)
 
 	return svc
 }

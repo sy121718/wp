@@ -9,7 +9,6 @@ import (
 	pubservice "go_wp/internal/module/publication/service"
 
 	"go_wp/internal/middleware/builtin"
-	adminenums "go_wp/internal/module/admin/enums"
 	"go_wp/pkg/logger"
 	mw "go_wp/pkg/middleware"
 	"go_wp/pkg/response"
@@ -37,14 +36,19 @@ func SetupPublicationRoutes(rg *mw.RouteGroup, db *gorm.DB) pubcontract.Publicat
 
 	g.GET("/receipts/pending", pubenums.PublicationReceiptsPending, PublicationPendingReceipts(svc))
 
-	rg.Registry().DeclareRoute(mw.RouteSpec{
-		Method: http.MethodPost, Path: "/api/seo/audit",
-		Perm: adminenums.SEOAudit, Kind: mw.RoutePage,
+	// 真实入口是 POST /api/publication/seo-audit（路由组内路径），Method/Path 必须写它；
+	// 复用的策略对象是 /api/seo/audit，只出现在 AuthObject/AuthMethod 上。
+	//
+	// 两项既有检查同时保留：
+	//   · router 登记里的 PublicationSEOAudit（本操作自身的权限点）；
+	//   · Casbin 中间件按 /api/seo/audit 额外校验 SEO 审核对象。
+	// 用 DeclareRouteIn 把「真实路由」和「鉴权目标」分开登记：Path 是真实入口
+	// /api/publication/seo-audit，AuthObject 是复用的 /api/seo/audit 策略对象。
+	g.DeclareRouteIn(http.MethodPost, "/seo-audit", mw.RouteSpec{
+		Perm: pubenums.PublicationSEOAudit, Kind: mw.RouteProtected,
 		AuthObject: "/api/seo/audit", AuthMethod: http.MethodPost,
 	})
-	// HTML 片段入口复用的是 SEO 审核这一操作本身的权限点：
-	// 真实路由是 /api/publication/seo-audit，鉴权对象仍是 /api/seo/audit（数据库里的既有绑定）。
-	g.POST("/seo-audit", pubenums.PublicationSEOAudit, builtin.CasbinMiddlewareForPath("/api/seo/audit"),
+	g.RouterGroup.POST("/seo-audit", builtin.CasbinMiddlewareForPath("/api/seo/audit"),
 		pageview.HTMLFragment, NewSeoAuditHandle(svc.RunSEOAudit).SeoAudit)
 	return svc
 }

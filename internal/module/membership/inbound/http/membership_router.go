@@ -35,7 +35,7 @@ func SetupMembershipRoutes(rg *mw.RouteGroup, pages *gin.RouterGroup, db *gorm.D
 
 	g.POST("/recalc", membershipenums.MembershipRecalc, pageview.HTMLFragment, handle.Recalc)
 
-	SetupMembershipPages(pages, svc, projects)
+	SetupMembershipPages(rg.Registry(), pages, svc, projects)
 
 	return svc
 }

@@ -17,12 +17,13 @@ import (
 )
 
 func (h *Handle) AutomationSave(c *gin.Context) {
-	req, ok := binding.JSON[maildto.SaveAutomationReq](c)
-	if !ok {
+	var req maildto.SaveAutomationReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ParamError(c)
 		return
 	}
 	req.OperatorID = builtin.CurrentUserID(c)
-	item, err := h.svc.SaveAutomation(c.Request.Context(), req)
+	item, err := h.svc.SaveAutomation(c.Request.Context(), &req)
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "mail", err)
 		return
@@ -31,11 +32,12 @@ func (h *Handle) AutomationSave(c *gin.Context) {
 }
 
 func (h *Handle) AutomationLayout(c *gin.Context) {
-	req, ok := binding.JSON[maildto.SaveAutomationLayoutReq](c)
-	if !ok {
+	var req maildto.SaveAutomationLayoutReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ParamError(c)
 		return
 	}
-	if err := h.svc.SaveAutomationLayout(c.Request.Context(), req); err != nil {
+	if err := h.svc.SaveAutomationLayout(c.Request.Context(), &req); err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "mail", err)
 		return
 	}
@@ -65,12 +67,13 @@ func (h *Handle) AutomationGet(c *gin.Context) {
 }
 
 func (h *Handle) AutomationStatus(c *gin.Context) {
-	req, ok := binding.JSON[maildto.SetAutomationStatusReq](c)
-	if !ok {
+	var req maildto.SetAutomationStatusReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ParamError(c)
 		return
 	}
 	req.OperatorID = builtin.CurrentUserID(c)
-	if err := h.svc.SetAutomationStatus(c.Request.Context(), req); err != nil {
+	if err := h.svc.SetAutomationStatus(c.Request.Context(), &req); err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "mail", err)
 		return
 	}
@@ -78,7 +81,12 @@ func (h *Handle) AutomationStatus(c *gin.Context) {
 }
 
 func (h *Handle) AutomationDelete(c *gin.Context) {
-	if err := h.svc.DeleteAutomation(c.Request.Context(), parseID(c.Query("id"))); err != nil {
+	var query maildto.MailIDQuery
+	if err := c.ShouldBindQuery(&query); err != nil {
+		response.ParamError(c)
+		return
+	}
+	if err := h.svc.DeleteAutomation(c.Request.Context(), parseID(query.ID)); err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "mail", err)
 		return
 	}
@@ -86,8 +94,9 @@ func (h *Handle) AutomationDelete(c *gin.Context) {
 }
 
 func (h *Handle) AutomationStartRun(c *gin.Context) {
-	req, ok := binding.JSON[maildto.AutomationRunReq](c)
-	if !ok {
+	var req maildto.AutomationRunReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ParamError(c)
 		return
 	}
 	req.OperatorID = builtin.CurrentUserID(c)
@@ -138,7 +147,16 @@ func (h *Handle) AutomationRunDetail(c *gin.Context) {
 }
 
 func (h *Handle) AutomationTick(c *gin.Context) {
-	n, err := h.svc.EnqueueDueRuns(c.Request.Context(), parseInt(c.Query("limit"), 200))
+	var query maildto.MailTickQuery
+	if err := c.ShouldBindQuery(&query); err != nil {
+		response.ParamError(c)
+		return
+	}
+	limit := query.Limit
+	if limit <= 0 {
+		limit = 200
+	}
+	n, err := h.svc.EnqueueDueRuns(c.Request.Context(), limit)
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "mail", err)
 		return
@@ -162,14 +180,12 @@ func (h *Handle) AccountList(c *gin.Context) {
 }
 
 func (h *Handle) AccountSave(c *gin.Context) {
-	req, ok := binding.Form[maildto.SaveAccountReq](c)
-	if !ok {
+	req, err := binding.ParseForm[maildto.SaveAccountReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
-	var (
-		item *maildto.AccountItem
-		err  error
-	)
+	var item *maildto.AccountItem
 	if req.ID > 0 {
 		item, err = h.svc.UpdateAccount(c.Request.Context(), req)
 	} else {
@@ -183,7 +199,12 @@ func (h *Handle) AccountSave(c *gin.Context) {
 }
 
 func (h *Handle) AccountDelete(c *gin.Context) {
-	id := parseID(c.Query("id"))
+	var query maildto.MailIDQuery
+	if err := c.ShouldBindQuery(&query); err != nil {
+		response.ParamError(c)
+		return
+	}
+	id := parseID(query.ID)
 	if id == 0 {
 		response.ErrorWithMessage(c, http.StatusBadRequest, mailenums.ErrInvalidParam)
 		return
@@ -196,7 +217,12 @@ func (h *Handle) AccountDelete(c *gin.Context) {
 }
 
 func (h *Handle) AccountSetDefault(c *gin.Context) {
-	id := parseID(c.Query("id"))
+	var query maildto.MailIDQuery
+	if err := c.ShouldBindQuery(&query); err != nil {
+		response.ParamError(c)
+		return
+	}
+	id := parseID(query.ID)
 	if id == 0 {
 		response.ErrorWithMessage(c, http.StatusBadRequest, mailenums.ErrInvalidParam)
 		return
@@ -209,8 +235,9 @@ func (h *Handle) AccountSetDefault(c *gin.Context) {
 }
 
 func (h *Handle) AccountTestSend(c *gin.Context) {
-	req, ok := binding.Form[maildto.TestSendReq](c)
-	if !ok {
+	req, err := binding.ParseForm[maildto.TestSendReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	req.Lang = response.RequestLanguage(c)
@@ -233,11 +260,12 @@ func (h *Handle) TemplateList(c *gin.Context) {
 
 func (h *Handle) TemplateSave(c *gin.Context) {
 
-	req, ok := binding.JSON[maildto.SaveTemplateReq](c)
-	if !ok {
+	var req maildto.SaveTemplateReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ParamError(c)
 		return
 	}
-	item, err := h.svc.UpsertTemplate(c.Request.Context(), req)
+	item, err := h.svc.UpsertTemplate(c.Request.Context(), &req)
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "mail", err)
 		return
@@ -246,7 +274,12 @@ func (h *Handle) TemplateSave(c *gin.Context) {
 }
 
 func (h *Handle) TemplateDelete(c *gin.Context) {
-	if err := h.svc.DeleteTemplate(c.Request.Context(), c.Query("templateKey"), c.Query("locale")); err != nil {
+	var query maildto.MailTemplateKeyQuery
+	if err := c.ShouldBindQuery(&query); err != nil {
+		response.ParamError(c)
+		return
+	}
+	if err := h.svc.DeleteTemplate(c.Request.Context(), query.TemplateKey, query.Locale); err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "mail", err)
 		return
 	}
@@ -272,8 +305,9 @@ func (h *Handle) ContactList(c *gin.Context) {
 }
 
 func (h *Handle) ContactImport(c *gin.Context) {
-	form, ok := binding.Form[maildto.ContactImportFormReq](c)
-	if !ok {
+	form, err := binding.ParseForm[maildto.ContactImportFormReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	content := form.Content
@@ -301,8 +335,9 @@ func (h *Handle) ContactImport(c *gin.Context) {
 }
 
 func (h *Handle) ContactStatus(c *gin.Context) {
-	req, ok := binding.Form[maildto.UpdateContactStatusReq](c)
-	if !ok {
+	req, err := binding.ParseForm[maildto.UpdateContactStatusReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	if err := h.svc.UpdateContactStatus(c.Request.Context(), req); err != nil {
@@ -335,8 +370,9 @@ func (h *Handle) CampaignGet(c *gin.Context) {
 }
 
 func (h *Handle) CampaignSave(c *gin.Context) {
-	req, ok := binding.Form[maildto.SaveCampaignReq](c)
-	if !ok {
+	req, err := binding.ParseForm[maildto.SaveCampaignReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	res, err := h.svc.SaveCampaign(c.Request.Context(), req)
@@ -348,7 +384,12 @@ func (h *Handle) CampaignSave(c *gin.Context) {
 }
 
 func (h *Handle) CampaignDelete(c *gin.Context) {
-	if err := h.svc.DeleteCampaign(c.Request.Context(), parseID(c.Query("id"))); err != nil {
+	var query maildto.MailIDQuery
+	if err := c.ShouldBindQuery(&query); err != nil {
+		response.ParamError(c)
+		return
+	}
+	if err := h.svc.DeleteCampaign(c.Request.Context(), parseID(query.ID)); err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "mail", err)
 		return
 	}
@@ -356,8 +397,9 @@ func (h *Handle) CampaignDelete(c *gin.Context) {
 }
 
 func (h *Handle) CampaignStart(c *gin.Context) {
-	req, ok := binding.Form[maildto.StartCampaignReq](c)
-	if !ok {
+	req, err := binding.ParseForm[maildto.StartCampaignReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	res, err := h.svc.StartCampaign(c.Request.Context(), req)

@@ -86,16 +86,46 @@
             <div class="wb-sidebar-top"><span>{{tr("workbench.ui.library.heading", "组件库")}}</span><button type="button" class="wb-collapse" id="wb-library-close" aria-label="{{tr("workbench.ui.action.collapsePreview", "收起面板并预览")}}">‹ {{tr("workbench.ui.action.collapse", "收起")}}</button></div>
             {{include "../editor/library_panel.html" .}}
             {{include "../editor/edit_panel.html" .}}
-            {* 页面设置视图：SEO / 版心 / body class *}
+            {* 页面设置视图：SEO / 版心 / body class。
+               面板与评分都是**服务端渲染的片段**：请求走共享 HTMX 执行链
+               （写基座负责 CSRF、HTML 校验、失败区与迟到响应），客户端只提供请求对象。
+               失败只写进本宿主的状态行，不替换正在编辑的表单。 *}
             <section class="wb-panel" id="wb-panel-settings" aria-label="{{tr("workbench.ui.nav.pageSettings", "页面设置")}}" hidden>
                 <div class="wb-panel-head"><strong>{{tr("workbench.ui.nav.pageSettings", "页面设置")}}</strong></div>
-                <div class="wb-inspector-body" id="wb-settings-body"></div>
+                <div class="wb-inspector-body" id="wb-settings-body" data-write-host>
+                    <p class="form-hint" data-write-status role="status" hidden></p>
+                    <form id="wb-settings-form" data-write hx-post="/workbench/settings"
+                          hx-trigger="wb:settings-panel from:body" hx-target="#wb-settings-content"
+                          hx-swap="innerMorph" hx-sync="this:replace"
+                          data-write-builder="workbench-settings">
+                        <div id="wb-settings-content"></div>
+                    </form>
+                    <form id="wb-settings-password-form" data-write hx-post="/workbench/settings"
+                          hx-trigger="wb:settings-password from:body" hx-target="#wb-settings-content"
+                          hx-swap="innerMorph" hx-sync="#wb-settings-content:replace"
+                          data-write-builder="workbench-settings"></form>
+                    <form id="wb-seo-form" data-write hx-post="/workbench/seo-score-panel"
+                          hx-trigger="wb:seo-panel from:body" hx-target="#wb-seo-score"
+                          hx-swap="innerMorph" hx-sync="this:replace"
+                          data-write-builder="workbench-seo"></form>
+                </div>
             </section>
             {* 全局设置视图：站点主题（颜色/字体），保存后合入全部页面 *}
             <section class="wb-panel" id="wb-panel-global" aria-label="{{tr("workbench.ui.nav.global", "全局设置（主题）")}}" hidden>
                 <div class="wb-panel-head"><strong>{{tr("workbench.ui.nav.global", "全局设置（主题）")}}</strong></div>
-                <div class="wb-inspector-body" id="wb-global-body">
-                    <p class="wb-empty">{{tr("workbench.ui.settings.noTheme", "当前页面未挂接主题。")}}</p>
+                <div class="wb-inspector-body" id="wb-global-body" data-write-host>
+                    <p class="form-hint" data-write-status role="status" hidden></p>
+                    {* 取面板：把服务端渲染的保存表单换进 #wb-global-content。 *}
+                    <form id="wb-global-load" data-write hx-post="/workbench/global"
+                          hx-trigger="wb:global-panel from:body" hx-target="#wb-global-content"
+                          hx-swap="innerMorph" hx-sync="this:replace"
+                          data-write-builder="workbench-global"></form>
+                    {* 保存表单在片段里（字段与端点必须同段，静态门禁才查得到）；
+                       这里只留交换目标。 *}
+                    <div id="wb-global-content">
+                        <p class="wb-empty">{{tr("workbench.ui.settings.noTheme", "当前页面未挂接主题。")}}</p>
+                    </div>
+                    <div role="status" aria-live="polite" id="wb-global-save-result"></div>
                 </div>
             </section>
             {* 修订历史视图：草稿快照列表 + 恢复 *}
@@ -173,6 +203,9 @@
         （docs/06-C §四）。必须早于编辑器入口（editor-app/index.js）加载：工具 core.js 的 morphHTML 直接调全局 Idiomorph。 *}
     <script src="/static/vendor/idiomorph/idiomorph.min.js?v={{.jsVer}}"></script>
     {{include "../partials/ui_scripts.html"}}
+    {* 面板的 JSON 请求对象必须先于编辑器入口注册：写基座在发起请求时查注册表，
+       入口挂载后面板才触发，所以顺序只要求「注册早于触发」。 *}
+    <script src="/static/js/editor-app/panel-requests.js?v={{.jsVer}}"></script>
     {* 工作台前端已按功能拆分为 ES modules（core + methods/*），入口 index.js（docs/09 §3） *}
     <script type="module" src="/static/js/editor-app/index.js?v={{.jsVer}}"></script>
 </body>

@@ -38,7 +38,7 @@ func aiWriteResult(c *gin.Context, key string) {
 func aiProviderCardData(c *gin.Context, p aidto.Provider) gin.H {
 	facts := pageview.PageFacts(c)
 	return pageview.ViewMap(cardData(aidto.ProviderCardBase{
-		CSRFToken: facts.CSRFToken, T: facts.T, PermSet: facts.PermSet, Buttons: facts.Buttons,
+		CSRFToken: facts.CSRFToken, PermSet: facts.PermSet, Buttons: facts.Buttons,
 	}, p, aiservice.BuiltinBaseURL(p.ProviderKey)))
 }
 
@@ -52,7 +52,6 @@ func providerCardModels(c *gin.Context, p aidto.Provider) gin.H {
 		"DefaultBaseURL":  card["DefaultBaseURL"],
 		"Buttons":         card["Buttons"],
 		"csrf_token":      card["csrf_token"],
-		"t":               card["t"],
 		"PermSet":         card["PermSet"],
 	}
 }

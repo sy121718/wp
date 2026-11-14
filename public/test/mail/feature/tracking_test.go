@@ -2,6 +2,10 @@ package feature
 
 import (
 	"context"
+	"go_wp/internal/templates"
+	"go_wp/pkg/i18n"
+	pageview "go_wp/pkg/view"
+	text "go_wp/pkg/view/jet"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,6 +15,7 @@ import (
 
 	mailcontract "go_wp/internal/module/mail/contract"
 	maildto "go_wp/internal/module/mail/dto"
+	mailenums "go_wp/internal/module/mail/enums"
 	mailhttp "go_wp/internal/module/mail/inbound/http"
 	mailmodel "go_wp/internal/module/mail/model"
 )
@@ -89,6 +94,23 @@ func newTrackingRouter(t *testing.T) (*gin.Engine, *fixture) {
 	}
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
+	// 退订成功页由 Jet 渲染：与生产一样装配模板引擎与请求级取词作用域。
+	router.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
+	// 退订成功是提示类响应：与生产一样装共享成功出口与请求级取词作用域。
+	router.Use(pageview.UseSuccess(pageview.NewSuccessWriter()))
+	router.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
+	// 生产装配会从库里加载词库；测试夹具走内存注入，否则取词只落兜底、语言切换无从验证。
+	i18n.InjectForTest(map[string]map[string]string{
+		"mailUnsubDone": {
+			"zh-CN": "%s 不会再收到我们的营销邮件。",
+			"en-US": "%s will no longer receive our marketing emails.",
+		},
+		mailenums.ErrUnsubscribeLinkInvalid: {
+			"zh-CN": "退订链接无效或已过期",
+			"en-US": "This unsubscribe link is invalid or has expired",
+		},
+	}, nil)
+	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
 	mailhttp.SetupTrackingRoutes(router, mailcontract.TrackingService(f.svc))
 	return router, f
 }
@@ -175,9 +197,37 @@ func TestUnsubscribeWritesSuppressionAndStatus(t *testing.T) {
 		t.Fatal("退订必须同时写入抑制名单（只改状态的话，换个活动又会被发出去）")
 	}
 
+	// 提示类响应走共享成功出口：单根状态节点 + Jet 取词，不是 Go 内拼的整页。
+	body := recorder.Body.String()
+	if !strings.Contains(body, `role="status"`) || !strings.Contains(body, "</p>") {
+		t.Fatalf("退订成功应交给共享成功出口渲染单根状态节点：\n%s", body)
+	}
+	if !strings.Contains(body, "不会再收到我们的营销邮件") {
+		t.Fatalf("成功提示应按请求语言取词并带上收件地址：\n%s", body)
+	}
+	if strings.Contains(body, "<!DOCTYPE html>") {
+		t.Fatalf("提示类响应不应另建整页文档：\n%s", body)
+	}
+
 	recorder = httptest.NewRecorder()
 	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/_t/u/"+token, nil))
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("重复退订应幂等成功，实际 %d", recorder.Code)
+	}
+}
+
+// 无效 token 必须走失败出口且不暴露内部原因。
+func TestUnsubscribeInvalidTokenRejected(t *testing.T) {
+	router, _ := newTrackingRouter(t)
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/_t/u/bogus.token", nil))
+	if recorder.Code == http.StatusOK {
+		t.Fatalf("无效 token 不该 200，实际 %d", recorder.Code)
+	}
+	body := recorder.Body.String()
+	for _, leak := range []string{"SQLSTATE", "sys_", "mail_contacts"} {
+		if strings.Contains(body, leak) {
+			t.Fatalf("失败响应泄漏内部原文 %q：\n%s", leak, body)
+		}
 	}
 }

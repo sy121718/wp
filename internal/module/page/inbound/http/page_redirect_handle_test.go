@@ -3,15 +3,15 @@ package pagehttp
 import (
 	"context"
 	"errors"
+	pagecontract "go_wp/internal/module/page/contract"
+	pagedto "go_wp/internal/module/page/dto"
+	pageservice "go_wp/internal/module/page/service"
+	pageview "go_wp/pkg/view"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
-	pagecontract "go_wp/internal/module/page/contract"
-	pagedto "go_wp/internal/module/page/dto"
-	pageservice "go_wp/internal/module/page/service"
-	pageview "go_wp/pkg/view"
 
 	"github.com/gin-gonic/gin"
 )

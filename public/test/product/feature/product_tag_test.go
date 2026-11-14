@@ -415,8 +415,10 @@ func TestTagPermissionsAndMenusSeeded(t *testing.T) {
 		WHERE module = 'product' AND permission_code LIKE 'product:tag_%'`).Scan(&n).Error; err != nil {
 		t.Fatalf("查询权限点失败: %v", err)
 	}
-	if n != 8 {
-		t.Fatalf("迁移 092 应 seed 8 个标签权限点，实际 %d", n)
+	// 092 播种 8 个基础标签权限点；743 权限目录回补又补了 tag_bulk_delete，
+	// 现行目录口径是 9 —— 这里断言的是「目录里实际存在的标签权限点」，不是某一版迁移的数量。
+	if n != 9 {
+		t.Fatalf("商品标签应有 9 个权限点（092 的 8 个 + 743 回补的 tag_bulk_delete），实际 %d", n)
 	}
 	if err := f.db.Raw(`SELECT COUNT(*) FROM sys_menus
 		WHERE type = 2 AND title = '商品标签' AND deleted_at IS NULL`).Scan(&n).Error; err != nil {

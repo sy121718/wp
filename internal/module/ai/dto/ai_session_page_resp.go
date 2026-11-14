@@ -16,7 +16,6 @@ type PresetOption struct {
 // 布局的 <title> 兜底会直接渲染 .title，把 key 塞进来就是裸 key 上屏。
 type SessionListPageResp struct {
 	CSRFToken string `view:"csrf_token"`
-	T         any    `view:"t"`
 	PermSet   any    `view:"PermSet"`
 	Buttons   any    `view:"Buttons"`
 

@@ -100,28 +100,25 @@ func TestMailTrackingUnsubscribeDonePageLocalizedAndEscaped(t *testing.T) {
 		t.Fatalf("退订应成功，实际 %d", recorder.Code)
 	}
 	if ct := recorder.Header().Get("Content-Type"); !strings.Contains(ct, "text/html") {
-		t.Fatalf("成功页 Content-Type 应为 text/html，实际 %q", ct)
+		t.Fatalf("成功提示 Content-Type 应为 text/html，实际 %q", ct)
 	}
+	// 提示类响应：共享成功出口的单根状态节点，文案由 Jet 按请求语言取词。
 	page := recorder.Body.String()
-
-	if !strings.Contains(page, `lang="zh-CN"`) {
-		t.Errorf("默认语言下 lang 应为 zh-CN：%s", mailHead(page))
+	if !strings.Contains(page, `role="status"`) {
+		t.Errorf("成功提示应是单根状态节点：%s", mailHead(page))
 	}
 	if !strings.Contains(page, html.EscapeString(rawEmail)) {
-		t.Errorf("成功页应含被 HTML 转义的邮箱 %q：%s", html.EscapeString(rawEmail), mailHead(page))
+		t.Errorf("成功提示应含被 HTML 转义的邮箱 %q：%s", html.EscapeString(rawEmail), mailHead(page))
 	}
 	if strings.Contains(page, rawEmail) {
-		t.Errorf("成功页出现未转义的邮箱（注入面）：%s", mailHead(page))
+		t.Errorf("成功提示出现未转义的邮箱（注入面）：%s", mailHead(page))
 	}
-
-	for _, want := range []string{"已退订", "不会再收到我们的营销邮件", "事务类邮件"} {
-		if !strings.Contains(page, want) {
-			t.Errorf("成功页缺少文案片段 %q：%s", want, mailHead(page))
-		}
+	if !strings.Contains(page, "不会再收到我们的营销邮件") {
+		t.Errorf("成功提示缺少正文文案：%s", mailHead(page))
 	}
 	for _, tok := range mailVisitorKeyTokens {
 		if strings.Contains(page, tok) {
-			t.Errorf("成功页出现裸 key 片段 %q：%s", tok, mailHead(page))
+			t.Errorf("成功提示出现裸 key 片段 %q：%s", tok, mailHead(page))
 		}
 	}
 }
@@ -148,11 +145,15 @@ func TestMailTrackingUnsubscribeDonePageFollowsRequestLanguage(t *testing.T) {
 		t.Fatalf("退订应成功，实际 %d", recorder.Code)
 	}
 	page := recorder.Body.String()
-	if !strings.Contains(page, `lang="en-US"`) {
-		t.Errorf("Accept-Language: en-US 的请求应拿到 lang=\"en-US\"（固定 zh-CN 是改前的行为）：%s", mailHead(page))
+	// 提示类响应没有 <html lang>；语言体现在取词结果上：en-US 的正文必须出现英文。
+	if !strings.Contains(page, "will no longer receive our marketing emails") {
+		t.Errorf("Accept-Language: en-US 的请求应拿到英文取词（固定中文是改前的行为）：%s", mailHead(page))
+	}
+	if strings.Contains(page, "不会再收到") {
+		t.Errorf("en-US 请求不应出现中文正文：%s", mailHead(page))
 	}
 	if !strings.Contains(page, "lang@x.test") {
-		t.Errorf("成功页应含收件人邮箱：%s", mailHead(page))
+		t.Errorf("成功提示应含收件人邮箱：%s", mailHead(page))
 	}
 }
 

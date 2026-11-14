@@ -21,6 +21,7 @@ import (
 	mailenums "go_wp/internal/module/mail/enums"
 	mailmodel "go_wp/internal/module/mail/model"
 	"go_wp/pkg/i18n"
+	"go_wp/pkg/lifecycle"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/queue"
 	"go_wp/pkg/ssrf"
@@ -1482,32 +1483,27 @@ func (s *Service) TickDueRuns(ctx context.Context) (int, error) {
 	return s.EnqueueDueRuns(ctx, mailAutomationTickLimit)
 }
 
-func StartMailAutomationScheduler(svc *Service) {
+// StartMailAutomationScheduler 启动自动化延时兜底扫描；返回的 stop 取消循环并等待在途一轮结束。
+//
+// ctx 是进程/装配级上下文：收尾时先 cancel、再 stop 等待，最后关数据库。
+func StartMailAutomationScheduler(ctx context.Context, svc *Service) func() {
 	if utils.IsTestProcess() {
-		return
+		return func() {}
 	}
-	startMailAutomationScheduler(svc, mailAutomationTickInterval)
+	return startMailAutomationScheduler(ctx, svc, mailAutomationTickInterval)
 }
 
-func StartMailAutomationSchedulerWithInterval(svc *Service, interval time.Duration) {
-	startMailAutomationScheduler(svc, interval)
+// StartMailAutomationSchedulerWithInterval 与上同，只是显式指定间隔（测试与运维用）。
+func StartMailAutomationSchedulerWithInterval(ctx context.Context, svc *Service, interval time.Duration) func() {
+	return startMailAutomationScheduler(ctx, svc, interval)
 }
 
-func startMailAutomationScheduler(svc *Service, interval time.Duration) {
-	if svc == nil {
-		return
-	}
-	runMailAutomationTickLoop(func() {
-
-		defer func() {
-			if r := recover(); r != nil {
-				logger.Scene("mail").Error(fmt.Errorf("panic: %v", r),
-					"自动化延时兜底扫描单轮 panic（已收敛，下一轮照常；不影响进程）")
-			}
-		}()
-		ctx, cancel := context.WithTimeout(context.Background(), mailAutomationTickTimeout)
-		defer cancel()
-		queued, err := svc.TickDueRuns(ctx)
+func startMailAutomationScheduler(ctx context.Context, svc *Service, interval time.Duration) func() {
+	return runMailAutomationTickLoop(ctx, func(runCtx context.Context) {
+		if svc == nil {
+			return
+		}
+		queued, err := svc.TickDueRuns(runCtx)
 		if err != nil {
 			logger.Scene("mail").Error(err, "自动化延时兜底扫描失败（下一轮重试）")
 			return
@@ -1519,26 +1515,33 @@ func startMailAutomationScheduler(svc *Service, interval time.Duration) {
 	}, interval)
 }
 
-func runMailAutomationTickLoop(run func(), interval time.Duration) (stop func()) {
+// runMailAutomationTickLoop 用共享周期原语跑兜底扫描：取消后不再启动新轮，
+// 返回的 stop 等待在途一轮结束。
+func runMailAutomationTickLoop(ctx context.Context, run func(context.Context), interval time.Duration) (stop func()) {
 	if interval <= 0 {
 		interval = mailAutomationTickInterval
 	}
-	done := make(chan struct{})
-	var once sync.Once
-	go func() {
-		run()
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ticker.C:
-				run()
-			case <-done:
-				return
-			}
-		}
-	}()
-	return func() { once.Do(func() { close(done) }) }
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	loopCtx, cancelLoop := context.WithCancel(ctx)
+	wait := lifecycle.PeriodicTask{
+		Interval: interval,
+		Timeout:  mailAutomationTickTimeout,
+		Round:    run,
+		OnPanic: func(r any) {
+			logger.Scene("mail").Error(fmt.Errorf("panic: %v", r),
+				"自动化延时兜底扫描单轮 panic（已收敛，下一轮照常；不影响进程）")
+		},
+	}.Start(loopCtx)
+
+	var stopOnce sync.Once
+	return func() {
+		stopOnce.Do(func() {
+			cancelLoop()
+			wait()
+		})
+	}
 }
 
 func (s *Service) StartRun(ctx context.Context, automationID, contactID uint64, triggerEvent string) (newRun bool, err error) {

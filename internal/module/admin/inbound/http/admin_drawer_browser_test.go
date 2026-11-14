@@ -134,6 +134,18 @@ func TestAdminDrawersRealBrowser(t *testing.T) {
 	}}
 	h := &AdminPagesHandle{menus: menus, perms: perms}
 	r := drawerEngine()
+	// 生产外壳与完整资产只用于布局、滚动和焦点验证；业务服务仍为夹具。
+	r.GET("/production", view.HTMLPage, func(c *gin.Context) {
+		c.HTML(http.StatusOK, "testdata/html-ui/admin-drawers-production.html", gin.H{"csrf_token": "browser-csrf"})
+	})
+	r.GET("/static/css/theme.css", func(c *gin.Context) {
+		css, err := templates.AssetFile("css/theme.css")
+		if err != nil {
+			c.Status(http.StatusNotFound)
+			return
+		}
+		c.Data(http.StatusOK, "text/css; charset=utf-8", css)
+	})
 	r.GET("/", view.HTMLPage, func(c *gin.Context) {
 		c.HTML(http.StatusOK, "testdata/html-ui/admin-drawers.html", nil)
 	})

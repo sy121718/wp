@@ -1,6 +1,7 @@
 package mediadto
 
 import (
+	"mime/multipart"
 	"strconv"
 	"strings"
 )
@@ -82,8 +83,10 @@ type VariantsGenerateReq struct {
 	ID uint64 `json:"id" form:"id" binding:"required"`
 }
 
+// UploadReq 是媒体上传的唯一 multipart 输入，文件与分类均只来自请求体。
 type UploadReq struct {
-	CategoryID string `form:"category_id"`
+	File       *multipart.FileHeader `form:"file"`
+	CategoryID string                `form:"category_id"`
 }
 
 func (r *UploadReq) CategoryIDValue() *uint64 {
@@ -98,6 +101,9 @@ func (r *UploadReq) CategoryIDValue() *uint64 {
 	return &id
 }
 
+// ReplaceReq 是媒体替换的 multipart 表单：文件字段必须是 *multipart.FileHeader，
+// 声明成其他类型会被 Gin 的 multipart 映射拒绝（ErrMultiFileHeader）。
 type ReplaceReq struct {
-	ID uint64 `form:"id"`
+	ID   uint64                `form:"id"`
+	File *multipart.FileHeader `form:"file"`
 }

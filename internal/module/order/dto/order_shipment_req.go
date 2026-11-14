@@ -1,8 +1,8 @@
 package orderdto
 
 import (
+	"errors"
 	"net/url"
-	"regexp"
 	"strconv"
 	"strings"
 )
@@ -14,6 +14,11 @@ type ShipLineReq struct {
 	Quantity    int    `form:"quantity" json:"quantity"`
 }
 
+// 发货明细的三个线上键（lines[][orderItemId] / lines[][quantity] /
+// lines[][warehouseId]）都是不带动态下标的字面量，字段门禁才能静态对账。
+//
+// 每行由模板按 DOM 顺序同时提交这三个控件（两个 hidden + 一个数字输入），
+// url.Values 对同一个键保留出现顺序，因此按下标配对即可还原行。
 type ShipOrderReq struct {
 	OrderID   uint64 `form:"orderId" json:"orderId" binding:"required"`
 	ProjectID string `form:"projectId" json:"projectId"`
@@ -24,92 +29,50 @@ type ShipOrderReq struct {
 	TrackingNo  string `form:"trackingNo" json:"trackingNo"`
 	Remark      string `form:"remark" json:"remark"`
 
-	OperatorID   int64         `form:"operatorId" json:"operatorId"`
-	OperatorName string        `form:"operatorName" json:"operatorName"`
-	Lines        []ShipLineReq `form:"lines" json:"lines" binding:"required"`
+	OperatorID   int64  `form:"operatorId" json:"operatorId"`
+	OperatorName string `form:"operatorName" json:"operatorName"`
+
+	// 三个平行数组是线上字段；Lines 由 BindForm 装配，不属于线上键。
+	// 不给 Lines 加 binding:"required"：gin 的校验在 BindForm 钩子之前跑，
+	// 那时 Lines 还是 nil，会把合法表单整单拒掉；空明细由 planShipment 报
+	// ErrShipLinesRequired。
+	LineItemIDs      []string      `form:"lines[][orderItemId]" json:"-"`
+	LineQuantities   []string      `form:"lines[][quantity]" json:"-"`
+	LineWarehouseIDs []string      `form:"lines[][warehouseId]" json:"-"`
+	Lines            []ShipLineReq `form:"-" json:"lines"`
 }
 
-// shipLineKeyRe 匹配表单交上来的行控件名：lines[<group>][<field>]。
+// BindForm 把三个平行数组按出现顺序配对成 []ShipLineReq。
 //
-// 为什么需要 BindForm：这个表单是 multipart，浏览器只能把 name 原样送上来，
-// 而 gin 的表单绑定按 tag 精确取键（form["lines"]），lines[1701][quantity]
-// 与 "lines" 不相等 —— ShouldBind 不报错，Lines 静默为 nil。
-var shipLineKeyReValue = regexp.MustCompile(`^lines\[([^\]]+)\]\[([A-Za-z0-9_]+)\]$`)
-
-// shipLineFieldWhitelist 只认这三个键；多带的键忽略而不是报错。
+// OrderItemID 仍是每行显式提交的值（hidden 控件），不按下标猜归属；
+// 下标只用于把同一行的数量与仓库配到那个 id 上。
 //
-// 为什么忽略：浏览器与写基座可能顺手带上别的控件，为多一个键整单 400
-// 是把内部实现细节变成用户错误。
-var shipLineFieldWhitelist = map[string]bool{
-	"orderItemId": true,
-	"quantity":    true,
-	"warehouseId": true,
-}
-
-// BindForm 把 lines[<下标>][<字段>] 形状的扁平键收成 []ShipLineReq。
-//
-// 语义三条（与 planShipment 的分工一致，service 侧不需要改）：
+// 三条语义（与 planShipment 的分工一致，service 侧不需要改）：
 //  1. 所有行都没填 → Lines 为空，planShipment 报 ErrShipLinesRequired；
 //  2. 部分行有值 → 只收有值的行，其余忽略（部分发货的常规操作）；
 //  3. 显式填 0 → 保留，由 planShipment 的 Quantity <= 0 报 ErrQuantityInvalid。
 //
-// OrderItemID 以**值**为准、下标只用于分组：下标由服务端渲染，被改了不该改变语义；
-// 值来自客户端，归属校验在 planShipment（order_shipment.go:238 按订单行集合比对）。
+// 数组长度不一致时整单报错、不静默配对：缺一个 hidden 控件就会让后面的数量
+// 串到前一行的订单项上，宁可直接拒绝也不发错货。
 func (r *ShipOrderReq) BindForm(vals url.Values) error {
-	type lineAcc struct {
-		itemID      uint64
-		quantity    int
-		hasQuantity bool
-		warehouseID string
+	if len(r.LineItemIDs) != len(r.LineQuantities) || len(r.LineItemIDs) != len(r.LineWarehouseIDs) {
+		return errShipLineArraysMismatch
 	}
-	accs := make(map[string]*lineAcc, 4)
-	order := make([]string, 0, 4)
-	for key, values := range vals {
-		matched := shipLineKeyReValue.FindStringSubmatch(key)
-		if matched == nil {
+	lines := make([]ShipLineReq, 0, len(r.LineItemIDs))
+	for i, rawID := range r.LineItemIDs {
+		itemID, err := strconv.ParseUint(strings.TrimSpace(rawID), 10, 64)
+		if err != nil || itemID == 0 {
 			continue
 		}
-		field := matched[2]
-		if !shipLineFieldWhitelist[field] {
-			continue
-		}
-		if len(values) == 0 {
-			continue
-		}
-		raw := strings.TrimSpace(values[0])
-		group := matched[1]
-		acc, seen := accs[group]
-		if !seen {
-			acc = &lineAcc{}
-			accs[group] = acc
-			order = append(order, group)
-		}
-		switch field {
-		case "orderItemId":
-			if id, err := strconv.ParseUint(raw, 10, 64); err == nil {
-				acc.itemID = id
-			}
-		case "quantity":
-			// 空串与非法值都当"这行没填数量"，不在这里报错，也不在这里判 0。
-			if id, err := strconv.Atoi(raw); err == nil {
-				acc.quantity = id
-				acc.hasQuantity = true
-			}
-		case "warehouseId":
-			acc.warehouseID = raw
-		}
-	}
-
-	lines := make([]ShipLineReq, 0, len(order))
-	for _, group := range order {
-		acc := accs[group]
-		if acc == nil || acc.itemID == 0 || !acc.hasQuantity {
+		// 空串与非法值都当"这行没填数量"，不在这里报错，也不在这里判 0。
+		quantity, qerr := strconv.Atoi(strings.TrimSpace(r.LineQuantities[i]))
+		if qerr != nil {
 			continue
 		}
 		lines = append(lines, ShipLineReq{
-			OrderItemID: acc.itemID,
-			WarehouseID: acc.warehouseID,
-			Quantity:    acc.quantity,
+			OrderItemID: itemID,
+			WarehouseID: strings.TrimSpace(r.LineWarehouseIDs[i]),
+			Quantity:    quantity,
 		})
 	}
 	if len(lines) > 0 {
@@ -117,6 +80,10 @@ func (r *ShipOrderReq) BindForm(vals url.Values) error {
 	}
 	return nil
 }
+
+// errShipLineArraysMismatch 是行数组长度不一致的内部错误：由绑定入口转成参数错，
+// 不把实现细节交给界面。
+var errShipLineArraysMismatch = errors.New("ship line arrays length mismatch")
 
 type ListShipmentReq struct {
 	OrderID   uint64 `form:"orderId" json:"orderId" binding:"required"`

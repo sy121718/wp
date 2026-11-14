@@ -274,11 +274,12 @@ func TestAdminI18nBulkDeleteMissingRollsBackWholeBatch(t *testing.T) {
 		t.Fatal("整批失败时存在的 zh-CN 那条必须还在（不能部分删除）")
 	}
 
-	if items := i18nHTMLText(t, resp, "li"); len(items) != 0 {
-		t.Fatalf("失败回执只应有一句主消息，不得列明细：%s", resp)
+	// 整批拒绝要能定位到具体词条：明细在本响应的错误区里，且原因取词、不出现裸 key。
+	if !strings.Contains(resp, absent) {
+		t.Fatalf("整批拒绝应给出可定位的词条明细：%s", resp)
 	}
-	if strings.Contains(resp, absent) || strings.Contains(resp, adminenums.ErrI18nEntryMissing) {
-		t.Fatalf("失败文案不得回显词条标识或内部 key：%q", resp)
+	if strings.Contains(resp, adminenums.ErrI18nEntryMissing) {
+		t.Fatalf("失败文案不得回显内部 key：%q", resp)
 	}
 	for _, m := range pageLeakMarkers {
 		if strings.Contains(resp, m) {

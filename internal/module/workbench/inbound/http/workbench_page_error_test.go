@@ -13,8 +13,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"go_wp/pkg/builder"
-	"go_wp/pkg/builder/source"
 	blockcontract "go_wp/internal/module/block/contract"
 	blockdto "go_wp/internal/module/block/dto"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
@@ -26,6 +24,8 @@ import (
 	presentationdto "go_wp/internal/module/presentation/dto"
 	workbenchenums "go_wp/internal/module/workbench/enums"
 	"go_wp/internal/templates"
+	"go_wp/pkg/builder"
+	"go_wp/pkg/builder/source"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/response"
 )

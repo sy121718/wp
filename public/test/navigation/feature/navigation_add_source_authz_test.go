@@ -125,6 +125,8 @@ func TestNavigationAddSourceMixedBatchRejectedWhole(t *testing.T) {
 	env.NavSvc.SetSourceResolver(navSourceStub{})
 	i18n.InjectForTest(map[string]map[string]string{
 		navigationenums.ErrBatchReject: {"zh-CN": "合成-整批拒绝", "en-US": "synth-batch-rejected"},
+		// 逐条原因也要有词：明细在 HTML 里按 key 取词，夹具替换词库时必须一并注入。
+		navigationenums.NoPublicPath: {"zh-CN": "合成-暂无公开路径", "en-US": "synth-no-public-path"},
 	}, map[string]int{})
 	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
 
@@ -138,8 +140,10 @@ func TestNavigationAddSourceMixedBatchRejectedWhole(t *testing.T) {
 	if !strings.Contains(body, "data-ui-error") {
 		t.Fatalf("整批拒绝应渲染共享错误片段：%s", body)
 	}
-	if strings.Contains(body, "<ul>") || strings.Contains(body, navSrcPageOne) {
-		t.Fatalf("失败区不逐条列明细（明细只进 data.items）：%s", body)
+	// 整批拒绝要能定位到具体对象：明细必须出现在本响应里，不能只藏在 data.items。
+	// 明细按真实对象的名称定位（模板显示 Label/Title，不显示内部 id）。
+	if !strings.Contains(body, "草稿页") || !strings.Contains(body, "合成-暂无公开路径") {
+		t.Fatalf("整批拒绝应给出可定位明细与取词后的原因：%s", body)
 	}
 	if got := navCountItems(t, env); got != before {
 		t.Fatalf("整批拒绝不该写入任何行：条数 %d → %d", before, got)

@@ -1,17 +1,17 @@
 package navigationhttp
 
 import (
-	pageview "go_wp/pkg/view"
 	"context"
 	"errors"
-	"net/http"
-	"net/http/httptest"
-	"strings"
-	"testing"
 	navigationcontract "go_wp/internal/module/navigation/contract"
 	navigationdto "go_wp/internal/module/navigation/dto"
 	navigationenums "go_wp/internal/module/navigation/enums"
 	"go_wp/pkg/i18n"
+	pageview "go_wp/pkg/view"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
 )
 
 type workbenchNavigationStub struct {

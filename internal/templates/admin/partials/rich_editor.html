@@ -13,7 +13,7 @@
  * 四条约定：
  *   · value 传的是**库里的原始值**：Jet 输出时会转义一次（属性安全），浏览器解析后
  *     隐藏 input 拿到的是原文；纯文本的「先转义再交给编辑器」由 rich-editor/index.js 的
- *     装载流程完成（口径与 Go 侧 core.RichTextHTML 一致）；
+ *     装载流程完成（口径与 Go 侧 pkg/richtext.RichTextHTML 一致）；
  *   · key 只用来拼唯一 id（同一个字段在一个页面里会出现 N 次：每一行一个抽屉）；
  *   · Trix 会为每个编辑器自动创建一个内部 <trix-toolbar>（vendor 源码 trix.umd.js:13781），
  *     工具条内容由 rich-editor/toolbar.js 整体替换，这里不需要写工具条结构；

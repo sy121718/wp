@@ -41,7 +41,7 @@ func TestNavigationEditUsesPostUpdatePermission(t *testing.T) {
 	svc := &editPermissionNavigation{}
 	r := gin.New()
 	pages := r.Group("/admin", func(c *gin.Context) { c.Set("user_id", int64(987654321)) })
-	navigationhttp.SetupNavigationPages(pages, svc, projectcontract.ProjectService(nil), pagecontract.PageService(nil), blockcontract.BlockService(nil))
+	navigationhttp.SetupNavigationPages(nil, pages, svc, projectcontract.ProjectService(nil), pagecontract.PageService(nil), blockcontract.BlockService(nil))
 	request := func() int {
 		rec := httptest.NewRecorder()
 		r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/navigations/edit?id=row-1&project=project-1&kind=header", nil))

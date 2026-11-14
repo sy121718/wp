@@ -5,7 +5,6 @@ import (
 	"errors"
 	"net"
 	"net/http"
-	"regexp"
 	"strconv"
 	"strings"
 
@@ -23,6 +22,7 @@ import (
 	adminservice "go_wp/internal/module/admin/service"
 	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
 	"go_wp/pkg/auth"
+	"go_wp/pkg/bulkids"
 	"go_wp/pkg/captcha"
 	"go_wp/pkg/datarule"
 	"go_wp/pkg/facing"
@@ -320,6 +320,9 @@ func (h *AdminPagesHandle) AdministratorsDelete(c *gin.Context) {
 	if !ok {
 		return
 	}
+	if rejectBulkDeleteOverLimit(c, req.IDList()) {
+		return
+	}
 	req.OperatorID = builtin.CurrentUserID(c)
 	if _, err := h.admins.AdminDelete(c.Request.Context(), req); err != nil {
 		response.ErrorStatusAuto(c, "admin.write", err)
@@ -331,6 +334,9 @@ func (h *AdminPagesHandle) AdministratorsDelete(c *gin.Context) {
 func (h *AdminPagesHandle) AdministratorsBulkDelete(c *gin.Context) {
 	req, ok := bindAdminForm[admindto.AdminDeleteReq](c)
 	if !ok {
+		return
+	}
+	if rejectBulkDeleteOverLimit(c, req.IDList()) {
 		return
 	}
 	req.OperatorID = builtin.CurrentUserID(c)
@@ -457,7 +463,11 @@ func (h *AdminPagesHandle) DatarulesUpdate(c *gin.Context) {
 // 编辑器在场就解析整份表单提交，否则沿用库里已有配置（清空整个配置是另一件事）。
 func (h *AdminPagesHandle) dataruleConfigFor(c *gin.Context, id uint64) (admindto.RuleConfigDTO, error) {
 	if c.PostForm(dataruleEditorMarker) != "" {
-		return dataruleDropEmptyGroups(dataruleConfigFromForm(c)), nil
+		cfg, err := dataruleConfigFromForm(c)
+		if err != nil {
+			return admindto.RuleConfigDTO{}, adminenums.BadRequest()
+		}
+		return dataruleDropEmptyGroups(cfg), nil
 	}
 	detail, err := h.rules.RuleDetail(c.Request.Context(), &admindto.RuleDetailReq{ID: id})
 	if err != nil {
@@ -474,6 +484,9 @@ func (h *AdminPagesHandle) DatarulesDelete(c *gin.Context) {
 	if !ok {
 		return
 	}
+	if rejectBulkDeleteOverLimit(c, req.IDList()) {
+		return
+	}
 	if err := h.rules.RuleDelete(c.Request.Context(), req); err != nil {
 		response.ErrorStatusAuto(c, "admin.write", err)
 		return
@@ -484,6 +497,9 @@ func (h *AdminPagesHandle) DatarulesDelete(c *gin.Context) {
 func (h *AdminPagesHandle) DatarulesBulkDelete(c *gin.Context) {
 	req, ok := bindAdminForm[admindto.RuleDeleteReq](c)
 	if !ok {
+		return
+	}
+	if rejectBulkDeleteOverLimit(c, req.IDList()) {
 		return
 	}
 	if err := h.rules.RuleDelete(c.Request.Context(), req); err != nil {
@@ -587,6 +603,9 @@ func (h *AdminPagesHandle) DepartmentsDelete(c *gin.Context) {
 	if !ok {
 		return
 	}
+	if rejectBulkDeleteOverLimit(c, req.IDList()) {
+		return
+	}
 	if err := h.depts.DeptDelete(c.Request.Context(), req); err != nil {
 		response.ErrorStatusAuto(c, "admin.write", err)
 		return
@@ -597,6 +616,9 @@ func (h *AdminPagesHandle) DepartmentsDelete(c *gin.Context) {
 func (h *AdminPagesHandle) DepartmentsBulkDelete(c *gin.Context) {
 	req, ok := bindAdminForm[admindto.DeptDeleteReq](c)
 	if !ok {
+		return
+	}
+	if rejectBulkDeleteOverLimit(c, req.IDList()) {
 		return
 	}
 	if err := h.depts.DeptDelete(c.Request.Context(), req); err != nil {
@@ -981,6 +1003,9 @@ func (h *AdminPagesHandle) MenusDelete(c *gin.Context) {
 	if !ok {
 		return
 	}
+	if rejectBulkDeleteOverLimit(c, req.IDList()) {
+		return
+	}
 	id := req.IDs[0]
 	nodes, err := h.menus.MenuTree(c.Request.Context(), &admindto.MenuTreeReq{})
 	if err != nil {
@@ -1001,6 +1026,9 @@ func (h *AdminPagesHandle) MenusDelete(c *gin.Context) {
 func (h *AdminPagesHandle) MenusBulkDelete(c *gin.Context) {
 	req, ok := bindAdminForm[admindto.MenuDeleteReq](c)
 	if !ok {
+		return
+	}
+	if rejectBulkDeleteOverLimit(c, req.IDList()) {
 		return
 	}
 	if err := h.menus.MenuDelete(c.Request.Context(), req); err != nil {
@@ -1098,6 +1126,9 @@ func (h *AdminPagesHandle) PermissionsDelete(c *gin.Context) {
 	if !ok {
 		return
 	}
+	if rejectBulkDeleteOverLimit(c, req.IDList()) {
+		return
+	}
 	if _, err := h.perms.PermDelete(c.Request.Context(), req); err != nil {
 		response.ErrorStatusAuto(c, "admin.write", err)
 		return
@@ -1108,6 +1139,9 @@ func (h *AdminPagesHandle) PermissionsDelete(c *gin.Context) {
 func (h *AdminPagesHandle) PermissionsBulkDelete(c *gin.Context) {
 	req, ok := bindAdminForm[admindto.PermDeleteReq](c)
 	if !ok {
+		return
+	}
+	if rejectBulkDeleteOverLimit(c, req.IDList()) {
 		return
 	}
 	res, err := h.perms.PermDelete(c.Request.Context(), req)
@@ -1234,6 +1268,9 @@ func (h *AdminPagesHandle) RolesDelete(c *gin.Context) {
 	if !ok {
 		return
 	}
+	if rejectBulkDeleteOverLimit(c, req.IDList()) {
+		return
+	}
 	if err := h.roles.RoleDelete(c.Request.Context(), req); err != nil {
 		response.ErrorStatusAuto(c, "admin.write", err)
 		return
@@ -1246,6 +1283,9 @@ func (h *AdminPagesHandle) RolesBulkDelete(c *gin.Context) {
 	if !ok {
 		return
 	}
+	if rejectBulkDeleteOverLimit(c, req.IDList()) {
+		return
+	}
 	if err := h.roles.RoleDelete(c.Request.Context(), req); err != nil {
 		response.ErrorStatusAuto(c, adminErrScene, err)
 		return
@@ -1255,12 +1295,15 @@ func (h *AdminPagesHandle) RolesBulkDelete(c *gin.Context) {
 
 const dataruleEditorMarker = "config_editor"
 
-var dataruleFormRowRe = regexp.MustCompile(`^groups\[(\d+)\]\.conditions\[(\d+)\]\.(field|op|value)$`)
-
-var dataruleFormLogicRe = regexp.MustCompile(`^groups\[(\d+)\]\.logic$`)
-
-func dataruleConfigFromForm(c *gin.Context) admindto.RuleConfigDTO {
-
+// dataruleConfigFromForm 把条件编辑器的**静态平行数组**还原成条件组。
+//
+// 线上键是 groupLogic（每组一个）与 condGroup / condField / condOp / condValue
+// （每行各一个）：同名控件按 DOM 出现顺序保留多值，因此按顺序把状态、字段、
+// 运算符与值配回同一行。配对失败一律返回错误，**不返回空配置** —— 空配置能通过
+// service 的「空组」校验，会把畸形提交保存成「没有任何条件」，等于静默放宽数据权限。
+//
+// 组号只允许落在本次 groupLogic 声明的范围内：越界不按请求数字无限扩组。
+func dataruleConfigFromForm(c *gin.Context) (admindto.RuleConfigDTO, error) {
 	_ = c.Request.ParseForm()
 
 	cfg := admindto.RuleConfigDTO{OmitFields: c.PostFormArray("omit_fields")}
@@ -1268,61 +1311,42 @@ func dataruleConfigFromForm(c *gin.Context) admindto.RuleConfigDTO {
 		cfg.OmitFields = []string{}
 	}
 
-	type rowKey struct{ group, row int }
-	rows := map[rowKey]*admindto.RuleConditionDTO{}
-	logics := map[int]string{}
-	maxGroup, maxRow := -1, map[int]int{}
-	for key, values := range c.Request.PostForm {
-		value := ""
-		if len(values) > 0 {
-			value = values[0]
-		}
-		if m := dataruleFormRowRe.FindStringSubmatch(key); m != nil {
-			g, _ := strconv.Atoi(m[1])
-			i, _ := strconv.Atoi(m[2])
-			item, ok := rows[rowKey{g, i}]
-			if !ok {
-				item = &admindto.RuleConditionDTO{}
-				rows[rowKey{g, i}] = item
-			}
-			switch m[3] {
-			case "field":
-				item.Field = strings.TrimSpace(value)
-			case "op":
-				item.Op = strings.TrimSpace(value)
-			case "value":
-				item.Value = strings.TrimSpace(value)
-			}
-			if g > maxGroup {
-				maxGroup = g
-			}
-			if i+1 > maxRow[g] {
-				maxRow[g] = i + 1
-			}
-			continue
-		}
-		if m := dataruleFormLogicRe.FindStringSubmatch(key); m != nil {
-			g, _ := strconv.Atoi(m[1])
-			logics[g] = strings.TrimSpace(value)
-			if g > maxGroup {
-				maxGroup = g
-			}
-		}
+	logics := c.PostFormArray("groupLogic")
+	groupIdx := c.PostFormArray("condGroup")
+	fields := c.PostFormArray("condField")
+	ops := c.PostFormArray("condOp")
+	values := c.PostFormArray("condValue")
+
+	// 行数组必须等长：缺一个控件会让后面的值串到前一条件上，整份配置直接拒绝。
+	if len(groupIdx) != len(fields) || len(groupIdx) != len(ops) || len(groupIdx) != len(values) {
+		return admindto.RuleConfigDTO{}, errDataruleConditionMismatch
+	}
+	// 没有条件行时允许没有组状态（清空配置的合法路径）；有条件行则每组必须有状态。
+	if len(groupIdx) > 0 && len(logics) == 0 {
+		return admindto.RuleConfigDTO{}, errDataruleConditionMismatch
 	}
 
-	groups := make([]admindto.RuleConditionGroupDTO, 0, maxGroup+1)
-	for g := 0; g <= maxGroup; g++ {
-		group := admindto.RuleConditionGroupDTO{Logic: logics[g]}
-		for i := 0; i < maxRow[g]; i++ {
-			if item, ok := rows[rowKey{g, i}]; ok {
-				group.Conditions = append(group.Conditions, *item)
-			}
+	groups := make([]admindto.RuleConditionGroupDTO, 0, len(logics))
+	for _, logic := range logics {
+		groups = append(groups, admindto.RuleConditionGroupDTO{Logic: strings.TrimSpace(logic)})
+	}
+	for i, rawGroup := range groupIdx {
+		g, err := strconv.Atoi(strings.TrimSpace(rawGroup))
+		if err != nil || g < 0 || g >= len(groups) {
+			return admindto.RuleConfigDTO{}, errDataruleConditionMismatch
 		}
-		groups = append(groups, group)
+		groups[g].Conditions = append(groups[g].Conditions, admindto.RuleConditionDTO{
+			Field: strings.TrimSpace(fields[i]),
+			Op:    strings.TrimSpace(ops[i]),
+			Value: strings.TrimSpace(values[i]),
+		})
 	}
 	cfg.ConditionGroups = groups
-	return cfg
+	return cfg, nil
 }
+
+// errDataruleConditionMismatch 是条件行配对的受控错误：控制器据此拒绝保存。
+var errDataruleConditionMismatch = errors.New("datarule condition rows are not pairable")
 
 func dataruleUsableConditions(rows []admindto.RuleConditionDTO) []admindto.RuleConditionDTO {
 	kept := make([]admindto.RuleConditionDTO, 0, len(rows))
@@ -1449,6 +1473,23 @@ func parseBulkIDs(raw []string) (ids []uint64, invalid []string) {
 // 失败已由这里写出 401/400：参数错误的文案由词库给，控制器不自己拼。
 // 这些端点在页面里是标准表单提交，绑定必须显式声明 FormPost —— 不能靠
 // binding.JSON 的 Content-Type 自适应，否则同一个端点会悄悄接受两种形状。
+// rejectBulkDeleteOverLimit 在绑定之后、调用业务之前拦下超限的批量删除。
+//
+// 上限是**请求形状**而不是业务规则：超限整批拒绝、只回一句受控提示，
+// 不返回逐条明细。放在这里是为了在触碰 service 之前就失败；
+// service 侧的 checkBulkDeleteLimit 是同一判据的第二道，防止别的调用方绕过 HTTP 层。
+func rejectBulkDeleteOverLimit(c *gin.Context, ids []uint64) bool {
+	raw := make([]string, 0, len(ids))
+	for _, id := range ids {
+		raw = append(raw, strconv.FormatUint(id, 10))
+	}
+	if _, err := bulkids.Normalize(raw); err != nil {
+		response.ErrorStatusAuto(c, adminErrScene, err)
+		return true
+	}
+	return false
+}
+
 func bindAdminForm[T any](c *gin.Context) (*T, bool) {
 	var req T
 	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {

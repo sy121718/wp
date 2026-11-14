@@ -276,12 +276,13 @@ func TestI18nEnumsSeedSchemaAndIdempotency(t *testing.T) {
 		"page.bulk.pageAllDeleted", "page.bulk.pageAllSkipped", "page.bulk.pageMissingID",
 		"page.bulk.pageNoneSelected", "page.bulk.pagePartial", "page.bulk.redirectAllDeleted",
 		"page.bulk.redirectAllSkipped", "page.bulk.redirectNoneSelected", "page.bulk.redirectPartial",
-		"product.bulk.attrDone", "product.bulk.attrPartial", "product.bulk.brandDone",
-		"product.bulk.brandPartial", "product.bulk.categoryDone", "product.bulk.categoryPartial",
+		// 商品批量键已随短键整改改名（718e 的 renamed 列表）：断言只认现行 key。
+		"pBulkAttrDone", "pAttrPartial", "pBulkBrandDone", "pBrandPartial",
+		"pBulkCatDone", "pBulkCatPartial",
 		"product.bulk.pricingAllSkip", "product.bulk.pricingApplied", "product.bulk.pricingNoChange",
-		"product.bulk.pricingNoneSelected", "product.bulk.pricingPartial", "product.bulk.productDone",
-		"product.bulk.productPartial", "product.bulk.tagDone", "product.bulk.tagPartial",
-		"product.bulk.variantSaveNoChange", "product.bulk.variantSaveSaved", "product.bulk.variantSaveSkipped",
+		"pPriceNoneSel", "product.bulk.pricingPartial", "pBulkProdDone",
+		"pProductPartial", "pBulkTagDone", "pBulkTagPartial",
+		"pVarNoChange", "pVarSaved", "pVarSkipped",
 	}
 	if got := countRows(t, db, "sys_i18n", "item_key IN (?) AND lang = ?", bulkKeys, "zh-CN"); got != 60 {
 		t.Fatalf("283 的 60 个 key 应有 zh-CN 各一行，实际 %d", got)
@@ -379,7 +380,7 @@ func TestI18nEnumsSeedSchemaAndIdempotency(t *testing.T) {
 		t.Fatal("注册台账里找不到 298-i18n-seed-product-tag-hits（新增 seed 必须注册）")
 	}
 
-	relatedKeys := []string{"ErrRelatedInvalid"}
+	relatedKeys := []string{"pRelatedInvalid"}
 	if got := countRows(t, db, "sys_i18n", "item_key IN (?) AND lang = ?", relatedKeys, "zh-CN"); got != 1 {
 		t.Fatalf("304 的 1 个 key 应有 zh-CN 各一行，实际 %d", got)
 	}
@@ -431,7 +432,7 @@ func TestI18nEnumsSeedSchemaAndIdempotency(t *testing.T) {
 		t.Fatal("注册台账里找不到 304-i18n-seed-product-related-ids（新增 seed 必须注册）")
 	}
 
-	tagCrossKeys := []string{"ErrTagCrossProject"}
+	tagCrossKeys := []string{"pTagCrossScope"}
 	if got := countRows(t, db, "sys_i18n", "item_key IN (?) AND lang = ?", tagCrossKeys, "zh-CN"); got != 1 {
 		t.Fatalf("312 的 1 个 key 应有 zh-CN 各一行，实际 %d", got)
 	}
@@ -602,7 +603,9 @@ func TestI18nEnumsSeedSchemaAndIdempotency(t *testing.T) {
 		t.Fatalf("MsgPageCreated zh-CN = %q，want 页面创建成功", value)
 	}
 
-	categories := map[string]string{"ErrSystemError": "error", "uiOpSuccess": "msg", "MsgPageCreated": "ui"}
+	// uiOpSuccess 的 category 在 738 / 747 的规范表里都定为 ui（旧 msg 分类随
+	// msg_operation_success 一起退役），artex 实库同样是 ui。
+	categories := map[string]string{"ErrSystemError": "error", "uiOpSuccess": "ui", "MsgPageCreated": "ui"}
 	for key, want := range categories {
 		var got string
 		if err := db.Table("sys_i18n").Select("category").

@@ -288,7 +288,10 @@ func TestAdminBulkDeleteAllOrNothingAcrossEntities(t *testing.T) {
 	})
 }
 
-func TestAdminBulkDeleteIllegalIDsReachItems(t *testing.T) {
+// 批量删除要么全成要么全败：非法主键整批 400，只回一句受控提示。
+// 不返回逐条明细 —— 「哪几条不合法」属于 data 层的细节，不进 message，
+// 也不该让一次失败变成 N 条回执。
+func TestAdminBulkDeleteIllegalIDsRejectedWholeBatch(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db := support.NewMigratedPGTestDB(t)
 	svc := adminservice.NewService(db)
@@ -308,44 +311,19 @@ func TestAdminBulkDeleteIllegalIDsReachItems(t *testing.T) {
 	engine.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("非法 id 应 400，实际 %d：%s", rec.Code, rec.Body.String())
+		t.Fatalf("非法 id 应整批 400，实际 %d：%s", rec.Code, rec.Body.String())
 	}
 	var payload struct {
 		Code    int    `json:"code"`
 		Message string `json:"message"`
-		Data    struct {
-			Items []struct {
-				ID        string `json:"id"`
-				ReasonKey string `json:"reasonKey"`
-				Message   string `json:"message"`
-			} `json:"items"`
-		} `json:"data"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("响应不是合法 JSON：%v body=%s", err, rec.Body.String())
 	}
-	if payload.Code != http.StatusBadRequest {
-		t.Fatalf("code = %d，want 400", payload.Code)
-	}
 	if payload.Message == "" || payload.Message == adminenums.ErrBulkDeleteInvalidID {
 		t.Fatalf("message 必须取过词，got %q", payload.Message)
 	}
-	got := map[string]string{}
-	for _, item := range payload.Data.Items {
-		if item.ReasonKey != adminenums.ErrBulkDeleteInvalidID {
-			t.Fatalf("明细原因 = %q，want %q", item.ReasonKey, adminenums.ErrBulkDeleteInvalidID)
-		}
-		if item.Message == "" || item.Message == item.ReasonKey {
-			t.Fatalf("明细 message 必须取过词，got %q", item.Message)
-		}
-		got[item.ID] = item.ReasonKey
-	}
-	for _, raw := range []string{"abc", "0"} {
-		if _, ok := got[raw]; !ok {
-			t.Fatalf("data.items 应逐条带上原始非法值 %q，实际 %+v", raw, payload.Data.Items)
-		}
-	}
-	if _, ok := got["12345"]; ok {
-		t.Fatalf("合法但不存在的主键不该出现在非法明细里：%+v", payload.Data.Items)
+	if strings.Contains(rec.Body.String(), `"items"`) {
+		t.Fatalf("批量失败不该返回逐条明细：%s", rec.Body.String())
 	}
 }

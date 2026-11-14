@@ -1,29 +1,50 @@
 // editor-app/methods/app-panels.js — 应用业务面板：页面设置、全局主题与修订历史。
 // 端点、评分服务与主题保存属于应用；通用检查器面板在 pkg/builder/editor。
-import { meta, morphHTML, wbBusy, csrfHeaders, clone, wbColorPicker } from '../../editor/core.js';
+import { meta, clone, wbColorPicker } from '../../editor/core.js';
+
+// panelTrigger 触发一次服务端渲染的面板请求。
+//
+// 发送、CSRF、HTML/状态校验、失败区与迟到响应隔离全部在写基座
+// （ui/write-base.js + 布局里的 data-write 表单）；这里只广播触发事件，
+// 不再另写执行器 —— 否则同一页会出现两套 CSRF/失败语义。
+function panelTrigger(id) {
+    // 触发体是 body：布局里写成 `from:body`，在 document 上派发不会冒泡到子节点。
+    (document.body || document).dispatchEvent(new CustomEvent(id, { bubbles: true }));
+}
 
 export const appPanelMethods = {
             // ---- 页面设置面板 HTMX 路径（docs/09 §3）----
             // 表单与评分均由服务端渲染；客户端只做「值变更 → 回写 doc.settings → 刷新画布/评分」。
             renderSettingsPanelHtmx() {
-                var body = document.getElementById('wb-settings-body');
-                if (!body) return;
+                var host = document.getElementById('wb-settings-body');
+                if (!host) return;
                 var self = this;
-                var form = new URLSearchParams();
-                form.append('document', JSON.stringify(this.doc));
-                fetch('/workbench/settings', {
-                    method: 'POST',
-                    credentials: 'same-origin',
-                    headers: csrfHeaders({ 'Content-Type': 'application/x-www-form-urlencoded' }),
-                    body: form.toString()
-                }).then(function (r) { return r.text(); }).then(function (html) {
-                    // morph 替换：设置表单原地保留滚动位置与输入焦点（docs/06-C §四）。
-                    morphHTML(body, html);
-                    self.bindSettingsHtmx(body);
-                    self.refreshSeoScoreHtmx();
-                }).catch(function () {
-                    morphHTML(body, '<p class="wb-empty">设置面板加载失败</p>');
-                });
+                // 成功监听必须挂在**存活的外壳**上：面板与「设置访问密码」是两个兄弟
+                // 表单写同一个区域，挂在某一个表单上时，另一个表单成功就收不到事件
+                // （密码哈希回填链因此断开）。write:success 从发起表单冒泡，按
+                // data-write-builder 区分是谁成功。
+                if (!host.__wbPanelBound) {
+                    host.__wbPanelBound = true;
+                    host.addEventListener('write:success', function (e) {
+                        var owner = e.target;
+                        // 一律读 id 属性，不用 `.id`：表单里有 name="id" 的控件时，
+                        // 该控件会遮蔽表单自身的 id 属性（真实 Chrome 实测）。
+                        var formID = owner && owner.getAttribute ? owner.getAttribute('id') || '' : '';
+                        if (formID === 'wb-settings-form') {
+                            self.bindSettingsHtmx(host);
+                            self.refreshSeoScoreHtmx();
+                            return;
+                        }
+                        // 「设置访问密码」只换同一块面板：回填新哈希后不必再请求评分。
+                        if (formID === 'wb-settings-password-form') {
+                            self.bindSettingsHtmx(host);
+                            return;
+                        }
+                        if (formID === 'wb-seo-form') self.bindSettingsHtmx(host);
+                    });
+                }
+                // 面板输入是整份编辑器文档：由 workbench-settings 提供对象，HTMX 发送。
+                panelTrigger('wb:settings-panel');
             },
             // 访问密码重设（PIPE-6 AccessGuard）：明文只在这一跳里出现，服务端 bcrypt
             // 后借 data-wb-apply 的隐藏字段回填哈希 —— 明文绝不写进文档
@@ -35,39 +56,21 @@ export const appPanelMethods = {
                 if (!input) return;
                 var pwd = input.value || '';
                 if (!pwd) return;
-                var self = this;
-                var form = new URLSearchParams();
-                form.append('document', JSON.stringify(this.doc));
-                form.append('access-password', pwd);
-                fetch('/workbench/settings', {
-                    method: 'POST',
-                    credentials: 'same-origin',
-                    headers: csrfHeaders({ 'Content-Type': 'application/x-www-form-urlencoded' }),
-                    body: form.toString()
-                }).then(function (r) { return r.text(); }).then(function (html) {
-                    morphHTML(body, html);
-                    self.bindSettingsHtmx(body);
-                    self.refreshSeoScoreHtmx();
-                }).catch(function () {
-                    morphHTML(body, '<p class="wb-empty">密码设置失败</p>');
-                });
+                var form = document.getElementById('wb-settings-password-form');
+                if (!form) return;
+                var hidden = form.querySelector('[name=wb-access-password]');
+                if (!hidden) {
+                    hidden = document.createElement('input');
+                    hidden.type = 'hidden';
+                    hidden.name = 'wb-access-password';
+                    form.appendChild(hidden);
+                }
+                hidden.value = pwd;
+                panelTrigger('wb:settings-password');
             },
             refreshSeoScoreHtmx() {
-                var box = document.getElementById('wb-seo-score');
-                if (!box) return;
-                var form = new URLSearchParams();
-                form.append('document', JSON.stringify(this.doc));
-                form.append('url', (meta.draftPath || ''));
-                fetch('/workbench/seo-score-panel', {
-                    method: 'POST',
-                    credentials: 'same-origin',
-                    headers: csrfHeaders({ 'Content-Type': 'application/x-www-form-urlencoded' }),
-                    body: form.toString()
-                }).then(function (r) { return r.text(); }).then(function (html) {
-                    morphHTML(box, html);
-                }).catch(function () {
-                    morphHTML(box, '<p class="wb-empty">评分加载失败</p>');
-                });
+                // 评分区是设置面板内的子区域：请求同样走写基座，失败只落本宿主的错误区。
+                panelTrigger('wb:seo-panel');
             },
             bindSettingsHtmx(body) {
                 var self = this;
@@ -173,28 +176,29 @@ export const appPanelMethods = {
             // 字段表与渲染在服务端（fragments/global_panel）；客户端只做取色器增强与保存。
             renderGlobalPanelHtmx() {
                 var body = document.getElementById('wb-global-body');
-                if (!body) return;
+                var content = document.getElementById('wb-global-content');
+                if (!body || !content) return;
                 var self = this;
                 if (!meta.themeId) {
-                    body.innerHTML = '<p class="wb-empty">当前页面未挂接主题。<br>到后台「主题管理」创建并激活主题后，这里可就地调整。</p>';
+                    content.innerHTML = '<p class="wb-empty">当前页面未挂接主题。<br>到后台「主题管理」创建并激活主题后，这里可就地调整。</p>';
                     return;
                 }
-                if (!body.firstChild) body.innerHTML = '<p class="wb-empty">加载中…</p>'; // 已有内容时保留旧 DOM：容器高度不归零，滚动位置不会被钳回顶部
-                var form = new URLSearchParams();
-                form.append('themeId', meta.themeId);
-                form.append('settings', JSON.stringify(meta.themeSettings || {}));
-                fetch('/workbench/global', {
-                    method: 'POST',
-                    credentials: 'same-origin',
-                    headers: csrfHeaders({ 'Content-Type': 'application/x-www-form-urlencoded' }),
-                    body: form.toString()
-                }).then(function (r) { return r.text(); }).then(function (html) {
-                    // morph 替换：全局设置表单原地保留滚动位置与输入焦点（docs/06-C §四）。
-                    morphHTML(body, html);
-                    self.bindGlobalHtmx(body);
-                }).catch(function () {
-                    morphHTML(body, '<p class="wb-empty">全局设置加载失败</p>');
-                });
+                // 主题设置是多层对象：由 workbench-global 提供对象，HTMX 发送并交换。
+                // 保存表单在服务端片段里，每次交换都会换新节点：两个表单都只能靠
+                // 委托到**存活的外壳**上识别（write:success 从发起表单冒泡）。
+                if (!body.__wbSaveBound) {
+                    body.__wbSaveBound = true;
+                    body.addEventListener('write:success', function (e) {
+                        // 一律用 getAttribute('id')：表单里有 name="id" 的隐藏控件时，
+                        // 该控件会遮蔽表单的 `.id` 属性（真实 Chrome 实测为 INPUT 对象）。
+                        var owner = e.target;
+                        var formID = owner && owner.getAttribute ? owner.getAttribute('id') || '' : '';
+                        if (formID === 'wb-global-load') self.bindGlobalHtmx(body);
+                        else if (formID === 'wb-global-save') self.commitGlobalSave(owner, e.detail?.requestBody);
+                    });
+                }
+                if (!content.firstChild) content.innerHTML = '<p class="wb-empty">加载中…</p>';
+                panelTrigger('wb:global-panel');
             },
             bindGlobalHtmx(body) {
                 var self = this;
@@ -203,59 +207,49 @@ export const appPanelMethods = {
                     return path.split('.').reduce(function (o, k) { return o == null ? undefined : o[k]; }, obj);
                 }
                 // 颜色槽：hidden input（提交名）+ 内联取色器（复用旧控件）。
+                // hidden 只在首次增强时补一次：morph 会复用这些节点，重复补会让同名
+                // 字段提交两遍（Gin 首值绑定下等同于值漂移）。
                 Array.prototype.forEach.call(body.querySelectorAll('[data-wb-theme-color]'), function (slot) {
                     var name = slot.getAttribute('data-wb-theme-color');
                     var path = slot.getAttribute('data-wb-theme-path') || name;
-                    var hidden = document.createElement('input');
-                    hidden.type = 'hidden';
-                    hidden.name = name;
-                    hidden.value = getByPath(t, path) || '';
-                    slot.appendChild(hidden);
-                    slot.appendChild(wbColorPicker({
-                        value: hidden.value,
-                        onInput: function (v) { hidden.value = v; }
-                    }));
+                    var hidden = slot.querySelector('input[type=hidden][name="' + name + '"]');
+                    if (!hidden) {
+                        hidden = document.createElement('input');
+                        hidden.type = 'hidden';
+                        hidden.name = name;
+                        hidden.value = getByPath(t, path) || '';
+                        slot.appendChild(hidden);
+                        slot.appendChild(wbColorPicker({
+                            value: hidden.value,
+                            onInput: function (v) { hidden.value = v; }
+                        }));
+                    }
                 });
-                var saveBtn = document.createElement('button');
-                saveBtn.type = 'button';
-                saveBtn.className = 'btn btn-primary';
-                saveBtn.textContent = '保存并应用到全部页面';
-                saveBtn.addEventListener('click', function () {
-                    var form = new URLSearchParams();
-                    form.append('id', meta.themeId);
-                    Array.prototype.forEach.call(body.querySelectorAll('[name]'), function (el) {
-                        var slot = el.closest('[data-wb-theme-color]');
-                        var input = slot && slot.querySelector('.wb-color-text');
-                        form.append(el.name, ((input || el).value || '').trim());
-                    });
-                    form.append('headerBlockId', t.headerBlockId || '');
-                    form.append('footerBlockId', t.footerBlockId || '');
-                    var done = wbBusy(saveBtn, { label: '保存中…' });
-                    fetch('/admin/themes/settings/save?id=' + encodeURIComponent(meta.themeId), {
-                        method: 'POST', credentials: 'same-origin', headers: csrfHeaders({}), body: form
-                    }).then(function (response) {
-                        return response.text().then(function (html) {
-                            var result = new DOMParser().parseFromString(html, 'text/html');
-                            var success = response.ok && result.querySelector('[data-jump-state="ok"]');
-                            if (!success) {
-                                var error = result.querySelector('[data-jump-state="err"] .jump-message, .badge-warning, .form-error');
-                                throw new Error(error && error.textContent.trim() || '主题设置未保存，请检查输入值。');
-                            }
-                            body.querySelectorAll('[name]').forEach(function (el) {
-                                var slot = el.closest('[data-wb-theme-color]');
-                                var input = slot && slot.querySelector('.wb-color-text');
-                                self.setThemePath(t, slot ? slot.dataset.wbThemePath : (el.dataset.wbThemePath || el.name), ((input || el).value || '').trim());
-                            });
-                            meta.themeSettings = t;
-                            self.doc.settings = self.doc.settings || {};
-                            self.doc.settings.theme = clone(t);
-                            self.setNotice('主题已保存，重新构建后应用到已发布页面');
-                            self.refreshCanvas();
-                        });
-                    }).then(done)
-                        .catch(function (error) { done(); self.setNotice(error.message || '保存失败，请重试'); });
+            },
+            // 保存成功：把刚提交的字段合回本地主题状态并刷新画布。
+            // 服务端的成功回执只说明「这一跳成功」，本地状态仍要按本次提交值更新。
+            commitGlobalSave(form, requestBody) {
+                if (!form || typeof requestBody !== 'string') return;
+                var submitted = new URLSearchParams(requestBody);
+                var current = new FormData(form);
+                var t = clone(meta.themeSettings || {});
+                var self = this;
+                var pending = false;
+                Array.prototype.forEach.call(form.querySelectorAll('[data-wb-theme-path]'), function (el) {
+                    var name = el.getAttribute('data-wb-theme-color') || el.getAttribute('name');
+                    var path = el.getAttribute('data-wb-theme-path');
+                    if (!name || !path || !submitted.has(name)) return;
+                    // 只合回发出的值；等待期间的新输入留在原控件里，不冒认为已保存。
+                    self.setThemePath(t, path, submitted.get(name));
+                    var colorText = el.querySelector('.wb-color-text');
+                    if ((colorText ? colorText.value : current.get(name)) !== submitted.get(name)) pending = true;
                 });
-                body.appendChild(saveBtn);
+                meta.themeSettings = t;
+                this.doc.settings = this.doc.settings || {};
+                this.doc.settings.theme = clone(t);
+                this.setNotice(pending ? '本次提交已保存；面板仍有未保存修改' :
+                    '主题已保存，重新构建后应用到已发布页面');
+                this.refreshCanvas();
             },
             setThemePath(obj, path, value) {
                 var parts = path.split('.');

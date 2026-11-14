@@ -7,18 +7,20 @@ import (
 	"context"
 
 	"go_wp/config"
-	"go_wp/pkg/mcp"
 	aicontract "go_wp/internal/module/ai/contract"
 	aienums "go_wp/internal/module/ai/enums"
 	aimodel "go_wp/internal/module/ai/model"
 	aiservice "go_wp/internal/module/ai/service"
 	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
+	"go_wp/pkg/mcp"
 	mw "go_wp/pkg/middleware"
 )
 
-// routeBindings 是装配期提供的路由绑定快照：工具授权与令牌 scope 校验都按它判断，
-// 执行期不再读全局登记（第二个 router 的装配不会影响已装配实例）。
-func SetupAIRoutes(authorizedAPI *mw.RouteGroup, adminPages *gin.RouterGroup, db *gorm.DB, toolRegistry *mcp.Registry, mcpRoot gin.IRoutes, aiConfig sysconfigcontract.Service, dir aicontract.PermDirectory, routeBindings []mw.RouteSpec) aicontract.AIService {
+// SetupAIRoutes 装配 AI 的 API、页面与两个执行入口。
+//
+// routeBindings 是装配方在**验证通过后**建立的不可变索引：早期给快照会漏掉
+// 后注册的操作（商品、订单等），让已授权的工具调用被误拒。
+func SetupAIRoutes(authorizedAPI *mw.RouteGroup, adminPages *gin.RouterGroup, db *gorm.DB, toolRegistry *mcp.Registry, mcpRoot gin.IRoutes, aiConfig sysconfigcontract.Service, dir aicontract.PermDirectory, routeBindings **mw.PermIndex) aicontract.AIService {
 	svc := aiservice.NewService(aimodel.NewAIModel(db))
 	if v, err := config.GetViper(); err == nil && v != nil {
 		svc.SetCipherSecret(v.GetString("app.secret"))
@@ -35,12 +37,11 @@ func SetupAIRoutes(authorizedAPI *mw.RouteGroup, adminPages *gin.RouterGroup, db
 
 	// 两个执行入口（站内工具 Runner 与外部 MCP 端点）共用同一个授权闭包：
 	// 都按「登记的真实路由绑定 + Casbin 主体/对象/方法」判断，缺一即拒绝。
-	// 绑定快照在装配期传入，执行期不读全局登记。
-	authorize := func(ctx context.Context, userID int64, perm string) (bool, error) {
-		return casbinAuthorizer(routeBindings, userID, perm)
-	}
+	// 索引在全部登记完成后才填充；未填充/无绑定一律拒绝，执行期不读全局登记。
+	authorize := RouteAuthorizer(routeBindings)
 	if toolRegistry != nil {
-		sessionSvc.SetToolProvider(&toolProvider{runner: mcp.NewRunner(toolRegistry, authorize)})
+		// 两个入口签名相同的函数类型不同名，显式转换以保证它们共享同一个闭包值。
+		sessionSvc.SetToolProvider(&toolProvider{runner: mcp.NewRunner(toolRegistry, mcp.Authorizer(authorize))})
 	}
 
 	sessionSvc.SetToolCallLogWriter(aimodel.NewToolCallLogModel(db))
@@ -52,7 +53,7 @@ func SetupAIRoutes(authorizedAPI *mw.RouteGroup, adminPages *gin.RouterGroup, db
 	tokenSvc.SetScopeValidator(func(ctx context.Context, p string) bool {
 		// 令牌 scope 必须同时是「已启用的目录项」与「真实登记过路由的操作」：
 		// 只看目录会放行没有执行入口的码，查询失败按拒绝处理。
-		if dir == nil || len(BindingsOf(routeBindings, p)) == 0 {
+		if dir == nil || routeBindings == nil || !(*routeBindings).Has(p) {
 			return false
 		}
 		ok, err := dir.Exists(ctx, p)
@@ -104,7 +105,7 @@ func SetupAIRoutes(authorizedAPI *mw.RouteGroup, adminPages *gin.RouterGroup, db
 	// 对外接入点开关有自己的权限点：它不改令牌，改的是「本站数据要不要对外开口」。
 	g.POST("/token/toggle", aienums.AITokenToggle, tokenHandle.SetMcpEnabled)
 
-	SetupAIPages(adminPages, svc, sessionSvc, tokenSvc, toolRegistry, aiConfig, dir)
+	SetupAIPages(authorizedAPI.Registry(), adminPages, svc, sessionSvc, tokenSvc, toolRegistry, aiConfig, dir)
 
 	return svc
 }

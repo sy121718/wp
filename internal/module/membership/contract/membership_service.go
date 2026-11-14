@@ -43,7 +43,8 @@ type PurchaseSource interface {
 type RecalcPort interface {
 	SetPurchaseSource(port PurchaseSource)
 
-	StartRecalcScheduler()
+	// StartRecalcScheduler 返回的 stop 取消日结并等待在途一轮结束。
+	StartRecalcScheduler(ctx context.Context) func()
 
 	RecalcProject(ctx context.Context, req *membershipdto.RecalcProjectReq) (res *membershipdto.RecalcResult, err error)
 }

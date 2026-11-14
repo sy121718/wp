@@ -33,8 +33,9 @@ func (h *CartPublicHandle) View(c *gin.Context) {
 	response.Success(c, data)
 }
 func (h *CartPublicHandle) Add(c *gin.Context) {
-	req, ok := binding.JSON[cartdto.CartAddReq](c)
-	if !ok {
+	req, err := binding.ParseForm[cartdto.CartAddReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	req.Cookie = requestCookie(c, cartcontract.CartCookieName)
@@ -47,8 +48,9 @@ func (h *CartPublicHandle) Add(c *gin.Context) {
 	response.Success(c, data)
 }
 func (h *CartPublicHandle) SetQuantity(c *gin.Context) {
-	req, ok := binding.JSON[cartdto.CartSetQuantityReq](c)
-	if !ok {
+	req, err := binding.ParseForm[cartdto.CartSetQuantityReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	req.Cookie = requestCookie(c, cartcontract.CartCookieName)
@@ -61,8 +63,9 @@ func (h *CartPublicHandle) SetQuantity(c *gin.Context) {
 	response.Success(c, data)
 }
 func (h *CartPublicHandle) Clear(c *gin.Context) {
-	req, ok := binding.JSON[cartdto.CartViewReq](c)
-	if !ok {
+	req, err := binding.ParseForm[cartdto.CartViewReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	req.Cookie = requestCookie(c, cartcontract.CartCookieName)
@@ -75,8 +78,9 @@ func (h *CartPublicHandle) Clear(c *gin.Context) {
 	response.Success(c, data)
 }
 func (h *CartPublicHandle) Checkout(c *gin.Context) {
-	req, ok := binding.JSON[cartdto.CartCheckoutReq](c)
-	if !ok {
+	req, err := binding.ParseForm[cartdto.CartCheckoutReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	checkoutRequestMetadata(c, req)

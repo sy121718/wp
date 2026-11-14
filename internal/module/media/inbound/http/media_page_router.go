@@ -9,7 +9,7 @@ import (
 
 const MediaPageTemplate = "admin/media/media"
 
-func SetupMediaPages(adminPages *gin.RouterGroup) {
+func SetupMediaPages(reg *mw.Registry, adminPages *gin.RouterGroup) {
 	if adminPages == nil {
 		return
 	}
@@ -17,4 +17,5 @@ func SetupMediaPages(adminPages *gin.RouterGroup) {
 		mw.PageAuthz("/api/media/list"),
 		pageview.Slot(MediaPageTemplate, pageview.RenderPage),
 		MediaPage)
+	mw.DeclarePageGetOn(reg, "/admin/media", "/api/media/list")
 }

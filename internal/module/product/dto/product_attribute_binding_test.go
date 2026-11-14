@@ -11,21 +11,30 @@ import (
 	"testing"
 )
 
+// 显式表单入口（ParseForm）与显式 JSON 入口各自只读声明的那一种形状：
+// 表单经 DTO 的 BindForm 钩子，JSON 走标准解码，两者解出同一份事实。
 func TestAttributeValuesFormAndJSONBindSameRequest(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	jsonBody := `{"id":"a1","projectId":"p1","values":[{"id":"v1","key":"red","label":"红","sort":2,"enabled":false}]}`
 	formBody := url.Values{"id": {"a1"}, "projectId": {"p1"}, "values": {`[{"id":"v1","key":"red","label":"红","sort":"2","enabled":"false"}]`}}.Encode()
 	var requests []*productdto.SetAttributeValuesReq
-	for _, tc := range []struct{ kind, body string }{{"application/json", jsonBody}, {"application/x-www-form-urlencoded", formBody}} {
-		c, _ := gin.CreateTestContext(httptest.NewRecorder())
-		c.Request = httptest.NewRequest("POST", "/", strings.NewReader(tc.body))
-		c.Request.Header.Set("Content-Type", tc.kind)
-		req, ok := binding.JSON[productdto.SetAttributeValuesReq](c)
-		if !ok {
-			t.Fatalf("绑定失败 %s", tc.kind)
-		}
-		requests = append(requests, req)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest("POST", "/", strings.NewReader(jsonBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+	jsonReq, err := binding.ParseJSON[productdto.SetAttributeValuesReq](c)
+	if err != nil {
+		t.Fatalf("JSON 绑定失败: %v", err)
 	}
+	requests = append(requests, jsonReq)
+
+	c, _ = gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest("POST", "/", strings.NewReader(formBody))
+	c.Request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	formReq, err := binding.ParseForm[productdto.SetAttributeValuesReq](c)
+	if err != nil {
+		t.Fatalf("表单绑定失败: %v", err)
+	}
+	requests = append(requests, formReq)
 	if !reflect.DeepEqual(requests[0], requests[1]) {
 		t.Fatalf("JSON 与 FormData 事实不同: %+v / %+v", requests[0], requests[1])
 	}
@@ -54,15 +63,15 @@ func TestAttributeVariationFormFollowsCheckboxFields(t *testing.T) {
 		bind func(*gin.Context) (*bool, bool)
 	}{
 		{"create", func(c *gin.Context) (*bool, bool) {
-			req, ok := binding.JSON[productdto.CreateAttributeReq](c)
-			if !ok {
+			req, err := binding.ParseForm[productdto.CreateAttributeReq](c)
+			if err != nil {
 				return nil, false
 			}
 			return req.IsVariation, true
 		}},
 		{"update", func(c *gin.Context) (*bool, bool) {
-			req, ok := binding.JSON[productdto.UpdateAttributeReq](c)
-			if !ok {
+			req, err := binding.ParseForm[productdto.UpdateAttributeReq](c)
+			if err != nil {
 				return nil, false
 			}
 			return req.IsVariation, true

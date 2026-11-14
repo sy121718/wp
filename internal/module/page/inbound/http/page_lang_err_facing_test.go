@@ -1,13 +1,13 @@
 package pagehttp
 
 import (
-	"strings"
-	"testing"
 	pageenums "go_wp/internal/module/page/enums"
 	pageservice "go_wp/internal/module/page/service"
-	view "go_wp/pkg/view"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/response"
+	view "go_wp/pkg/view"
+	"strings"
+	"testing"
 )
 
 func TestPageLangSentinelsCarryTheirOwnFacingText(t *testing.T) {

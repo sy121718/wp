@@ -3,6 +3,8 @@ package feature
 import (
 	"context"
 	json "go_wp/pkg/jsonx"
+	pageview "go_wp/pkg/view"
+	text "go_wp/pkg/view/jet"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -156,6 +158,10 @@ func activateThemeHTTP(t *testing.T, svc pagecontract.PageService, projects *pro
 	themes := projecthttp.NewThemeAdminHandle(projects, svc, nil)
 	router := gin.New()
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
+	// 生产装配里成功/失败出口各装一次；最小引擎必须同样装配，否则成功路径落 500。
+	router.Use(pageview.FailureMiddleware(pageview.RenderFailure))
+	router.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
+	router.Use(pageview.UseSuccess(pageview.NewSuccessWriter()))
 	router.POST("/admin/themes/activate", themes.ActivateTheme)
 
 	form := url.Values{"id": {themeID}}

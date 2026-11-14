@@ -1,10 +1,10 @@
 package contenttemplatehttp
 
 import (
-	pageview "go_wp/pkg/view"
 	"context"
 	"errors"
 	json "go_wp/pkg/jsonx"
+	pageview "go_wp/pkg/view"
 	"html"
 	"net/http"
 	"net/http/httptest"
@@ -402,4 +402,38 @@ func ctTestLogHasRawError(t *testing.T, rawErr error) bool {
 		t.Fatalf("遍历日志目录 %s 失败：%v", root, err)
 	}
 	return found
+}
+
+// 「设为生效」必须是独立端点按钮、不位于任何表单内：htmx 提交时用
+// new FormData(最近的表单)，混在批量删除表单里会把勾选行的 ids 带进激活请求，
+// 而 ActivateReq 只认 id。这里在渲染结果上钉住结构，防止重构悄悄退化。
+func TestContentTemplatesActivateButtonIsNotInsideDeleteForm(t *testing.T) {
+	rec := renderContentTemplatesPage(t, ctTemplatesStub{list: []*contenttemplatedto.TemplateResp{
+		{ID: "tpl-1", Name: "站点页眉模板", EntityType: "header", DraftVersion: 3},
+		{ID: "tpl-2", Name: "当前生效模板", EntityType: "header", DraftVersion: 1, IsDefault: true},
+	}})
+	body := rec.Body.String()
+
+	if !strings.Contains(body, `hx-post="/api/contenttemplate/activate"`) {
+		t.Fatalf("应渲染激活按钮：%s", body)
+	}
+	if !strings.Contains(body, `hx-vals='{"id":"tpl-1"}'`) {
+		t.Errorf("激活按钮的 id 应由 hx-vals 显式声明")
+	}
+	// 批量删除表单必须收窄到只包批量条；勾选框靠 form 属性关联。
+	deleteForm := strings.Index(body, `<form id="ct-bulk-form"`)
+	if deleteForm < 0 {
+		t.Fatalf("批量删除表单缺少稳定 id")
+	}
+	deleteFormEnd := strings.Index(body[deleteForm:], "</form>")
+	if deleteFormEnd < 0 {
+		t.Fatalf("批量删除表单未闭合")
+	}
+	inside := body[deleteForm : deleteForm+deleteFormEnd]
+	if strings.Contains(inside, "/api/contenttemplate/activate") {
+		t.Error("激活入口不得位于批量删除表单内（会带上勾选行的 ids）")
+	}
+	if !strings.Contains(body, `form="ct-bulk-form"`) {
+		t.Error("行勾选框应用 form 属性关联批量删除表单")
+	}
 }

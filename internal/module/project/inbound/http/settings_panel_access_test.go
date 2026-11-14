@@ -3,31 +3,32 @@ package projecthttp
 import (
 	json "go_wp/pkg/jsonx"
 	"net/http"
-	"net/http/httptest"
-	"net/url"
 	"strings"
 	"testing"
 
 	"golang.org/x/crypto/bcrypt"
 )
 
-func postSettingsPanel(t *testing.T, form url.Values) string {
+// postSettingsPanelDoc 以面板的真实输入协议（明确 JSON）提交整份文档。
+func postSettingsPanelDoc(t *testing.T, document, password string) string {
 	t.Helper()
-	router := newSettingsRouter(t)
-	recorder := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/workbench/settings", strings.NewReader(form.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	router.ServeHTTP(recorder, req)
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("状态码 %d", recorder.Code)
+	payload := map[string]any{"document": json.RawMessage(document)}
+	if password != "" {
+		payload["accessPassword"] = password
 	}
-	return recorder.Body.String()
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, rendered := panelJSON(t, newSettingsRouter(t), "/workbench/settings", string(body))
+	if code != http.StatusOK {
+		t.Fatalf("状态码 %d：%s", code, rendered)
+	}
+	return rendered
 }
 
 func TestSettingsPanelAccessSegmentRenders(t *testing.T) {
-	body := postSettingsPanel(t, url.Values{
-		"document": {`{"settings":{"access":{"type":"password"}},"root":[]}`},
-	})
+	body := postSettingsPanelDoc(t, `{"settings":{"access":{"type":"password"}},"root":[]}`, "")
 	for _, want := range []string{
 		`data-wb-setting="settings.access.type" data-wb-value=""`,
 		`data-wb-setting="settings.access.type" data-wb-value="password"`,
@@ -52,10 +53,7 @@ func TestSettingsPanelAccessSegmentRenders(t *testing.T) {
 
 func TestSettingsPanelAccessPasswordHashedServerSide(t *testing.T) {
 	const password = "s3cret-Passw0rd"
-	body := postSettingsPanel(t, url.Values{
-		"document":        {`{"settings":{"access":{"type":"password"}},"root":[]}`},
-		"access-password": {password},
-	})
+	body := postSettingsPanelDoc(t, `{"settings":{"access":{"type":"password"}},"root":[]}`, password)
 	if strings.Contains(body, password) {
 		t.Fatal("响应里出现了明文密码")
 	}
@@ -99,7 +97,7 @@ func TestSettingsPanelAccessNeverEchoesStoredHash(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	body := postSettingsPanel(t, url.Values{"document": {string(doc)}})
+	body := postSettingsPanelDoc(t, string(doc), "")
 	if strings.Contains(body, string(hash)) {
 		t.Fatal("面板把已存的 bcrypt 哈希回填进了页面（应只显示「已设置」）")
 	}
@@ -112,10 +110,7 @@ func TestSettingsPanelAccessNeverEchoesStoredHash(t *testing.T) {
 }
 
 func TestSettingsPanelAccessPasswordTooLongRejected(t *testing.T) {
-	body := postSettingsPanel(t, url.Values{
-		"document":        {`{"settings":{"access":{"type":"password"}},"root":[]}`},
-		"access-password": {strings.Repeat("a", 80)},
-	})
+	body := postSettingsPanelDoc(t, `{"settings":{"access":{"type":"password"}},"root":[]}`, strings.Repeat("a", 80))
 	if strings.Contains(body, "data-wb-apply") {
 		t.Fatal("超长密码不应产生回填字段")
 	}
@@ -125,9 +120,7 @@ func TestSettingsPanelAccessPasswordTooLongRejected(t *testing.T) {
 }
 
 func TestSettingsPanelAccessPublicHidesPasswordRow(t *testing.T) {
-	body := postSettingsPanel(t, url.Values{
-		"document": {`{"settings":{"access":{"type":"public"}},"root":[]}`},
-	})
+	body := postSettingsPanelDoc(t, `{"settings":{"access":{"type":"public"}},"root":[]}`, "")
 	if strings.Contains(body, "wb-access-password") {
 		t.Error("公开类型不应出现密码重设输入框")
 	}

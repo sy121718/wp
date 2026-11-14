@@ -38,7 +38,10 @@ type Service struct {
 
 	purchases membershipcontract.PurchaseSource
 
-	recalcOnce sync.Once
+	// recalcMu / recalcStop 归实例持有日结停止句柄：
+	// 重复 Start 返回同一幂等句柄，Stop 只等任务真正退出。
+	recalcMu   sync.Mutex
+	recalcStop func()
 }
 
 func NewService(m *membershipmodel.Model, projects projectcontract.ProjectService) *Service {

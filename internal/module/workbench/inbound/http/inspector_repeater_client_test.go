@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
+	"go_wp/internal/templates"
 	"go_wp/pkg/builder"
 	"go_wp/pkg/builder/core"
-	"go_wp/internal/templates"
 
 	"golang.org/x/net/html"
 )

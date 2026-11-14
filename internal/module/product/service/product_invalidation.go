@@ -140,14 +140,23 @@ func (s *Service) DispatchOutbox(ctx context.Context, limit int) (int, error) {
 	return len(rows), nil
 }
 
-func (s *Service) StartOutboxWorker(ctx context.Context, interval time.Duration) {
+// 返回的 stop 等待在途一轮结束：调用方必须在关闭数据库之前调用它。
+func (s *Service) StartOutboxWorker(ctx context.Context, interval time.Duration) func() {
 	if s == nil || s.invalidator == nil {
-		return
+		return func() {}
 	}
 	if interval <= 0 {
 		interval = outboxDispatchInterval
 	}
-	go s.runOutboxLoop(ctx, interval)
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		s.runOutboxLoop(ctx, interval)
+	}()
+	return func() { <-done }
 }
 
 func (s *Service) runOutboxLoop(ctx context.Context, interval time.Duration) {

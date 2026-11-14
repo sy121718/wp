@@ -680,6 +680,26 @@ func (s *Service) ListByCodes(ctx context.Context, codes []string) ([]admindto.P
 	return result, nil
 }
 
+// ListByPathMethod 返回 api_path/api_method 命中的目录项（含被停用的）。
+// 供启动核对检查「页面/写入口复用的鉴权对象是否确有对应策略行」。
+func (s *Service) ListByPathMethod(ctx context.Context, path, method string) ([]admindto.PermBrief, error) {
+	entities, err := s.pm.ListByPathMethod(ctx, path, method)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]admindto.PermBrief, 0, len(entities))
+	for _, e := range entities {
+		result = append(result, admindto.PermBrief{
+			PermissionCode: e.PermissionCode,
+			PermissionName: e.PermissionName,
+			APIPath:        e.APIPath,
+			APIMethod:      e.APIMethod,
+			Status:         e.Status,
+		})
+	}
+	return result, nil
+}
+
 func (s *Service) ExistsEnabledCode(ctx context.Context, code string) (bool, error) {
 	return s.pm.ExistsEnabledCode(ctx, code)
 }

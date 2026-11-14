@@ -24,3 +24,8 @@ type DeliveryListReq struct {
 	Page       int    `form:"page" json:"page"`
 	PageSize   int    `form:"pageSize" json:"pageSize"`
 }
+
+// EndpointIDQuery 是 webhook 删除 / 重试的只读查询串：id 只在 URL 上，body 不参与。
+type EndpointIDQuery struct {
+	ID string `form:"id"`
+}

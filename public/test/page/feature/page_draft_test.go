@@ -2,6 +2,9 @@ package feature
 
 import (
 	"context"
+	contenttemplatemodel "go_wp/internal/module/contenttemplate/model"
+	contenttemplateservice "go_wp/internal/module/contenttemplate/service"
+	"go_wp/pkg/builder/core"
 	json "go_wp/pkg/jsonx"
 	"strings"
 	"testing"
@@ -21,6 +24,7 @@ import (
 	pubmodel "go_wp/internal/module/publication/model"
 	pubservice "go_wp/internal/module/publication/service"
 
+	"go_wp/internal/pipeline"
 	"go_wp/public/test/support"
 
 	"gorm.io/gorm"
@@ -30,6 +34,9 @@ const pageDocument = `{"settings":{"layout":{"mode":"full"}},"root":[]}`
 
 func newPageService(t *testing.T) (*gorm.DB, pagecontract.PageService, string) {
 	t.Helper()
+	// 业务组件（core.cartIcon 等）的视图构建必须在编译前登记：
+	// 生产装配在 buildFoundation 里做同一件事（internal/routers/assembly.go）。
+	pipeline.RegisterBusinessViews()
 	t.Setenv("GO_WP_ARTIFACT_ROOT", t.TempDir())
 	db := support.NewMigratedPGTestDB(t)
 	projects := projectservice.NewService(projectmodel.NewProjectModel(db))
@@ -45,7 +52,13 @@ func newPageService(t *testing.T) (*gorm.DB, pagecontract.PageService, string) {
 	artifacts := artifactservice.NewService(artifactmodel.NewArtifactModel(db))
 	routes := pubservice.NewService(pubmodel.NewPublicationModel(db))
 	blocks := blockservice.NewService(blockmodel.NewBlockModel(db), projects)
-	return db, pageservice.NewService(pageModel, artifacts, routes, projects, blocks, nil, nil, nil, nil), project.ID
+	svc := pageservice.NewService(pageModel, artifacts, routes, projects, blocks, nil, nil, nil, nil)
+	// 页面写入在事务内复核结构模板引用（主题合并后文档可能带绑定）：
+	// 与生产装配一致注入端口，否则引用模板的写入会 fail-closed。
+	tplSvc := contenttemplateservice.NewService(contenttemplatemodel.NewModel(db), projects, core.NewEntitySourceRegistry())
+	svc.SetTemplateExistencePort(tplSvc)
+	projects.SetTemplateExistencePort(tplSvc)
+	return db, svc, project.ID
 }
 
 func TestPageDraftLifecycle(t *testing.T) {
