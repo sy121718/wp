@@ -821,7 +821,7 @@ pkg/database/{retention,partition}
 **4. 全量验证（本轮实际执行）**
 
 - `go test ./internal/... ./pkg/... -count=1`：EXIT=0。
-- `go test ./public/test/... -count=1 -p 4`：**64 包 ok**，唯一红项 `public/test/partition/unit` 的 `TestTableTimeColumnsMatchPartitionKeys` —— `a95c86ef` 把两张分区表的 `TimeColumn` 误改为 `created_at`（真实分区键是 `create_time`），已回退并在 `c1cfc5dd` 复绿。
+- `go test ./public/test/... -count=1 -p 4`：**最终态 65 包 ok，EXIT=0**。首轮唯一红项是 `public/test/partition/unit` 的 `TestTableTimeColumnsMatchPartitionKeys` —— `a95c86ef` 把两张分区表的 `TimeColumn` 误改为 `created_at`（真实分区键是 `create_time`），回退（`c1cfc5dd`）后整包重跑全绿。
 - `bash scripts/check-all.sh` 31 脚本全过；`--db-only` 8 脚本全过（重复索引只报告、不自动 DROP）。
 - 一处测试对齐：`public/test/publication/feature/seo_audit_json_test.go` 的 multipart 子用例按新契约改为「multipart 也在契约内」（`74c840f9`）。
 
