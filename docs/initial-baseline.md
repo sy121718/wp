@@ -7,7 +7,7 @@
 
 - 初始化 = 跑完 `public/migrations` 的 701 个 SQL 文件（182 条注册迁移 + seed）。迁移执行器**没有版本台账**：每条迁移自带 `CheckSQL` 幂等检查，命中即跳过（[public/migrations/migrator.go](../public/migrations/migrator.go)）。`sys_migration_marker` 只记「一次性数据动作」，不是版本表。
 - 隔离库实测：`go run ./cmd -migrate-only` 从空库到终态约 53 秒，退出码 0。
-- 结构快照 [schema/CURRENT.sql](../schema/CURRENT.sql) 由 [scripts/schema-snapshot.sh](../scripts/schema-snapshot.sh) 生成，来源是「跑完本仓迁移的库」，当前 131 张表 / 10320 行。
+- 结构快照 [schema/CURRENT.sql](../schema/CURRENT.sql) 由 [scripts/schema-snapshot.sh](../scripts/schema-snapshot.sh) 生成，来源是「跑完本仓迁移的库」，当前 132 张表 / 10375 行（含 759 的 `sys_baseline`）。
 - 分区表只有 3 张：`page_views`、`inventory_stock_movements`、`master_data_changes`（[173_partition_append_only_tables.sql](../public/migrations/173_partition_append_only_tables.sql)）。月分区窗口由两处生成：迁移 173 的 DO 块（建库时）+ [pkg/database/partition](../pkg/database/partition/partition.go) 的 `EnsureAhead`（启动与 `-migrate-only` 都会跑），范围 `AheadMonths=3`，即当前月 -1 至 +3，另有一张 `_default` 兜底。
 - 因此**月分区名随生成时间漂移**（实测快照里是 2026_08/09 窗口，终态是 2026_10 ~ 2027_02），任何「含月分区的结构快照」都不能当基线。
 

@@ -792,7 +792,7 @@ pkg/database/{retention,partition}
 
 设计与判据见 [docs/initial-baseline.md](docs/initial-baseline.md)，此处只记进度：
 
-- 阶段 1（已完成）：[schema/CURRENT.sql](schema/CURRENT.sql) 改为「迁移终态库」生成（131 张表 / 10320 行），不再混入 artex 的外来表；[scripts/schema-snapshot.sh](scripts/schema-snapshot.sh) 默认自建临时库跑全量迁移再比对，`--check` 实测绿，`GOWP_SNAPSHOT_DB` 可复用已有终态库；`--check` 分支 trap 覆盖导致临时库残留的 bug 已修（默认路径重跑确认无残留）。
+- 阶段 1（已完成）：[schema/CURRENT.sql](schema/CURRENT.sql) 改为「迁移终态库」生成（132 张表 / 10375 行，含 759 的 `sys_baseline`），不再混入 artex 的外来表；[scripts/schema-snapshot.sh](scripts/schema-snapshot.sh) 默认自建临时库跑全量迁移再比对，`--check` 实测绿，`GOWP_SNAPSHOT_DB` 可复用已有终态库；`--check` 分支 trap 覆盖导致临时库残留的 bug 已修（默认路径重跑确认无残留）。
 - 阶段 2（已完成，2026-11-15）：`schema/baseline/` 四件产物（structure / system_data / manifest / init）+ 迁移 `759-sys-baseline` 台账表 + `baselineSkipSet` 哈希跳过（不匹配即回落全量）+ `cmd -skip-seeds`（基线只导「迁移后、seed 前」状态，否则重放后 seed 因新键已存在而跳过，漏掉同批 seed 的删除，实测多 4 行旧词条）。`scripts/baseline-generate.sh` 生成、`--check` 实测绿；`scripts/baseline-verify.sh` 三条验收实测全绿（结构/行数等价、重复执行幂等、哈希不匹配回落全量）；`scripts/baseline-adopt.sh` 供现有库接入（默认只核验）。验收中发现并修复既有漂移 `760-inventory-movement-fk-restore`：173 重建 `inventory_stock_movements` 分区表时丢了 134 的 `fk_inventory_movements_product`，存量库有、新库无。`public/migrations/baseline_manifest_test.go` 钉住 manifest 与注册表同序同集。`scripts/baseline-adopt.sh` 的结构核验改为与「重放 `init.sql` 再跑 `-migrate-only` 的临时库」对称比较，并前置混库检测：现有库多出的表直接判「不是本仓迁移产物库」并点名。实测 `artex` 被拒 —— 多出 60+ 张其他项目的表（`conversations` / `findings` / `tools` / `tasks` / `assets` / `llm_profiles` / `mcp_servers` 等）与 `pgcrypto` / `vector` 扩展、`sync_task_asset_links` 等外来函数；该库不接入基线，需要基线环境请新建库载入 `schema/baseline/init.sql`。另：6 张 `ai_*` 表（seed 511/512/537/541/542，纯 DDL、无数据）已改为迁移登记，结构基线 112→118 张表、manifest 177→182 条，`baseline-verify.sh` 三条验收复跑全绿（129 张表行数一致）。
 
 ### 第十九轮：原生 FormPost 全量迁移与基线快照（2026-11-15）
@@ -814,7 +814,7 @@ pkg/database/{retention,partition}
 
 **3. 初始化基线阶段 1**
 
-- [schema/CURRENT.sql](schema/CURRENT.sql) 由只跑过本仓迁移的隔离库生成（131 张表 / 10320 行），不再混入 artex 的 `plugin_migration_ledger` / `analytics_daily_stats` / `tools` 等外来对象。
+- [schema/CURRENT.sql](schema/CURRENT.sql) 由只跑过本仓迁移的隔离库生成（132 张表 / 10375 行，含 759 的 `sys_baseline`），不再混入 artex 的 `plugin_migration_ledger` / `analytics_daily_stats` / `tools` 等外来对象。
 - [scripts/schema-snapshot.sh](scripts/schema-snapshot.sh) 增加 `SNAPSHOT_DB` / `ADMIN_DB`，默认自建 `wp_schema_probe_$$` 跑 `go run ./cmd -migrate-only` 再比对；修 `--check` 分支 trap 覆盖 `cleanup_probe` 造成临时库残留的 bug。
 - 设计与阶段 2 清单：[docs/initial-baseline.md](docs/initial-baseline.md)。
 

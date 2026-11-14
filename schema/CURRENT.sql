@@ -6,7 +6,7 @@
 -- 更新方式：bash scripts/schema-snapshot.sh
 -- 漂移检测：bash scripts/schema-snapshot.sh --check（CI 里跑）
 -- 迁移台账版本：597-block-bulk-delete-grant-copy
--- 生成时间：2026-11-15T01:13:19+08:00
+-- 生成时间：2026-11-15T06:49:15+08:00
 
 --
 -- PostgreSQL database dump
@@ -3483,6 +3483,38 @@ ALTER SEQUENCE public.sys_attachment_id_seq OWNED BY public.sys_attachment.id;
 
 
 --
+-- Name: sys_baseline; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.sys_baseline (
+    id bigint NOT NULL,
+    version text NOT NULL,
+    manifest_sha256 character(64) NOT NULL,
+    applied_at timestamp with time zone DEFAULT now() NOT NULL,
+    note text DEFAULT ''::text NOT NULL
+);
+
+
+--
+-- Name: sys_baseline_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.sys_baseline_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: sys_baseline_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.sys_baseline_id_seq OWNED BY public.sys_baseline.id;
+
+
+--
 -- Name: sys_casbin_rule; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -4600,6 +4632,13 @@ ALTER TABLE ONLY public.sys_attachment ALTER COLUMN id SET DEFAULT nextval('publ
 
 
 --
+-- Name: sys_baseline id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sys_baseline ALTER COLUMN id SET DEFAULT nextval('public.sys_baseline_id_seq'::regclass);
+
+
+--
 -- Name: sys_casbin_rule id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -5684,6 +5723,14 @@ ALTER TABLE ONLY public.sys_area
 
 ALTER TABLE ONLY public.sys_attachment
     ADD CONSTRAINT sys_attachment_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: sys_baseline sys_baseline_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sys_baseline
+    ADD CONSTRAINT sys_baseline_pkey PRIMARY KEY (id);
 
 
 --
@@ -8981,6 +9028,14 @@ ALTER TABLE ONLY public.document_snapshots
 
 ALTER TABLE ONLY public.document_snapshots
     ADD CONSTRAINT document_snapshots_source_template_version_id_fkey FOREIGN KEY (source_template_version_id) REFERENCES public.content_template_versions(id);
+
+
+--
+-- Name: inventory_stock_movements fk_inventory_movements_product; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE public.inventory_stock_movements
+    ADD CONSTRAINT fk_inventory_movements_product FOREIGN KEY (product_id) REFERENCES public.products(id) ON DELETE RESTRICT;
 
 
 --
