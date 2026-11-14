@@ -1,6 +1,6 @@
 # 框架基础归一与可视化工具化任务书
 
-当前状态（2026-11-14 第十八轮收口）：**第十七轮的四项缺口已闭环，初始化基线收敛待实施**。契约 362 条：**239 form / 106 json / 8 query / 4 multipart / 3 nobody / 2 raw，unknown 为 0**；`ParseForm` 端点额外声明 `encodings: [urlencoded, multipart]`，`BindForm` 钩子读取的字面量键（remember / pageSize / emailNotify / shipName…）已并入字段表。非表单编码现在直接 400，不再「忽略 JSON 后写默认值」。447 历史 SQL 已恢复原文并归档，现行执行源改为 758b。密码业务链补齐生产布局（`/production`）三视口 × 四输入 12 格。`go test ./...` **283 包 ok（rls 188 秒）**；`check-all.sh --with-db` 39/39；`go build ./...`、`go vet ./...`、`write-contracts -check` 通过。第十七轮改动分五批提交（`e466ac95` / `db4ba666` / `e95c7ce7` / `5e9e3842` / `ee1c3391`），第十八轮改动未提交。最新范围与证据边界以[当前收口任务](#当前收口任务)为准；历轮记录保留为历史，不据其旧缺口重复实施。未 push。
+当前状态（2026-11-14 第十八轮收口）：**第十七轮的四项缺口已闭环，初始化基线收敛待实施**。契约 362 条：**239 form / 106 json / 8 query / 4 multipart / 3 nobody / 2 raw，unknown 为 0**；`ParseForm` 端点额外声明 `encodings: [urlencoded, multipart]`，`BindForm` 钩子读取的字面量键（remember / pageSize / emailNotify / shipName…）已并入字段表。非表单编码现在直接 400，不再「忽略 JSON 后写默认值」。447 历史 SQL 已恢复原文并归档，现行执行源改为 758b。密码业务链补齐生产布局（`/production`）三视口 × 四输入 12 格。`go test ./...` **283 包 ok（rls 188 秒）**；`check-all.sh --with-db` 39/39；`go build ./...`、`go vet ./...`、`write-contracts -check` 通过。第十七轮改动分五批提交（`e466ac95` / `db4ba666` / `e95c7ce7` / `5e9e3842` / `ee1c3391`），第十八轮改动分五批提交（`2edc91ea` / `ff6b9730` / `63d347fe` / `f5625910` / `87960150`）。最新范围与证据边界以[当前收口任务](#当前收口任务)为准；历轮记录保留为历史，不据其旧缺口重复实施。未 push。
 
 本任务书是本次重构的唯一实施清单，不是第二份架构规范；规范仍以 [AGENTS.md](AGENTS.md) 为准。原 [商品后台通用写反馈任务书](TASK-html-feedback.md) 保留为背景和原始用例索引，其实施安排由本文接替：不再由 `internal/adminui` 承担成功渲染，不分开交付第二套反馈，不按旧任务书默认运行全量门禁。
 
@@ -739,7 +739,7 @@ pkg/database/{retention,partition}
 
 ### 第十八轮：四项审核缺口闭环（2026-11-14）
 
-承接外部审核对第十七轮的四项判断，逐项收口；本轮未提交、未 push。
+承接外部审核对第十七轮的四项判断，逐项收口；本轮分五批提交（`2edc91ea` / `ff6b9730` / `63d347fe` / `f5625910` / `87960150`），未 push。
 
 **1. 错误编码不再静默落库（真实写入风险）**
 
@@ -765,19 +765,35 @@ pkg/database/{retention,partition}
 
 **5. 契约/service 侧顺带修正**
 
-- `blueprint` / `content` / `presentation` 的六个 GET 读端点此前被写成 `ParseForm`（只读 body）：GET 永远绑成零值，带 `required` 的直接 400、列表静默返回空集。已改回显式 `binding.Query`，并用注释写明「GET 参数在查询串上」。
+- `blueprint` / `content` / `presentation` 的八个 GET 读端点（blueprint 3 个、content 2 个、presentation 3 个，共八处调用点）此前被写成 `ParseForm`（只读 body）：GET 永远绑成零值，带 `required` 的直接 400、列表静默返回空集。已改回显式 `binding.Query`，并用注释写明「GET 参数在查询串上」。
 
 **本轮验证：** `go build ./...`、`go vet ./...` 通过；`go test ./public/migrations/` 整包通过（110s）；`public/test/{user,cart,order,mail}` 与 blueprint/content/presentation/product/workbench 全绿；`bash scripts/check-all.sh`（plain）31 脚本全过；`write-contracts -check` 通过；字段门禁 306 入口 / 362 契约；对象提供器 13/13。
 
-### 初始化基线收敛（用户新增，未实施）
+**6. 外部复核订正（2026-11-15，只读核查 + 一处修复）**
 
-用户提议把 698 个迁移文件收敛成「当前初始化基线 + 之后的增量」，避免新库重演历史修补。方向已认可，但**未实施**。设计约束（实施时必须满足）：
+- 复核结论：四项主体成立、可复现。复核实跑：`go build ./...`、`go vet ./...`、`go test ./pkg/binding/`、`go run ./cmd/write-contracts -check`、字段门禁（306 入口 / 362 契约）、扫描器 43 项单测、`go test ./public/migrations/`（117.8s）、`go test ./internal/architecture/`（15.2s）、`public/test/user/feature -run TestSitePreferenceRejectsJSONAndKeepsStoredValues` 全部通过。
+- 一处真实残留（已修）：workbench 三个处理器丢弃绑定错误 —— [canvas_bridge_handle.go](internal/module/workbench/inbound/http/canvas_bridge_handle.go) 的 `PreviewDraft`、[inspector_handle.go](internal/module/workbench/inbound/http/inspector_handle.go) 的 `OutlineTree`、[canvas_preview_handle.go](internal/module/workbench/inbound/http/canvas_preview_handle.go) 的 `TemplatePreviewDraft`。此前 `POST /workbench/outline` 带 `application/json` 返回 200 与空树；三处现在绑定失败即 `response.ParamError(c)` 返回，[form_encoding_guard_test.go](internal/module/workbench/inbound/http/form_encoding_guard_test.go) 对三条路径钉住 400。
+- 一处表述过度：「原生 FormPost 端点仍拒绝 multipart」只在模板与契约声明意义上成立。gin v1.12.0 的 `formPostBinding.Bind` 只做 `req.ParseForm()` + `mapForm(req.PostForm)`；实测 multipart、JSON、无 Content-Type 三种请求都返回 `nil` error 与零值。这些端点运行时未强制编码，靠 service 必填校验兜底；契约也没有给它们声明 `encodings`，两处口径一致。
+- 数字订正：生产 `binding.ParseForm` 40 处（含测试 53 处）；GET 读端点 8 处调用点；迁移文件 699 个。
+- 仍待实施：模块内原生 `ginbinding.FormPost` 152 处（43 个文件），另 `internal/middleware/builtin/access_guard.go:343` 一处读端点同形。其中 130 处可机械迁到 `ParseForm`，15 处是「绑定与必填」写在同一个 if 里的复合条件写法，7 处是其他换行形态。按域迁移，不在本轮做批量替换。
 
-1. 基线三部分：当前结构（表/列/索引/约束/扩展/函数/触发器/分区/RLS）、当前系统初始数据（有效词条、权限目录、默认菜单、字典、默认配置）、基线之后的增量。
-2. 结构快照 [schema/CURRENT.sql](schema/CURRENT.sql) 生成于 2026-10-29 且只含结构、排除属主与授权（[schema-snapshot.sh](scripts/schema-snapshot.sh)），**不能直接当初始化脚本**。
-3. 现有库（artex）以不丢数据为前提：先核验结构、列、索引、触发器、RLS 都达到基线，再显式接入基线版本；不能只看「表存在」就判完成。
-4. 初始化数据不得从 artex 全库导出（用户、订单、密钥、自定义译文、角色授权不是通用默认值）。
-5. 验收：新基线与旧链终态的结构一致、系统数据一致、重复执行不变、现有库接入不丢数据；不是比文件数量。
+**7. 逻辑检查结论**
+
+按「四、验证与验收」末条口径，本轮改动只落绑定入口、契约生成与迁移归档：
+
+- 流程/默认分支：`ParseForm` 的编码分派是 `switch` 三支（multipart / urlencoded / default），default 明确返回 `ErrFormContentType`；三个 workbench 处理器在绑定失败即返回，不进入后续读取。
+- 并发/锁/协程退出：本轮无新增 goroutine、锁或后台任务；发布路径锁与生命周期等待未触碰。
+- 循环终止：无新增循环；契约字段收集仍以 AST 子节点边界终止。
+- 跨表事务：事务边界未改；447/758b 只做原文归档与注册指向。
+- 外部调用超时/重试：无新增外部调用。
+- 未闭环（如实登记）：原生 FormPost 对非 urlencoded 静默零值；初始化基线收敛（下节）；跨进程策略传播与 artex 业务页面走查未实测。
+
+### 初始化基线收敛（阶段 1 已落地，阶段 2 未实施）
+
+设计与判据见 [docs/initial-baseline.md](docs/initial-baseline.md)，此处只记进度：
+
+- 阶段 1（已完成）：[schema/CURRENT.sql](schema/CURRENT.sql) 改为「迁移终态库」生成（131 张表 / 10320 行），不再混入 artex 的外来表；[scripts/schema-snapshot.sh](scripts/schema-snapshot.sh) 默认自建临时库跑全量迁移再比对，`--check` 实测绿，`GOWP_SNAPSHOT_DB` 可复用已有终态库；`--check` 分支 trap 覆盖导致临时库残留的 bug 已修（默认路径重跑确认无残留）。
+- 阶段 2（未实施）：结构基线 + 系统数据基线 + manifest 跳过机制，清单见文档第 4 节。在完成前，初始化仍以全量迁移为准。
 
 ### 第十七轮实施与验收（2026-11-14）
 
