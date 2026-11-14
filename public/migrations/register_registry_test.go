@@ -411,6 +411,13 @@ var retainedSQLArchives = map[string]struct {
 		"f25c7e62beb54e7c548e8a0f4b685c20d248461dee6760fdc7b5446d09d3a58a",
 		"a979185443b400b9c7a360901cc26a186504a9b909d1eceb8c5bdf82702a88ee",
 	},
+	// 447 原文含 735 已退役的四个页面标题 en-US 行；现行执行版本 758b 去掉这四行，
+	// 原文按「历史迁移 SQL 不改」保持原样归档。
+	"447_i18n_missing_en_and_unseeded.sql": {
+		"758b_current_447_i18n_missing_en_and_unseeded.sql",
+		"c18602096143a1395079873cbfa1081e370e66dc20e3d42cd3db2ac7fd8cea42",
+		"43919afdf7aaa0fb5b3b62293affb6a9a748d4efc8f5abdc701c845a277244a4",
+	},
 }
 
 func TestEmbeddedSQLFilesAllRegistered(t *testing.T) {

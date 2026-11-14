@@ -69,8 +69,9 @@ func TestProductShortKeysCurrentSourcesPrepare(t *testing.T) {
 		}
 	}
 	// 405/407/720 的现行版切到 747c/747d/747e 后各多一份当前回补源，
-	// 723x 退出执行、原文归档；758a 是 058 的新现行执行源（原 747a 转归档）。
-	if len(sources) != 50 {
+	// 723x 退出执行、原文归档；758a 是 058 的新现行执行源（原 747a 转归档），
+	// 758b 是 447 的新现行执行源（原文按「历史 SQL 不改」归档）。
+	if len(sources) != 51 {
 		t.Fatalf("当前回补源数量改变: %d", len(sources))
 	}
 	if err := db.Connection(func(conn *gorm.DB) error {
