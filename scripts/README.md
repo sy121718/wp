@@ -59,6 +59,10 @@ CI 与上线前跑的门禁（改了权限点 / service 层数据访问 / 后台
 
 结构比较必须归一 pg_dump 的两种 deparse（同一 CHECK 表达式在「一阶库」与「重放基线后的库」里文本不同，语义相同），脚本内已处理。
 
+### 环境清理
+
+- `cleanup-test-dbs.sh [--probes] [--apply]` —— 列出并（带 `--apply` 时）删除夹具与历轮审计留下的临时库。默认模式匹配随机后缀库（`rls_t_*` / `t_*` / `go_test_*` / `wp_test_tpl_*`）；`--probes` 匹配 `wp_` 前缀的一次性探针库但保留 `wp_test*` 测试主库。两种模式都不碰业务库（`config.yaml` 的 `database.dbname`）、`postgres` 与 `artex` 系列（`artex_mig2` 是本仓的迁移验收库）。默认只列名单与体积。2026-11-15 实测：夹具库 340 个 / 5.7 GB、探针库 13 个 / 274 MB。
+
 ### 备份、恢复与视觉基线
 
 - 备份：`bash scripts/backup.sh` → `.backup/<时间戳>/{db,site,manifest.env,SHA256SUMS}`。内容是数据库 `-Fc` dump + 每表行数快照 + `pg_dump` 日志 + 站点产物与**激活符号链接**（`tar -h` 打包，否则恢复后站点 404）+ 上传资产 + 版本/提交/迁移台账 + 校验和。环境变量 `DB_HOST` `DB_PORT` `DB_USER` `DB_PASSWORD` `DB_NAME`（也接受 `GOWP_` 前缀）、`ARTIFACT_ROOT`、`STORAGE_DIR`、`BACKUP_DIR`。
