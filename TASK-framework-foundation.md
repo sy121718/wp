@@ -1,6 +1,6 @@
 # 框架基础归一与可视化工具化任务书
 
-当前状态（2026-11-14 第十七轮收口）：**124 条 unknown 写契约清零、`artex` 已实际升级、全仓验收通过、23 条既有红项全部修复**。契约 362 条：**239 form / 106 json / 8 query / 4 multipart / 3 nobody / 2 raw，unknown 为 0**。工作台、共享抽屉、商品均补齐生产布局三视口 × 四输入矩阵。本轮在 `main`、`HEAD=53cf8fbb` 上直接实施：新增 722z 修复 seed 裁决 artex 上两组真实数据冲突、757/758 补齐 sysconfig 错误词条与页面标题退役 key 的终态清理；`go run ./cmd -migrate-only` 对 artex 全链通过（中英各 6842 行、单侧 key 0、退役 key 归零）；`go build ./...`、`go vet ./...`、`write-contracts -check`、`check-all.sh --with-db`（39 项）全绿；`go test ./...` 除 `public/test/rls` 一组既有环境超时外全部通过。最新范围与证据边界以[当前收口任务](#当前收口任务)为准；历轮记录保留为历史，不据其旧缺口重复实施。本轮不提交、不 push。
+当前状态（2026-11-14 第十七轮收口）：**124 条 unknown 写契约清零、`artex` 已实际升级、全仓验收通过、23 条既有红项全部修复、三项受控桩升级为生产链路、RLS 超时根因已修、改动已分批提交**。契约 362 条：**239 form / 106 json / 8 query / 4 multipart / 3 nobody / 2 raw，unknown 为 0**。工作台主题保存改为真实落库、共享抽屉改为真实会话 + 真实 CSRF、密码按钮补齐三视口 × 四输入 12 格。`go run ./cmd -migrate-only` 对 artex 全链通过（中英各 6842 行、单侧 key 0、退役 key 归零）；`go test ./...` **283 包 ok、0 条 FAIL（rls 由 30 分钟超时变为 188 秒通过）**；`check-all.sh --with-db` 39/39 全绿；`go build ./...`、`go vet ./...`、`write-contracts -check` 通过。改动分五批提交（`e466ac95` / `db4ba666` / `e95c7ce7` / `5e9e3842` / `ee1c3391`）。最新范围与证据边界以[当前收口任务](#当前收口任务)为准；历轮记录保留为历史，不据其旧缺口重复实施。未 push。
 
 本任务书是本次重构的唯一实施清单，不是第二份架构规范；规范仍以 [AGENTS.md](AGENTS.md) 为准。原 [商品后台通用写反馈任务书](TASK-html-feedback.md) 保留为背景和原始用例索引，其实施安排由本文接替：不再由 `internal/adminui` 承担成功渲染，不分开交付第二套反馈，不按旧任务书默认运行全量门禁。
 
@@ -783,11 +783,39 @@ pkg/database/{retention,partition}
 - `go test ./... -timeout 30m`：**除 `public/test/rls` 超时外全部通过（282 包 ok，0 条 `--- FAIL`）**。RLS 的 `TestRLS_BlockLocate_ServiceFindsOwnerAcrossProjects` 在干净 HEAD 副本上同样 12 分钟超时，属既有环境问题（库连接悬挂），非本轮引入。
 - `artex` 再跑一次 `-migrate-only`：新增 757/758 seed 已落库，`sys_i18n` 中英各 6842 行、单侧 key 0 条、四组退役标题 0 行、三条 sysconfig 错误词条齐全。
 
+**三项验收升级 + RLS 排查（2026-11-14，用户要求「升级 / 排查」）：**
+
+| 项 | 原状态 | 现状态 |
+|---|---|---|
+| 工作台主题保存 | 保存端点是「成功回执桩」，落库由另一条后台用例覆盖 | 新增 [workbench_theme_persist_browser_test.go](internal/module/project/inbound/http/workbench_theme_persist_browser_test.go)：生产 `SaveThemeSettings` + 真实 project service + 隔离 PG，浏览器点一次保存后从 `themes.settings` 回读并断言页面刷新被触发 |
+| 共享抽屉 | 固定 `browser-csrf` + `c.Set("user_id", 123)` 桩 | 新增 [admin_drawer_session_browser_test.go](internal/module/admin/inbound/http/admin_drawer_session_browser_test.go)：真实 `SaveCookieSession` + `EnsureCSRFToken` + `SessionAuthMiddleware` + `CSRFMiddleware`；进程内先验 401/403，再由浏览器走「登录拿 cookie → 页面拿 csrf → 抽屉提交」全链 |
+| 密码按钮矩阵 | 只有「按钮在 375 宽下可点」的窄视口专项 | [输入矩阵](internal/module/project/inbound/http/workbench_panel_matrix_browser_test.cjs) 升级为三视口 × 四输入 **12 格完整链**：明文输入 → 提交（JSON 对象提供器）→ 服务端 bcrypt 回填 `$2` → 文档变脏 → 明文不落文档 |
+
+**`public/test/rls` 超时的根因与修复：**
+- 根因不是环境：`block/model.UpdateDocumentTx` 名字带 `Tx` 却自己开 `rls.InProjectScope`。外层 `Service.Update` 已经开了一个工程作用域事务，内层再开就走另一条连接 —— 看不到外层的 `set_config('app.project_id')`，连接池上限为 1 时直接死锁（栈停在 `database/sql.(*DB).begin`）。
+- 修复：`UpdateDocumentTx` 改为接收调用方事务句柄，与 `DeleteTx` / `LockByIDsTx` / `ListBlockDocumentRefsTx` 同一约定；查询补 `project_id` 条件。
+- 结果：`go test ./public/test/rls` 由 30 分钟超时变为 **188 秒通过**；`./internal/module/block/...`、`./public/test/block/...`、`./public/test/page/feature` 全部通过。
+
+**复跑结果（提交后）：**
+- `go test ./... -timeout 30m`：**283 包 ok，0 条 `--- FAIL`**（含此前超时的 rls）。
+- `bash scripts/check-all.sh --with-db`：**39/39 全绿**。
+- `go build ./...` / `go vet ./...`：通过。
+
+**分批提交（用户要求「分批提交」）：**
+
+| 提交 | 范围 |
+|---|---|
+| `e466ac95` | `refactor(pkg)`：框架层（binding/builder/lifecycle/middleware/view/ui/richtext） |
+| `db4ba666` | `fix(migrations)`：722z 预览冲突裁决、746a 重复行修复、747 短键、757 sysconfig 词条、758/758a 终态清理 |
+| `e95c7ce7` | `refactor(module)`：写端点声明唯一协议（124 unknown 清零）、模板与公共 UI、block RLS 事务修正 |
+| `5e9e3842` | `refactor(assembly,tooling)`：装配收口、架构门禁、写契约生成器、门禁脚本、cmd 生命周期 |
+| `ee1c3391` | `test(browser)`：主题保存真实落库、抽屉真实会话、密码按钮 3×4 矩阵 |
+
 **仍未做/不得扩大结论：**
-- 真实跨进程的策略传播仍需部署侧 worker（默认间隔 30s）；本轮的多实例测试只证明「DB 任务 → 策略重载」链路。
-- 工作台/抽屉的部分业务保存仍是受控夹具；artex 的实际业务数据未做人工走查。
-- `public/test/rls` 的超时未修（既有环境问题，需单独排查连接悬挂）。
-- 未提交、未 push。
+- 真实跨进程的策略传播仍需部署侧 worker（默认间隔 30s）；多实例测试只证明「DB 任务 → 策略重载」链路。
+- artex 的实际业务数据未做人工走查（结构、词条、权限目录已核，业务页面未逐页点检）。
+- 三个浏览器用例需要显式门控（`GOWP_HTML_UI_BROWSER` / `GOWP_WORKBENCH_PANEL_BROWSER` / `GOWP_WORKBENCH_PANEL_MATRIX`），默认跳过。
+- 未 push。
 
 ### 最新实施与剩余边界（2026-11-13，第十五轮）
 
