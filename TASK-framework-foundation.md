@@ -1,6 +1,6 @@
 # 框架基础归一与可视化工具化任务书
 
-当前状态（2026-11-14 第十七轮收口）：**124 条 unknown 写契约清零、`artex` 已实际升级、全仓验收通过、23 条既有红项全部修复、三项受控桩升级为生产链路、RLS 超时根因已修、改动已分批提交**。契约 362 条：**239 form / 106 json / 8 query / 4 multipart / 3 nobody / 2 raw，unknown 为 0**。工作台主题保存改为真实落库、共享抽屉改为真实会话 + 真实 CSRF、密码按钮补齐三视口 × 四输入 12 格。`go run ./cmd -migrate-only` 对 artex 全链通过（中英各 6842 行、单侧 key 0、退役 key 归零）；`go test ./...` **283 包 ok、0 条 FAIL（rls 由 30 分钟超时变为 188 秒通过）**；`check-all.sh --with-db` 39/39 全绿；`go build ./...`、`go vet ./...`、`write-contracts -check` 通过。改动分五批提交（`e466ac95` / `db4ba666` / `e95c7ce7` / `5e9e3842` / `ee1c3391`）。最新范围与证据边界以[当前收口任务](#当前收口任务)为准；历轮记录保留为历史，不据其旧缺口重复实施。未 push。
+当前状态（2026-11-14 第十八轮收口）：**第十七轮的四项缺口已闭环，初始化基线收敛待实施**。契约 362 条：**239 form / 106 json / 8 query / 4 multipart / 3 nobody / 2 raw，unknown 为 0**；`ParseForm` 端点额外声明 `encodings: [urlencoded, multipart]`，`BindForm` 钩子读取的字面量键（remember / pageSize / emailNotify / shipName…）已并入字段表。非表单编码现在直接 400，不再「忽略 JSON 后写默认值」。447 历史 SQL 已恢复原文并归档，现行执行源改为 758b。密码业务链补齐生产布局（`/production`）三视口 × 四输入 12 格。`go test ./...` **283 包 ok（rls 188 秒）**；`check-all.sh --with-db` 39/39；`go build ./...`、`go vet ./...`、`write-contracts -check` 通过。第十七轮改动分五批提交（`e466ac95` / `db4ba666` / `e95c7ce7` / `5e9e3842` / `ee1c3391`），第十八轮改动未提交。最新范围与证据边界以[当前收口任务](#当前收口任务)为准；历轮记录保留为历史，不据其旧缺口重复实施。未 push。
 
 本任务书是本次重构的唯一实施清单，不是第二份架构规范；规范仍以 [AGENTS.md](AGENTS.md) 为准。原 [商品后台通用写反馈任务书](TASK-html-feedback.md) 保留为背景和原始用例索引，其实施安排由本文接替：不再由 `internal/adminui` 承担成功渲染，不分开交付第二套反馈，不按旧任务书默认运行全量门禁。
 
@@ -736,6 +736,48 @@ pkg/database/{retention,partition}
 - 未提交、未 push。
 
 ## 当前收口任务
+
+### 第十八轮：四项审核缺口闭环（2026-11-14）
+
+承接外部审核对第十七轮的四项判断，逐项收口；本轮未提交、未 push。
+
+**1. 错误编码不再静默落库（真实写入风险）**
+
+- 根因：[ParseForm](pkg/binding/binding.go) 用 `ShouldBindWith(FormPost)` 时，Gin 对 `application/json` 只解析出空 `PostForm`，不报错；带默认值的 DTO 于是把「用户没提交」写成「用户要求默认值」。偏好保存即命中：`BindForm` 把 `pageSize` 补 20、通知开关补 false，service 再把空可见性补 `public`，一次 JSON 请求就能把真实偏好整行重置。
+- 修复：`ParseForm` 先判声明编码，只接受 `application/x-www-form-urlencoded` 与 `multipart/form-data`，其余（含无 Content-Type）返回 `ErrFormContentType`，调用方统一 400。
+- 回归：[parse_form_test.go](pkg/binding/parse_form_test.go) 覆盖 JSON / JSON+charset / text/plain / 无 Content-Type 四种拒绝面，以及两种合法表单编码；[user_site_json_test.go](public/test/user/feature/user_site_json_test.go) 先按表单写入非默认偏好，再发 JSON，断言 400 且库内偏好**逐字段未变**。
+
+**2. 契约真实性：双编码与钩子字段**
+
+- 协议标注：显式表单入口确实按 Content-Type 在 FormPost / FormMultipart 之间分派。生成器现在给这类端点写 `encodings: ["urlencoded","multipart"]`，字段门禁按声明放行 multipart 提交，只声明 urlencoded 的原生 FormPost 端点仍拒绝 multipart（[write-fields-scan.py](scripts/write-fields-scan.py) 与 [扫描器单测](scripts/tests/test_write_fields_scan.py) 各补一正一反）。
+- 字段表：新增钩子键提取 —— 从 `BindForm`（含提升的嵌入类型钩子）及其同包辅助函数里收集**字面量**表单键，`attr:<id>` / `lines[0].stockId` 这类动态键不收集、不编造。契约因此补上 `remember`、`pageSize/emailNotify/smsNotify/showOnline`、`gender`、`shipName/billName/…`、`items/orderItemId/quantity`、`ruleParams`、`optionValues`。
+- 回归：[main_test.go](cmd/write-contracts/main_test.go) 两条（钩子键并入字段表 / 动态键不产生字段）。
+
+**3. 历史迁移规范：447 恢复原文 + 758b 现行执行源**
+
+- 第十七轮直接改了 [447 历史 SQL](public/migrations/447_i18n_missing_en_and_unseeded.sql)（删四行 735 已退役的英文标题），违反 [public/CLAUDE.md](public/CLAUDE.md)「历史迁移 SQL 不改」。
+- 处置：原文从 `53cf8fbb` 恢复并用 SHA-256 精确归档；去掉那四行的版本落到 [758b](public/migrations/758b_current_447_i18n_missing_en_and_unseeded.sql)，注册改指 758b；[register_registry_test.go](public/migrations/register_registry_test.go) 同时钉住归档原文与现行执行源两侧哈希。回补源计数 50→51。
+
+**4. 密码业务链改到生产布局**
+
+- 原 12 格走的是简化外壳（`/`）。新增 [生产布局密码矩阵](internal/module/project/inbound/http/workbench_panel_matrix_browser_test.cjs)：真实 `workbench/layout.html` + 生产 CSS + 完整 `editor-app/index.js`，三视口 × 四输入 12 格，判据不变（明文输入 → JSON 提交 → `$2` 回填 → dirty → 明文不落文档），并额外断言滚动读的是 `#wb-settings-body` 的真实 `scrollTop`、键盘只用原生 Tab、触摸用真实触摸事件且核对焦点落点。
+- 结果：该文件 Node 侧 **54 项全过**（原 41 + 新增 12 + 父测试）。375 触摸格首次失败暴露了真问题：面板内目标被遮挡时 `touchscreen.tap` 的中心点会命中别的元素，已改为「点前用 `elementFromPoint` 核对命中、点后核对 `activeElement`」并在失败时带出命中元素与坐标，而不是放宽断言。
+
+**5. 契约/service 侧顺带修正**
+
+- `blueprint` / `content` / `presentation` 的六个 GET 读端点此前被写成 `ParseForm`（只读 body）：GET 永远绑成零值，带 `required` 的直接 400、列表静默返回空集。已改回显式 `binding.Query`，并用注释写明「GET 参数在查询串上」。
+
+**本轮验证：** `go build ./...`、`go vet ./...` 通过；`go test ./public/migrations/` 整包通过（110s）；`public/test/{user,cart,order,mail}` 与 blueprint/content/presentation/product/workbench 全绿；`bash scripts/check-all.sh`（plain）31 脚本全过；`write-contracts -check` 通过；字段门禁 306 入口 / 362 契约；对象提供器 13/13。
+
+### 初始化基线收敛（用户新增，未实施）
+
+用户提议把 698 个迁移文件收敛成「当前初始化基线 + 之后的增量」，避免新库重演历史修补。方向已认可，但**未实施**。设计约束（实施时必须满足）：
+
+1. 基线三部分：当前结构（表/列/索引/约束/扩展/函数/触发器/分区/RLS）、当前系统初始数据（有效词条、权限目录、默认菜单、字典、默认配置）、基线之后的增量。
+2. 结构快照 [schema/CURRENT.sql](schema/CURRENT.sql) 生成于 2026-10-29 且只含结构、排除属主与授权（[schema-snapshot.sh](scripts/schema-snapshot.sh)），**不能直接当初始化脚本**。
+3. 现有库（artex）以不丢数据为前提：先核验结构、列、索引、触发器、RLS 都达到基线，再显式接入基线版本；不能只看「表存在」就判完成。
+4. 初始化数据不得从 artex 全库导出（用户、订单、密钥、自定义译文、角色授权不是通用默认值）。
+5. 验收：新基线与旧链终态的结构一致、系统数据一致、重复执行不变、现有库接入不丢数据；不是比文件数量。
 
 ### 第十七轮实施与验收（2026-11-14）
 
