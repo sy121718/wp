@@ -609,6 +609,13 @@ def check_endpoint(rel, method, urls, attrs, offered):
             continue
         encoding = attrs.get('hx-encoding') or attrs.get('enctype') or ''
         actual = 'json' if attrs.get('data-write-builder') else ('multipart' if encoding == 'multipart/form-data' else 'form')
+        # 契约写的是端点的真实协议；encodings 写的是同一协议下它真实接受的**编码**。
+        # 显式表单入口（ParseForm）两种表单编码都收，所以 form 端点声明了
+        # encodings=[urlencoded,multipart] 时，multipart 提交同样成立；反过来
+        # 只声明 urlencoded 的端点（原生 FormPost）不接受 multipart，不能放过。
+        accepted_encodings = spec.get('encodings') or []
+        if protocol != 'json' and actual == 'multipart' and 'multipart' in accepted_encodings:
+            actual = 'form'
         if protocol == 'nobody':
             # 处理器完全不读 body：表单只能带 CSRF 这类框架字段，业务字段会被静默丢弃。
             business = {f for f in offered if f != 'csrf_token'}

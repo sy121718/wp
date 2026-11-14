@@ -46,10 +46,12 @@ func (h *Handle) Rebuild(c *gin.Context) {
 	response.SuccessWithMessage(c, presentationenums.MsgRebuildSuccess, res)
 }
 
+// GetByEntity / Get / List 是 GET 读端点：参数在查询串上，不在 body。
+// 用 ParseForm 会把 GET 绑成零值（带 required 的 400、列表静默空集），
+// 这里用显式查询入口声明唯一输入协议。
 func (h *Handle) GetByEntity(c *gin.Context) {
-	req, err := binding.ParseForm[presentationdto.GetByEntityReq](c)
-	if err != nil {
-		response.ParamError(c)
+	req, ok := binding.Query[presentationdto.GetByEntityReq](c)
+	if !ok {
 		return
 	}
 	res, err := h.svc.GetByEntity(c.Request.Context(), req)
@@ -89,9 +91,8 @@ func (h *Handle) UpdateURL(c *gin.Context) {
 }
 
 func (h *Handle) Get(c *gin.Context) {
-	req, err := binding.ParseForm[presentationdto.GetReq](c)
-	if err != nil {
-		response.ParamError(c)
+	req, ok := binding.Query[presentationdto.GetReq](c)
+	if !ok {
 		return
 	}
 	res, err := h.svc.Get(c.Request.Context(), req)
@@ -103,9 +104,8 @@ func (h *Handle) Get(c *gin.Context) {
 }
 
 func (h *Handle) List(c *gin.Context) {
-	req, err := binding.ParseForm[presentationdto.ListReq](c)
-	if err != nil {
-		response.ParamError(c)
+	req, ok := binding.Query[presentationdto.ListReq](c)
+	if !ok {
 		return
 	}
 	list, err := h.svc.List(c.Request.Context(), req)

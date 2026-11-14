@@ -62,10 +62,12 @@ func (h *Handle) Publish(c *gin.Context) {
 	response.SuccessWithMessage(c, blueprintenums.MsgPublishSuccess, res)
 }
 
+// Get / List / Init 是 GET 读端点：参数在查询串上，不在 body。
+// 写成 ParseForm 会把 GET 永远绑成零值（FormPost 只读 body），带 required 的 id
+// 直接 400、列表则静默返回空集；这里用显式查询入口声明唯一输入协议。
 func (h *Handle) Get(c *gin.Context) {
-	req, err := binding.ParseForm[blueprintdto.GetReq](c)
-	if err != nil {
-		response.ParamError(c)
+	req, ok := binding.Query[blueprintdto.GetReq](c)
+	if !ok {
 		return
 	}
 	res, err := h.svc.Get(c.Request.Context(), req)
@@ -77,9 +79,8 @@ func (h *Handle) Get(c *gin.Context) {
 }
 
 func (h *Handle) List(c *gin.Context) {
-	req, err := binding.ParseForm[blueprintdto.ListReq](c)
-	if err != nil {
-		response.ParamError(c)
+	req, ok := binding.Query[blueprintdto.ListReq](c)
+	if !ok {
 		return
 	}
 	list, err := h.svc.List(c.Request.Context(), req)
@@ -104,9 +105,8 @@ func (h *Handle) Delete(c *gin.Context) {
 }
 
 func (h *Handle) Init(c *gin.Context) {
-	req, err := binding.ParseForm[blueprintdto.GetReq](c)
-	if err != nil {
-		response.ParamError(c)
+	req, ok := binding.Query[blueprintdto.GetReq](c)
+	if !ok {
 		return
 	}
 	doc, err := h.svc.InitPageDocument(c.Request.Context(), req.ID)

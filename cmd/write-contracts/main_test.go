@@ -770,3 +770,77 @@ func (h *Handle) Delegates(c *gin.Context) { h.Logout(c) }
 		t.Fatalf("委托给不读 body 的处理器应报 nobody：%+v", ep)
 	}
 }
+
+// hookKeyDTO 与 hookKeyRule 用来锁定「BindForm 钩子读取的键必须进字段表」。
+func TestBindFormHookKeysJoinContractFields(t *testing.T) {
+	root := writeSources(t, map[string]string{
+		"dto/request.go": `package req
+import "net/url"
+type Rule struct { Project string ` + "`json:\"project\" form:\"projectId\" binding:\"required\"`" + ` }
+func (r *Rule) BindForm(values url.Values) error { _ = values.Get("ruleKey"); return nil }
+type SaveReq struct { Rule; Name string ` + "`json:\"name\" form:\"name\"`" + `; Flags []string ` + "`json:\"-\" form:\"-\"`" + ` }
+func (r *SaveReq) BindForm(values url.Values) error { r.Flags = flagsFromForm(values); return nil }
+func flagsFromForm(values url.Values) []string { return []string{values.Get("flagA"), values.Get("flagB")} }
+`,
+		"http/handle.go": `package handler
+import (
+ req "example/internal/dto"
+ wire "github.com/gin-gonic/gin/binding"
+ "github.com/gin-gonic/gin"
+)
+type Handle struct{}
+func (h *Handle) Form(c *gin.Context) { var form req.SaveReq; c.ShouldBindWith(&form, wire.FormPost) }
+func (h *Handle) Multipart(c *gin.Context) { var form req.SaveReq; c.ShouldBindWith(&form, wire.FormMultipart) }
+`,
+	})
+	index, err := scanSources(root, "example/internal")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := buildContracts([]route{
+		{Method: "POST", Path: "/form", Handler: "example/internal/http.(*Handle).Form-fm"},
+		{Method: "POST", Path: "/upload", Handler: "example/internal/http.(*Handle).Multipart-fm"},
+	}, index)
+	want := []fieldSchema{{Name: "projectId", Required: true}, {Name: "name"}, {Name: "flagA"}, {Name: "flagB"}, {Name: "ruleKey"}}
+	for _, key := range []string{"POST /form", "POST /upload"} {
+		ep := got[key]
+		if ep.Reason != "" || !reflect.DeepEqual(ep.Fields, want) {
+			t.Fatalf("%s 钩子读取的键必须并入字段表：%+v", key, ep)
+		}
+	}
+}
+
+// 钩子里的动态键（attr:<id> 之类）不可静态枚举：只有字面量进字段表，不编造。
+func TestBindFormHookDynamicKeysAreNotInvented(t *testing.T) {
+	root := writeSources(t, map[string]string{
+		"dto/request.go": `package req
+import (
+ "net/url"
+ "strings"
+)
+type SaveReq struct { ID string ` + "`json:\"id\" form:\"id\"`" + ` }
+func (r *SaveReq) BindForm(values url.Values) error {
+ for key := range values {
+  if strings.HasPrefix(key, "attr:") { _ = values[key] }
+ }
+ return nil
+}
+`,
+		"http/handle.go": `package handler
+import (
+ req "example/internal/dto"
+ "github.com/gin-gonic/gin"
+)
+type Handle struct{}
+func (h *Handle) Save(c *gin.Context) { req := &req.SaveReq{}; _ = req; c.ShouldBindJSON(req) }
+`,
+	})
+	index, err := scanSources(root, "example/internal")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 直接断言提取结果：动态 key 不产生字段。
+	if keys := hookFieldKeys("example/internal/dto.SaveReq", index); len(keys) != 0 {
+		t.Fatalf("动态键不得被当成字段名：%v", keys)
+	}
+}

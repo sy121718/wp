@@ -34,11 +34,15 @@ type fieldSchema struct {
 }
 
 type endpointSchema struct {
-	DTO      string        `json:"dto,omitempty"`
-	Handler  string        `json:"handler"`
-	Protocol string        `json:"protocol"`
-	Reason   string        `json:"reason,omitempty"`
-	Fields   []fieldSchema `json:"fields"`
+	DTO      string `json:"dto,omitempty"`
+	Handler  string `json:"handler"`
+	Protocol string `json:"protocol"`
+	// Encodings 是同一协议下真实接受的请求体编码（urlencoded / multipart）。
+	// 目前只有显式表单入口 ParseForm 会按 Content-Type 在两种表单编码间分派；
+	// 缺省时按 Protocol 的默认编码理解（form=urlencoded、multipart=multipart）。
+	Encodings []string      `json:"encodings,omitempty"`
+	Reason    string        `json:"reason,omitempty"`
+	Fields    []fieldSchema `json:"fields"`
 	// Variants 是同一 METHOD+PATH 的第二个输入形状：处理器在入口先按请求字段是否存在
 	// 分叉（如「有 ids 就批量、否则单条」），两条分支各自绑定不同的 DTO。
 	// 不写死处理器名字：只有「分叉条件探测请求 + 提前 return 的委托分支绑定到不同 DTO」
@@ -62,7 +66,9 @@ type route struct {
 type bodyBinding struct {
 	DTO      string
 	Protocol string
-	Reason   string
+	// Encodings 见 endpointSchema.Encodings：显式表单入口同时接受两种表单编码。
+	Encodings []string
+	Reason    string
 }
 
 // resolvedBinding 判断绑定是否已确定输入协议。
@@ -71,6 +77,24 @@ func resolvedBinding(b bodyBinding) bool {
 		return false
 	}
 	return b.Protocol != "" && b.Protocol != "unknown"
+}
+
+// sameBinding 判断同一处理函数里的两处绑定是否描述了同一份输入契约。
+//
+// 不能直接用 == 比较：Encodings 是切片，结构体已不可比较。
+func sameBinding(a, b bodyBinding) bool {
+	if a.DTO != b.DTO || a.Protocol != b.Protocol || a.Reason != b.Reason {
+		return false
+	}
+	if len(a.Encodings) != len(b.Encodings) {
+		return false
+	}
+	for i := range a.Encodings {
+		if a.Encodings[i] != b.Encodings[i] {
+			return false
+		}
+	}
+	return true
 }
 
 type sourceStruct struct {
@@ -195,6 +219,152 @@ func handlerIdentity(name string) string {
 	return strings.ReplaceAll(name, ")", "")
 }
 
+// hookFieldKeys 收集 DTO 的 BindForm 钩子（及其同包辅助函数）实际读取的表单键。
+//
+// 为什么必须有这一步：钩子里用 values.Get("remember") 读的键不在 form tag 上，
+// 只按 tag 出字段表会漏掉它们 —— 模板提交了这些字段，契约却说没有，
+// 对账一侧会误报「字段不在 DTO 字段表里」，另一侧也无法据此发现钩子读错的键。
+// 只收集**字面量**键：动态拼接（attr:<id>、lines[i].stockId）不可静态枚举，
+// 收集不到就不写，宁可少报也不编造字段名。
+func hookFieldKeys(dto string, index sourceIndex) []string {
+	keys := map[string]bool{}
+	collectDTOHookKeys(dto, index, keys, map[string]bool{}, map[string]bool{})
+	out := make([]string, 0, len(keys))
+	for key := range keys {
+		out = append(out, key)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// collectDTOHookKeys 收集本类型及其嵌入类型的 BindForm 钩子键。
+//
+// 嵌入类型的钩子会被提升到外层指针类型（`*PricingPreviewReq` 因而也满足
+// FormBinder），所以只看 `外层.BindForm` 会漏掉嵌入层读取的键。
+func collectDTOHookKeys(dto string, index sourceIndex, keys, visited, visitedTypes map[string]bool) {
+	if visitedTypes[dto] {
+		return
+	}
+	visitedTypes[dto] = true
+	if fn, ok := index.funcs[dto+".BindForm"]; ok && fn.body != nil {
+		collectHookKeys(fn, index, keys, visited)
+	}
+	source, ok := index.Types[dto]
+	if !ok {
+		return
+	}
+	for _, fld := range source.Node.Fields.List {
+		if len(fld.Names) != 0 {
+			continue
+		}
+		embedded := typeName(fld.Type, source.Package, source.Imports)
+		if embedded == "" {
+			continue
+		}
+		collectDTOHookKeys(embedded, index, keys, visited, visitedTypes)
+	}
+}
+
+// collectHookKeys 沿同包辅助函数递归收集字面量键。
+//
+// 只跟「把 url.Values 形参原样传下去」的本地调用：`formBool(values, "remember")`
+// 的键是辅助函数的字面量实参，`attributeValuesFromForm(values)` 的键在被调方体内。
+// 形参上的接口方法解析不到具体实现，按未知处理、不收集。
+func collectHookKeys(fn *funcSource, index sourceIndex, keys map[string]bool, visited map[string]bool) {
+	param := valuesParamName(fn)
+	if param == "" || visited[fn.name] {
+		return
+	}
+	visited[fn.name] = true
+	ast.Inspect(fn.body, func(n ast.Node) bool {
+		switch node := n.(type) {
+		case *ast.FuncLit:
+			return false
+		case *ast.CallExpr:
+			if sel, ok := node.Fun.(*ast.SelectorExpr); ok {
+				if ident, okIdent := sel.X.(*ast.Ident); okIdent && ident.Name == param {
+					// values.Get("x") / values.Has("x") / values.GetPostForm("x") …
+					if len(node.Args) > 0 {
+						if lit, okLit := stringLit(node.Args[0]); okLit {
+							keys[lit] = true
+						}
+					}
+				}
+			}
+			target := calleeOf(fn, node.Fun, index)
+			if target == nil {
+				return true
+			}
+			passesValues := false
+			for _, arg := range node.Args {
+				if ident, okIdent := arg.(*ast.Ident); okIdent && ident.Name == param {
+					passesValues = true
+					break
+				}
+			}
+			if !passesValues {
+				return true
+			}
+			// 本地辅助函数里的其余字面量实参就是它读取的键（formBool(values, "x")）。
+			for _, arg := range node.Args {
+				if lit, okLit := stringLit(arg); okLit {
+					keys[lit] = true
+				}
+			}
+			collectHookKeys(target, index, keys, visited)
+		case *ast.IndexExpr:
+			// values["x"]
+			if ident, okIdent := node.X.(*ast.Ident); okIdent && ident.Name == param {
+				if lit, okLit := stringLit(node.Index); okLit {
+					keys[lit] = true
+				}
+			}
+		}
+		return true
+	})
+}
+
+// valuesParamName 返回函数里 url.Values 形参的名字；没有则返回空。
+func valuesParamName(fn *funcSource) string {
+	for _, decl := range fn.paramDecls {
+		if typeName(decl.typ, fn.pkg, fn.imports) == "net/url.Values" {
+			return decl.name
+		}
+	}
+	return ""
+}
+
+func stringLit(expr ast.Expr) (string, bool) {
+	lit, ok := expr.(*ast.BasicLit)
+	if !ok || lit.Kind != token.STRING {
+		return "", false
+	}
+	value, err := strconv.Unquote(lit.Value)
+	if err != nil {
+		return "", false
+	}
+	return value, true
+}
+
+// mergeHookFields 把钩子读取但 tag 未声明的键并入字段表（追加、按名排序、保持稳定）。
+func mergeHookFields(fields []fieldSchema, dto, protocol string, index sourceIndex) []fieldSchema {
+	if protocol != "form" && protocol != "multipart" {
+		return fields
+	}
+	seen := make(map[string]bool, len(fields))
+	for _, field := range fields {
+		seen[field.Name] = true
+	}
+	for _, key := range hookFieldKeys(dto, index) {
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		fields = append(fields, fieldSchema{Name: key})
+	}
+	return fields
+}
+
 func buildContracts(routes []route, index sourceIndex) map[string]endpointSchema {
 	out := map[string]endpointSchema{}
 	for _, r := range routes {
@@ -225,13 +395,14 @@ func buildContracts(routes []route, index sourceIndex) map[string]endpointSchema
 				binding = bodyBinding{Protocol: "unknown", Reason: "处理器还有一条委托分支无法确定输入形状：" + target}
 			}
 		}
-		ep := endpointSchema{DTO: binding.DTO, Handler: r.Handler, Protocol: binding.Protocol, Reason: binding.Reason, Fields: []fieldSchema{}}
+		ep := endpointSchema{DTO: binding.DTO, Handler: r.Handler, Protocol: binding.Protocol,
+			Encodings: binding.Encodings, Reason: binding.Reason, Fields: []fieldSchema{}}
 		if binding.Reason == "" && binding.DTO != "" {
 			fields, err := dtoFields(binding.DTO, binding.Protocol, index.Types, map[string]bool{})
 			if err != nil {
 				ep.Protocol, ep.Reason = "unknown", err.Error()
 			} else {
-				ep.Fields = append(ep.Fields, fields...)
+				ep.Fields = append(ep.Fields, mergeHookFields(fields, binding.DTO, binding.Protocol, index)...)
 			}
 		}
 		// 入口先按请求字段分叉时，另一支是同一端点的第二个输入形状。
@@ -615,7 +786,7 @@ func nativeBinding(body *ast.BlockStmt, pkg string, imports map[string]string,
 		return bodyBinding{}
 	}
 	for _, binding := range bindings[1:] {
-		if binding != bindings[0] {
+		if !sameBinding(binding, bindings[0]) {
 			return bodyBinding{Protocol: "unknown", Reason: "处理器包含多种请求绑定，不能取第一个冒充完整契约"}
 		}
 	}
@@ -1699,7 +1870,10 @@ func bindingGenericDTO(call *ast.CallExpr, pkg string, imports map[string]string
 	}
 	switch sel.Sel.Name {
 	case "ParseForm":
-		return bodyBinding{DTO: dto, Protocol: "form"}, true
+		// 显式表单入口按 Content-Type 在 FormPost 与 FormMultipart 之间分派：
+		// 两种表单编码都是它真实接受的输入，契约必须把这一点写出来，
+		// 否则模板侧只按 urlencoded 对账，multipart 提交会被误判为协议不符。
+		return bodyBinding{DTO: dto, Protocol: "form", Encodings: []string{"urlencoded", "multipart"}}, true
 	case "ParseJSON":
 		return bodyBinding{DTO: dto, Protocol: "json"}, true
 	case "Query":

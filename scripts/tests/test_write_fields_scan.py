@@ -278,6 +278,16 @@ class WriteFieldsScanTest(unittest.TestCase):
         self.assert_ok({'POST /upload': contract('file', protocol='multipart')}, {
             'page.html': '<form hx-post="/upload" hx-encoding="multipart/form-data"><input type="file" name="file"></form>',
         })
+        # 显式表单入口同时接受两种表单编码：契约声明 encodings 后 multipart 提交成立。
+        dual = contract('id')
+        dual['encodings'] = ['urlencoded', 'multipart']
+        self.assert_ok({'POST /save': dual}, {
+            'page.html': '<form hx-post="/save" hx-encoding="multipart/form-data"><input name="id"></form>',
+        })
+        # 只声明 urlencoded 的原生 FormPost 端点不接受 multipart，不能借同名字段放过。
+        self.assert_bad({'POST /save': contract('id')}, {
+            'page.html': '<form hx-post="/save" hx-encoding="multipart/form-data"><input name="id"></form>',
+        }, '输入协议不匹配')
         self.assert_bad({'POST /save': {'protocol': 'unknown', 'reason': '未知 binder', 'fields': []}}, {
             'page.html': '<form hx-post="/save"></form>',
         }, '未检查 POST /save：未知 binder')

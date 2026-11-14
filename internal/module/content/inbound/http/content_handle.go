@@ -153,10 +153,11 @@ func (h *Handle) Update(c *gin.Context) {
 	response.SuccessWithMessage(c, contentenums.MsgUpdateSuccess, res)
 }
 
+// Get / List 是 GET 读端点：参数在查询串上。ParseForm 只读 body，
+// 用在 GET 上只会得到零值（带 required 的直接 400、列表静默返回空集）。
 func (h *Handle) Get(c *gin.Context) {
-	req, err := binding.ParseForm[contentdto.GetReq](c)
-	if err != nil {
-		response.ParamError(c)
+	req, ok := binding.Query[contentdto.GetReq](c)
+	if !ok {
 		return
 	}
 	res, err := h.svc.Get(c.Request.Context(), req)
@@ -168,9 +169,8 @@ func (h *Handle) Get(c *gin.Context) {
 }
 
 func (h *Handle) List(c *gin.Context) {
-	req, err := binding.ParseForm[contentdto.ListReq](c)
-	if err != nil {
-		response.ParamError(c)
+	req, ok := binding.Query[contentdto.ListReq](c)
+	if !ok {
 		return
 	}
 	list, err := h.svc.List(c.Request.Context(), req)
