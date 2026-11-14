@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/spf13/viper"
+	usermodel "go_wp/internal/module/user/model"
 	json "go_wp/pkg/jsonx"
 	"go_wp/pkg/upload"
 )
@@ -415,5 +416,42 @@ func TestSiteUserWriteEndpointsRejectJSONBody(t *testing.T) {
 		`{"username":"jsonreg","email":"jsonreg@example.com","password":"password123"}`, csrf, cookies)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("JSON 注册应被拒为 400，实际 %d：%s", rec.Code, head(rec.Body.String()))
+	}
+}
+
+// 偏好保存是「错误编码不得落库」的关键面：DTO 的 BindForm 钩子会把缺失的
+// pageSize 补成 20、通知开关补成 false。JSON 请求若被当成空表单通过，
+// 用户提交的字段一个都不会生效，却把默认值完整写进偏好表 —— 200 掩盖了重置。
+func TestSitePreferenceRejectsJSONAndKeepsStoredValues(t *testing.T) {
+	env := newUserHTTPEnv(t)
+	seedActiveUser(t, env.db, "prefjson", "pref-json@example.com", "password123")
+	cookies := loginAs(t, env, "prefjson", "password123")
+	csrf, _ := csrfFromAccount(t, env, cookies)
+
+	// 先按真实表单写入一份非默认偏好。
+	saved := env.postForm(t, "/api/site/user/account/preference", map[string]string{
+		"csrf_token": csrf, "pageSize": "50", "profileVisibility": "members",
+		"timezone": "Asia/Shanghai", "emailNotify": "1",
+	}, cookies)
+	if saved.Code != http.StatusOK {
+		t.Fatalf("前置：表单保存偏好应 200，实际 %d：%s", saved.Code, head(saved.Body.String()))
+	}
+
+	rec := siteJSONBody(t, env, "/api/site/user/account/preference",
+		`{"pageSize":7,"profileVisibility":"private","showOnline":false}`, csrf, cookies)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("JSON 偏好保存应被拒为 400，实际 %d：%s", rec.Code, head(rec.Body.String()))
+	}
+
+	var u usermodel.UserEntity
+	if err := env.db.Where("username = ?", "prefjson").First(&u).Error; err != nil {
+		t.Fatalf("读取账号失败: %v", err)
+	}
+	var pref usermodel.UserPreferenceEntity
+	if err := env.db.Where("user_id = ?", u.ID).First(&pref).Error; err != nil {
+		t.Fatalf("读取偏好失败: %v", err)
+	}
+	if pref.PageSize != 50 || pref.ProfileVisibility != "members" || pref.Timezone == nil || *pref.Timezone != "Asia/Shanghai" || !pref.EmailNotify {
+		t.Fatalf("JSON 请求不得改写已存偏好（默认值覆盖是数据事故）：%+v", pref)
 	}
 }

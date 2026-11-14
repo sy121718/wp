@@ -2,6 +2,7 @@ package binding
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"net/http"
 	"net/url"
@@ -139,17 +140,32 @@ func ParseQuery[T any](c *gin.Context) (*T, error) {
 	return &req, nil
 }
 
+// ErrFormContentType 表示请求声明的编码不是表单。
+//
+// 单独给一个可判定的错误：调用方统一回 400 即可，不需要解析错误文案。
+var ErrFormContentType = errors.New("binding: 表单端点只接受 application/x-www-form-urlencoded 或 multipart/form-data")
+
 // ParseForm 是显式表单绑定：只读请求体，不合并查询串。
 //
 // ShouldBind 会按 Content-Type 自动选择 binder 并把 query 并进表单，
 // 于是 `POST /save?id=x` 在 body 为空时也能绑出 id —— 写端点与查询串的边界就没了。
 // 这里按声明的编码选 FormPost 或 FormMultipart，两者都只读 body：
 // 字段只可能来自请求体，取不到就是零值，交给调用方显式校验。
+//
+// 非表单编码**直接报错**，不能退回零值表单：Gin 的表单 binder 对 JSON 体
+// 只会得到空值，若当成绑定成功，带默认值的 DTO（偏好页大小、通知开关）
+// 会把「用户没提交」写成「用户要求默认值」，等于用错误编码覆盖真实设置。
+// 没有 Content-Type 的请求同样拒绝 —— 无法证明它是表单，就不按表单处理。
 func ParseForm[T any](c *gin.Context) (*T, error) {
 	var req T
-	binder := ginbinding.FormPost
-	if isMultipartBody(c) {
+	var binder ginbinding.Binding
+	switch {
+	case isMultipartBody(c):
 		binder = ginbinding.FormMultipart
+	case isURLEncodedBody(c):
+		binder = ginbinding.FormPost
+	default:
+		return &req, ErrFormContentType
 	}
 	if err := c.ShouldBindWith(&req, binder); err != nil {
 		return &req, err
@@ -160,6 +176,14 @@ func ParseForm[T any](c *gin.Context) (*T, error) {
 		}
 	}
 	return &req, nil
+}
+
+// isURLEncodedBody 判断请求体是否为 urlencoded 表单。
+func isURLEncodedBody(c *gin.Context) bool {
+	if c == nil || c.Request == nil {
+		return false
+	}
+	return strings.HasPrefix(strings.ToLower(c.GetHeader("Content-Type")), "application/x-www-form-urlencoded")
 }
 
 // bodyValues 返回请求体里的表单值：urlencoded 用 PostForm，
