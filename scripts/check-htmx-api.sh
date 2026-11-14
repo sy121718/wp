@@ -23,7 +23,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT" || exit 1
 
 BUNDLE="pkg/view/ui/assets/js/ui/htmx.min.js"
-TPL_DIR="internal/templates"
+TPL_DIRS=("internal/templates" "pkg/view/ui/templates" "pkg/builder")
 JS_DIRS=("pkg/view/ui/assets/js" "internal/templates/static/js")
 
 if [[ ! -f "$BUNDLE" ]]; then
@@ -39,9 +39,15 @@ fail() {
 
 # 扫描范围：模板（.html/.jet）、控件 JS（排除 bundle 自己）、模板目录下的文档。
 tpl_files=()
-while IFS= read -r f; do tpl_files+=("$f"); done < <(
-  find "$TPL_DIR" -type f \( -name '*.html' -o -name '*.jet' \) | sort
-)
+for dir in "${TPL_DIRS[@]}"; do
+  if [[ ! -d "$dir" ]]; then
+    echo "模板扫描根不存在：$dir" >&2
+    exit 1
+  fi
+  while IFS= read -r f; do tpl_files+=("$f"); done < <(
+    find "$dir" -type f \( -name '*.html' -o -name '*.jet' \) | sort
+  )
+done
 js_files=()
 for dir in "${JS_DIRS[@]}"; do
   [[ -d "$dir" ]] || continue
@@ -50,9 +56,11 @@ for dir in "${JS_DIRS[@]}"; do
   )
 done
 md_files=()
-while IFS= read -r f; do md_files+=("$f"); done < <(
-  find "$TPL_DIR" -type f -name '*.md' | sort
-)
+for dir in "${TPL_DIRS[@]}"; do
+  while IFS= read -r f; do md_files+=("$f"); done < <(
+    find "$dir" -type f -name '*.md' | sort
+  )
+done
 
 # ── 判据 1：v2 已删属性 ────────────────────────────────────────────────────────
 # 扫模板与 JS（不扫文档：文档里出现旧名字通常正是在说「不要这么写」）。

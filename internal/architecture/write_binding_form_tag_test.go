@@ -47,23 +47,18 @@ func TestWriteDTOsHaveFormTag(t *testing.T) {
 				continue
 			}
 			ast.Inspect(f, func(n ast.Node) bool {
-				idx, ok := n.(*ast.IndexExpr)
-				if !ok {
+				// 表单协议的唯一来源已是显式表单入口：
+				//   binding.ParseForm[T](c)      —— 泛型显式表单
+				//   c.ShouldBindWith(&req, FormPost) —— 原生表单
+				// 兼容入口 binding.JSON / binding.Form 已从写路由清退（只剩 GET 读端点）。
+				// 只看兼容入口会让本判据在迁移完成后空转，因此按真实表单入口收面。
+				call, okCall := n.(*ast.CallExpr)
+				if okCall {
+					if name := formEntryTypeOf(call); name != "" {
+						used[name] = true
+					}
 					return true
 				}
-				sel, ok := idx.X.(*ast.SelectorExpr)
-				if !ok || sel.Sel.Name != "JSON" {
-					return true
-				}
-				pkgIdent, ok := sel.X.(*ast.Ident)
-				if !ok || pkgIdent.Name != "binding" {
-					return true
-				}
-				name := typeNameOf(idx.Index)
-				if name == "" {
-					return true
-				}
-				used[name] = true
 				return true
 			})
 		}
@@ -210,4 +205,32 @@ func recvTypeName(expr ast.Expr) string {
 		return recvTypeName(e.X)
 	}
 	return ""
+}
+
+// formEntryTypeOf 识别显式表单绑定的请求类型名。
+//
+//	binding.ParseForm[T](c)                     → "T"
+//	c.ShouldBindWith(&req, ginbinding.FormPost)  → req 的声明类型名
+//
+// 只认这两种：兼容入口 binding.JSON/Form 已从写路由清退，不该再作为判据来源。
+func formEntryTypeOf(call *ast.CallExpr) string {
+	if call == nil {
+		return ""
+	}
+	// binding.ParseForm[T](c)：泛型调用的被调方是 IndexExpr。
+	if idx, ok := call.Fun.(*ast.IndexExpr); ok {
+		if sel, okSel := idx.X.(*ast.SelectorExpr); okSel && sel.Sel.Name == "ParseForm" {
+			return typeNameOf(idx.Index)
+		}
+	}
+	// c.ShouldBindWith(&req, FormPost|FormMultipart)：第二参数是表单 binder。
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok || sel.Sel.Name != "ShouldBindWith" || len(call.Args) != 2 {
+		return ""
+	}
+	binder, okBinder := call.Args[1].(*ast.SelectorExpr)
+	if !okBinder || (binder.Sel.Name != "FormPost" && binder.Sel.Name != "FormMultipart") {
+		return ""
+	}
+	return typeNameOf(call.Args[0])
 }

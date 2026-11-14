@@ -41,6 +41,10 @@ func (s *authzStub) ListByCodes(context.Context, []string) ([]admindto.PermBrief
 }
 func (s *authzStub) ExistsEnabledCode(context.Context, string) (bool, error) { return false, nil }
 
+func (s *authzStub) ListByPathMethod(context.Context, string, string) ([]admindto.PermBrief, error) {
+	return nil, nil
+}
+
 func (s *authzStub) EffectivePermissionCodes(context.Context, uint64) ([]string, error) {
 	s.effectiveCalls++
 	return s.codes, s.aerr

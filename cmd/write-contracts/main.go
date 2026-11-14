@@ -39,6 +39,18 @@ type endpointSchema struct {
 	Protocol string        `json:"protocol"`
 	Reason   string        `json:"reason,omitempty"`
 	Fields   []fieldSchema `json:"fields"`
+	// Variants 是同一 METHOD+PATH 的第二个输入形状：处理器在入口先按请求字段是否存在
+	// 分叉（如「有 ids 就批量、否则单条」），两条分支各自绑定不同的 DTO。
+	// 不写死处理器名字：只有「分叉条件探测请求 + 提前 return 的委托分支绑定到不同 DTO」
+	// 这一可静态证明的形状才产出变体；识别不出时保持单一契约，不猜。
+	Variants []variantSchema `json:"variants,omitempty"`
+}
+
+// variantSchema 是一条变体契约：线上字段由该分支真实绑定的 DTO 决定。
+type variantSchema struct {
+	DTO      string        `json:"dto,omitempty"`
+	Protocol string        `json:"protocol"`
+	Fields   []fieldSchema `json:"fields"`
 }
 
 type route struct {
@@ -51,6 +63,14 @@ type bodyBinding struct {
 	DTO      string
 	Protocol string
 	Reason   string
+}
+
+// resolvedBinding 判断绑定是否已确定输入协议。
+func resolvedBinding(b bodyBinding) bool {
+	if b.Reason != "" {
+		return false
+	}
+	return b.Protocol != "" && b.Protocol != "unknown"
 }
 
 type sourceStruct struct {
@@ -81,8 +101,19 @@ type funcSource struct {
 	// generics 是本函数声明的类型参数名（如 runProductWrite[T any] 的 T）。
 	// 泛型写骨架的请求类型由调用方的实参决定，不能在骨架体里凭空推断。
 	generics map[string]bool
+	// genericOrder 是按声明顺序排列的类型参数名，用于把显式类型实参对回参数位置。
+	genericOrder []string
 	// typeParams 记录形参的源码表达式，供泛型骨架按实参类型替换出真实 DTO。
 	typeParams map[string]ast.Expr
+	// paramDecls 按源码顺序记录形参（名字 + 类型），供泛型骨架按位置把调用方实参
+	// 对回骨架的形参：只有 binder 真正绑定的那个类型参数才是输入 DTO。
+	paramDecls []paramDecl
+}
+
+// paramDecl 是一个形参声明：可能是多名字共用一个类型（a, b *T），展开成逐名字。
+type paramDecl struct {
+	name string
+	typ  ast.Expr
 }
 
 func run(check bool) error {
@@ -172,17 +203,30 @@ func buildContracts(routes []route, index sourceIndex) map[string]endpointSchema
 		if !ok {
 			binding = genericSkeletonBinding(identity, index)
 		}
-		if binding.Protocol == "" && binding.Reason == "" {
+		if !resolvedBinding(binding) && binding.Reason == "" {
 			binding = directGenericBinder(identity, index)
 		}
-		if binding.Protocol == "" && binding.Reason == "" {
+		if !resolvedBinding(binding) && binding.Reason == "" {
 			binding = delegateBinding(identity, index)
 		}
-		if binding.Protocol == "" && binding.Reason == "" {
+		if !resolvedBinding(binding) && binding.Reason == "" {
+			// 没有任何 binder 的入口先做**正向证明**：处理器（含可解析的委托链）
+			// 完全不读 body → nobody；只读原始字节 → raw。两者都是可证伪的
+			// 事实（出现任何 body 读取痕迹就退回 unknown），不是「未检查」。
+			binding = noBinderEvidence(identity, index)
+		}
+		if !resolvedBinding(binding) && binding.Reason == "" {
 			binding = bodyBinding{Protocol: "unknown", Reason: "真实处理器没有唯一显式 body binder，或是包装闭包"}
 		}
+		// 本地有确定的 binder，不代表这是唯一输入路径：只要还有一条分支委托给
+		// 无法确定形状的目标，整体仍应如实报未检查，不能被本地 binder 洗白。
+		if resolvedBinding(binding) {
+			if target, bad := delegatedUnknownBranch(identity, index); bad {
+				binding = bodyBinding{Protocol: "unknown", Reason: "处理器还有一条委托分支无法确定输入形状：" + target}
+			}
+		}
 		ep := endpointSchema{DTO: binding.DTO, Handler: r.Handler, Protocol: binding.Protocol, Reason: binding.Reason, Fields: []fieldSchema{}}
-		if binding.Reason == "" {
+		if binding.Reason == "" && binding.DTO != "" {
 			fields, err := dtoFields(binding.DTO, binding.Protocol, index.Types, map[string]bool{})
 			if err != nil {
 				ep.Protocol, ep.Reason = "unknown", err.Error()
@@ -190,9 +234,136 @@ func buildContracts(routes []route, index sourceIndex) map[string]endpointSchema
 				ep.Fields = append(ep.Fields, fields...)
 			}
 		}
+		// 入口先按请求字段分叉时，另一支是同一端点的第二个输入形状。
+		// 只有两条分支都能解析出确定 DTO 且互不相同时才产出变体；否则保持单一契约。
+		if len(ep.Fields) > 0 {
+			ep.Variants = variantBindings(identity, binding, index)
+		}
 		out[r.Method+" "+r.Path] = ep
 	}
 	return out
+}
+
+// variantBindings 找「入口按请求字段分叉」的第二条输入形状。
+//
+// 要识别的形状（写成代码就是）：
+//
+//	if probe(c) != nil {          // probe 探测某个字段是否存在
+//	    h.bulkBranch(c)           // 提前 return 的分支，自己绑定另一个 DTO
+//	    return
+//	}
+//	... 主流��继续绑定主 DTO ...
+//
+// 只认这一种**可静态证明**的形状：分叉条件是「探针函数返回非 nil」，
+// 分支体是整包委托且提前 return。识别不出、或两条分支解析出同一个 DTO，
+// 就不产出变体——宁可不报，也不猜。探针名字不写死，任何返回可比对值的
+// 本地函数（本例是 orderBulkFormIDs）都行。
+func variantBindings(identity string, mainB bodyBinding, index sourceIndex) []variantSchema {
+	src, ok := index.funcs[identity]
+	if !ok || src.body == nil {
+		return nil
+	}
+	var out []variantSchema
+	ast.Inspect(src.body, func(n ast.Node) bool {
+		if len(out) > 0 {
+			return false
+		}
+		ifStmt, okIf := n.(*ast.IfStmt)
+		if !okIf {
+			return true
+		}
+		// 条件必须是 `probe(c) != nil`：左值是对 gin.Context 形参的调用。
+		binary, okBin := ifStmt.Cond.(*ast.BinaryExpr)
+		if !okBin || binary.Op != token.NEQ {
+			return true
+		}
+		call, okCall := binary.X.(*ast.CallExpr)
+		if !okCall || !takesContext(call, src) {
+			return true
+		}
+		// 分支体必须以 return 结束（提前退出），否则它只是条件处理、不是输入形状分叉。
+		if !endsWithReturn(ifStmt.Body) {
+			return true
+		}
+		// 分支体里必须有一处整包委托（把 gin.Context 原样转交给另一个函数）。
+		var branch string
+		for _, target := range delegatedTargetsOfBlock(ifStmt.Body, src, index) {
+			branch = target
+			break
+		}
+		if branch == "" {
+			return true
+		}
+		inner := bindingForIdentity(branch, index)
+		if inner.Protocol == "" || inner.Protocol == "unknown" || inner.DTO == "" {
+			return true
+		}
+		if inner.DTO == mainB.DTO {
+			return true
+		}
+		fields, err := dtoFields(inner.DTO, inner.Protocol, index.Types, map[string]bool{})
+		if err != nil {
+			return true
+		}
+		out = append(out, variantSchema{DTO: inner.DTO, Protocol: inner.Protocol, Fields: fields})
+		return false
+	})
+	return out
+}
+
+// takesContext 判断一次调用是否把某个 gin.Context 形参原样传了出去。
+func takesContext(call *ast.CallExpr, src *funcSource) bool {
+	for _, arg := range call.Args {
+		if ident, ok := arg.(*ast.Ident); ok && src.ctxParams[ident.Name] {
+			return true
+		}
+	}
+	return false
+}
+
+// endsWithReturn 判断块体最后一句是 return。
+func endsWithReturn(body *ast.BlockStmt) bool {
+	if body == nil || len(body.List) == 0 {
+		return false
+	}
+	_, ok := body.List[len(body.List)-1].(*ast.ReturnStmt)
+	return ok
+}
+
+// delegatedTargetsOfBlock 返回某个块里「把 gin.Context 原样转交出去」的调用目标。
+func delegatedTargetsOfBlock(body *ast.BlockStmt, src *funcSource, index sourceIndex) []string {
+	seen := map[string]bool{}
+	var out []string
+	ast.Inspect(body, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok || !takesContext(call, src) {
+			return true
+		}
+		target := calleeOf(src, call.Fun, index)
+		if target == nil || seen[target.name] {
+			return true
+		}
+		seen[target.name] = true
+		out = append(out, target.name)
+		return true
+	})
+	sort.Strings(out)
+	return out
+}
+
+// bindingForIdentity 用与 buildContracts 相同的优先级解析一个 handler 的输入契约。
+func bindingForIdentity(identity string, index sourceIndex) bodyBinding {
+	binding, ok := index.Bindings[identity]
+	if !ok {
+		binding = genericSkeletonBinding(identity, index)
+	}
+	if !resolvedBinding(binding) && binding.Reason == "" {
+		binding = directGenericBinder(identity, index)
+	}
+	if !resolvedBinding(binding) && binding.Reason == "" {
+		binding = delegateBinding(identity, index)
+	}
+	return binding
 }
 
 func scanSources(root, prefix string) (sourceIndex, error) {
@@ -259,6 +430,7 @@ func scanSources(root, prefix string) (sourceIndex, error) {
 					for _, tp := range node.Type.TypeParams.List {
 						for _, tpName := range tp.Names {
 							src.generics[tpName.Name] = true
+							src.genericOrder = append(src.genericOrder, tpName.Name)
 						}
 					}
 				}
@@ -266,6 +438,7 @@ func scanSources(root, prefix string) (sourceIndex, error) {
 					for _, paramName := range field.Names {
 						src.paramNames = append(src.paramNames, paramName.Name)
 						src.typeParams[paramName.Name] = field.Type
+						src.paramDecls = append(src.paramDecls, paramDecl{name: paramName.Name, typ: field.Type})
 						if typeName(field.Type, pkg, imports) == "github.com/gin-gonic/gin.Context" {
 							src.ctxParams[paramName.Name] = true
 						}
@@ -383,6 +556,10 @@ func nativeBinding(body *ast.BlockStmt, pkg string, imports map[string]string,
 				protocol = "unknown"
 			case "ShouldBindJSON":
 				protocol = "json"
+			case "ShouldBindQuery":
+				// 显式查询串绑定：只读 URL query，不读 body。字段名在 DTO 的 form tag 上
+				// （Gin 的 query binder 与 form binder 共用 form tag）。
+				protocol = "query"
 			case "ShouldBindWith":
 				if len(node.Args) == 2 {
 					if binder, ok := node.Args[1].(*ast.SelectorExpr); ok {
@@ -445,6 +622,118 @@ func nativeBinding(body *ast.BlockStmt, pkg string, imports map[string]string,
 	return bindings[0]
 }
 
+// noBinderEvidence 对「没有任何 binder」的入口做正向证明。
+//
+// 只有两种可证伪的结论：
+//   - raw：处理器（含可解析的委托链）直接读原始请求体（io.ReadAll(c.Request.Body)、
+//     GetRawData、FormFile、ParseMultipartForm）。这类端点的 body 形状由外部协议
+//     （支付方回调、采集 beacon）决定，不由本仓字段表声明；
+//   - nobody：整条可解析调用链完全不读 body，也不读 form/query 字段。
+//
+// 出现任何手工读 form/query 的痕迹（PostForm、Query、DefaultQuery）或把 ctx 交给
+// 无法解析的目标时，返回空绑定 —— 由调用方落回 unknown，提醒仍需迁移成显式 DTO。
+// 这是「未证明」而不是「已检查」，不会被当成已覆盖。
+func noBinderEvidence(name string, index sourceIndex) bodyBinding {
+	readsRaw, manual, unresolved := bodyReadEvidence(name, index, map[string]bool{})
+	if unresolved {
+		return bodyBinding{}
+	}
+	// 读原始字节时，body 协议就是「原始」——query 里另读的字段不影响 body 形状
+	// （支付回调的 projectId 就在 query 上，正文仍交验签）。
+	if readsRaw {
+		return bodyBinding{Protocol: "raw"}
+	}
+	// 不读原始字节却手工读 form/query：说明输入仍未绑定成 DTO，保持 unknown
+	// 等迁移，不把「未证明」写成「已检查」。
+	if manual {
+		return bodyBinding{}
+	}
+	return bodyBinding{Protocol: "nobody"}
+}
+
+// bodyReadEvidence 沿委托链收集读取痕迹。
+// readsRaw 表示读了原始字节；manual 表示手工读了 form/query 字段；unresolved 表示
+// 把 gin.Context 交给了无法解析的目标（证明不了它不读 body）。
+//
+// visited 防止同一条辅助链被重复遍历，也避免递归辅助函数无限下探。
+func bodyReadEvidence(name string, index sourceIndex, visited map[string]bool) (readsRaw, manual, unresolved bool) {
+	src, ok := index.funcs[name]
+	if !ok || src.body == nil {
+		return false, false, true
+	}
+	if visited[name] {
+		return false, false, false
+	}
+	visited[name] = true
+	// 没有 gin.Context 形参的函数证明不了「不读 HTTP body」：它不是请求处理器。
+	if len(src.ctxParams) == 0 {
+		return false, false, true
+	}
+	ast.Inspect(src.body, func(n ast.Node) bool {
+		switch node := n.(type) {
+		case *ast.FuncLit:
+			// 闭包体不展开：闭包里可能有 binder，跳过会得到错误的「不读 body」。
+			unresolved = true
+			return false
+		case *ast.CallExpr:
+			// 任何 ShouldBind*/Bind* 都是绑定尝试；nativeBinding 没认出来的形状
+			// 说明协议不确定，不能因为「没读到 body 字段」就判成 nobody。
+			if sel, okSel := node.Fun.(*ast.SelectorExpr); okSel {
+				if strings.HasPrefix(sel.Sel.Name, "ShouldBind") || sel.Sel.Name == "Bind" {
+					unresolved = true
+					return false
+				}
+			}
+			if !takesContext(node, src) {
+				return true
+			}
+			target := calleeOf(src, node.Fun, index)
+			if target == nil {
+				// 解析不到的目标是服务/响应辅助函数（接口方法、pkg 包函数）：
+				// 它们不读 HTTP 请求体，不参与 body 读取判定。
+				// 同一 internal 树里的本地函数/方法都能被 calleeOf 解析。
+				return true
+			}
+			r, m, u := bodyReadEvidence(target.name, index, visited)
+			readsRaw = readsRaw || r
+			manual = manual || m
+			unresolved = unresolved || u
+			return true
+		case *ast.SelectorExpr:
+			// c.Request.Body / c.Request.FormFile / c.Request.ParseMultipartForm
+			if node.Sel.Name == "Body" {
+				if inner, okInner := node.X.(*ast.SelectorExpr); okInner && inner.Sel.Name == "Request" && isCtxExpr(inner.X, src) {
+					readsRaw = true
+					return false
+				}
+			}
+			if node.Sel.Name == "FormFile" || node.Sel.Name == "ParseMultipartForm" || node.Sel.Name == "MultipartForm" {
+				readsRaw = true
+				return false
+			}
+			if node.Sel.Name == "GetRawData" && isCtxExpr(node.X, src) {
+				readsRaw = true
+				return false
+			}
+			if (node.Sel.Name == "PostForm" || node.Sel.Name == "GetPostForm" ||
+				node.Sel.Name == "PostFormArray" || node.Sel.Name == "GetPostFormArray" ||
+				node.Sel.Name == "Query" || node.Sel.Name == "DefaultQuery" ||
+				node.Sel.Name == "FormValue") && isCtxExpr(node.X, src) {
+				manual = true
+				return false
+			}
+		}
+		return true
+	})
+	return readsRaw, manual, unresolved
+}
+
+// isCtxExpr 判断表达式是否就是本函数声明的 gin.Context 形参。
+func isCtxExpr(expr ast.Expr, src *funcSource) bool {
+	ident, ok := expr.(*ast.Ident)
+	return ok && src.ctxParams[ident.Name]
+}
+
 func dtoFields(name, protocol string, types map[string]sourceStruct, visiting map[string]bool) ([]fieldSchema, error) {
 	source, ok := types[name]
 	if !ok || visiting[name] {
@@ -453,7 +742,9 @@ func dtoFields(name, protocol string, types map[string]sourceStruct, visiting ma
 	visiting[name] = true
 	defer delete(visiting, name)
 	tagName := "json"
-	if protocol == "form" || protocol == "multipart" {
+	if protocol == "form" || protocol == "multipart" || protocol == "query" {
+		// Gin 的 query binder 与 form binder 共用 form tag：显式查询串端点
+		// 的线上键名同样由 form tag 声明。
 		tagName = "form"
 	}
 	var fields []fieldSchema
@@ -568,7 +859,14 @@ func delegateBindingDepth(name string, index sourceIndex, depth int) bodyBinding
 	}
 	// 处理器常把上下文交给多个辅助函数（错误提示、回跳、取值），但只有**带 body
 	// binder** 的那条才定义了输入契约；因此沿每条委托链继续下探，只收真实 binder。
+	//
+	// 三种被委托方要分开：
+	//   - 根本没有 binder（读取辅助函数）：不构成输入契约，跳过；
+	//   - 明确登记了未知协议且解析不出确定形状：说明这条委托链自己也没定，
+	//     不能把它悄悄滤掉再报「唯一的 form」；
+	//   - 协议确定：参与唯一性判断。
 	var bound []bodyBinding
+	var unresolved []string
 	for _, target := range delegatedTargets(src, index) {
 		callee, okTarget := index.funcs[target]
 		if !okTarget {
@@ -578,15 +876,23 @@ func delegateBindingDepth(name string, index sourceIndex, depth int) bodyBinding
 		if !okBinding || binding.Protocol == "" || binding.Protocol == "unknown" {
 			// 被委托方自己可能只是一个泛型骨架的调用者（bindX[T](c) 显式写实参）：
 			// 先按调用方实参解析出真实 DTO，再退回沿链继续下探。
-			if inner := genericSkeletonBinding(target, index); inner.Protocol != "" && inner.Protocol != "unknown" {
+			if inner := genericSkeletonBinding(target, index); resolvedBinding(inner) {
 				binding, okBinding = inner, true
-			} else if inner := directGenericBinder(target, index); inner.Protocol != "" && inner.Protocol != "unknown" {
+			} else if inner := directGenericBinder(target, index); resolvedBinding(inner) {
 				binding, okBinding = inner, true
-			} else if inner := delegateBindingDepth(target, index, depth-1); inner.Protocol != "" && inner.Protocol != "unknown" {
+			} else if inner := delegateBindingDepth(target, index, depth-1); resolvedBinding(inner) {
 				binding, okBinding = inner, true
 			}
 		}
-		if !okBinding || binding.Protocol == "" || binding.Protocol == "unknown" {
+		switch {
+		case resolvedBinding(binding):
+			// 协议确定（含按路由方法确定的 Form/JSON），参与唯一性判断。
+		case okBinding || binding.Protocol == "unknown":
+			// 被委托方明确绑定了一个无法确定的输入形状：整条委托链不定。
+			unresolved = append(unresolved, callee.name)
+			continue
+		default:
+			// 无 binder 的读取辅助函数。
 			continue
 		}
 		duplicate := false
@@ -599,6 +905,10 @@ func delegateBindingDepth(name string, index sourceIndex, depth int) bodyBinding
 		if !duplicate {
 			bound = append(bound, binding)
 		}
+	}
+	if len(unresolved) > 0 {
+		return bodyBinding{Protocol: "unknown", Reason: "委托链包含无法确定输入形状的分支：" +
+			strings.Join(unresolved, ", ")}
 	}
 	switch len(bound) {
 	case 0:
@@ -774,30 +1084,12 @@ func genericSkeletonBinding(name string, index sourceIndex) bodyBinding {
 				return false
 			}
 		}
-		// 实参里的回调是 func(ctx, req *XReq) —— 兜底类型就是骨架上 T 的实例。
-		for _, arg := range call.Args {
-			lit, okLit := arg.(*ast.FuncLit)
-			if !okLit || lit.Type == nil || lit.Type.Params == nil {
-				continue
-			}
-			for _, field := range lit.Type.Params.List {
-				for _, pname := range field.Names {
-					if pname.Name == "_" {
-						continue
-					}
-					typ, okTyp := field.Type.(*ast.StarExpr)
-					if !okTyp {
-						continue
-					}
-					identified := typeName(typ.X, src.pkg, src.imports)
-					// 回调的第一个形参常是 *gin.Context —— 那是请求上下文，不是请求类型。
-					if identified == "" || identified == "github.com/gin-gonic/gin.Context" {
-						continue
-					}
-					skeleton, dto = target.name, identified
-					return false
-				}
-			}
+		// 回调实参：只有**骨架 binder 真正绑定的那个类型参数**的实参类型才是输入 DTO。
+		// 泛型骨架常同时有输入 F 与输出 R：回调里第一个指针形参往往是被传给 service
+		// 的 R。按「binder 绑定哪个类型参数」去挑，不能按「第一个指针形参」猜。
+		if inputDTO := genericInputDTO(call, target, src, index); inputDTO != "" {
+			skeleton, dto = target.name, inputDTO
+			return false
 		}
 		return true
 	})
@@ -825,6 +1117,200 @@ func genericSkeletonBinding(name string, index sourceIndex) bodyBinding {
 	}
 	binding.DTO = dto
 	return binding
+}
+
+// genericInputDTO 按「骨架上 binder 实际绑定的类型参数」从回调实参里取输入 DTO。
+//
+// 泛型写骨架常有两个类型参数：输入 F 与输出 R（runTransferWrite[F, R]、
+// runMembershipWrite[F, R]）。回调里第一个指针形参往往是被交给 service 的 R，
+// 拿它当字段契约会把输出类型的字段名当成线上表单字段。
+//
+// 这里先找骨架体里 binder 绑定的是哪个类型参数（`bindX[F](c)` 的实参、
+// 或 `var req F; c.ShouldBindWith(&req, ...)` 的声明类型），再按骨架形参位置
+// 找到对应回调、按回调形参位置取出该类型参数的实参类型。宁可不报也不猜。
+func genericInputDTO(call *ast.CallExpr, target *funcSource, src *funcSource, index sourceIndex) string {
+	inputParam := genericBoundTypeParam(index.funcs[target.name], index)
+	if inputParam == "" {
+		return ""
+	}
+	// 显式类型实参 f[F, R](...)：按类型参数声明顺序取被绑定那一个的实参。
+	if dto := explicitTypeArgForParam(call, target, inputParam, src); dto != "" {
+		return dto
+	}
+	// 骨架形参里第 i 个是回调时，回调的类型形参列表中哪个位置是 *inputParam。
+	paramIndex := genericParamPosition(target, inputParam)
+	if paramIndex < 0 {
+		return ""
+	}
+	arg := callArgAt(call, paramIndex)
+	lit, ok := arg.(*ast.FuncLit)
+	if !ok || lit.Type == nil || lit.Type.Params == nil {
+		return ""
+	}
+	litParamIndex := funcTypeParamPosition(target, paramIndex, inputParam)
+	if litParamIndex < 0 {
+		return ""
+	}
+	field := paramFieldAt(lit.Type.Params, litParamIndex)
+	if field == nil {
+		return ""
+	}
+	star, okStar := field.Type.(*ast.StarExpr)
+	if !okStar {
+		return ""
+	}
+	return typeName(star.X, src.pkg, src.imports)
+}
+
+// explicitTypeArgForParam 从显式泛型调用的类型实参里取指定类型参数对应的类型；
+// 不是显式调用、或位置对不上时返回空，交给回调形参推断。
+func explicitTypeArgForParam(call *ast.CallExpr, target *funcSource, generic string, src *funcSource) string {
+	var args []ast.Expr
+	switch fun := call.Fun.(type) {
+	case *ast.IndexExpr:
+		args = []ast.Expr{fun.Index}
+	case *ast.IndexListExpr:
+		args = fun.Indices
+	default:
+		return ""
+	}
+	for i, name := range target.genericOrder {
+		if name != generic || i >= len(args) {
+			continue
+		}
+		return typeName(args[i], src.pkg, src.imports)
+	}
+	return ""
+}
+
+// genericBoundTypeParam 找骨架体里 binder 绑定的类型参数名；找不到返回空。
+func genericBoundTypeParam(src *funcSource, index sourceIndex) string {
+	if src == nil || len(src.generics) == 0 {
+		return ""
+	}
+	found := ""
+	ast.Inspect(src.body, func(n ast.Node) bool {
+		if found != "" {
+			return false
+		}
+		call, okCall := n.(*ast.CallExpr)
+		if !okCall {
+			return true
+		}
+		// 形式一：bindX[F](c) —— 只有**被调函数本身是 binder** 时，类型实参才是
+		// 被绑定的类型参数。骨架体里可能先出现无关泛型调用（warm[R]()），
+		// 把它当成 binder 会把输出类型认成输入 DTO。
+		if isBinderGenericCall(call, src, index) {
+			switch fun := call.Fun.(type) {
+			case *ast.IndexExpr:
+				if ident, okIdent := fun.Index.(*ast.Ident); okIdent && src.generics[ident.Name] {
+					found = ident.Name
+					return false
+				}
+			case *ast.IndexListExpr:
+				for _, arg := range fun.Indices {
+					if ident, okIdent := arg.(*ast.Ident); okIdent && src.generics[ident.Name] {
+						found = ident.Name
+						return false
+					}
+				}
+			}
+		}
+		// 形式二：var req F; c.ShouldBindWith(&req, ...)
+		method, okSel := call.Fun.(*ast.SelectorExpr)
+		if !okSel || len(call.Args) == 0 {
+			return true
+		}
+		switch method.Sel.Name {
+		case "ShouldBindWith", "ShouldBindJSON", "ShouldBind", "Bind":
+		default:
+			return true
+		}
+		if expr := declaredType(call.Args[0], map[*ast.Object]bool{}); expr != nil {
+			if ident, okIdent := expr.(*ast.Ident); okIdent && src.generics[ident.Name] {
+				found = ident.Name
+			}
+		}
+		return true
+	})
+	return found
+}
+
+// genericParamPosition 返回骨架形参中「回调类型里含该类型参数」的位置；没有返回 -1。
+func genericParamPosition(src *funcSource, generic string) int {
+	for i, decl := range src.paramDecls {
+		if typeMentionsGeneric(decl.typ, generic) {
+			return i
+		}
+	}
+	return -1
+}
+
+// funcTypeParamPosition 返回骨架第 paramIndex 个形参类型（func 类型）里，
+// 该类型参数出现在第几个形参位置；拿不到返回 -1。
+func funcTypeParamPosition(src *funcSource, paramIndex int, generic string) int {
+	if paramIndex < 0 || paramIndex >= len(src.paramDecls) {
+		return -1
+	}
+	funcType, ok := src.paramDecls[paramIndex].typ.(*ast.FuncType)
+	if !ok || funcType.Params == nil {
+		return -1
+	}
+	index := 0
+	for _, field := range funcType.Params.List {
+		count := len(field.Names)
+		if count == 0 {
+			count = 1
+		}
+		if typeMentionsGeneric(field.Type, generic) {
+			return index
+		}
+		index += count
+	}
+	return -1
+}
+
+// typeMentionsGeneric 判断类型表达式里是否出现给定类型参数（含指针/切片/映射等）。
+func typeMentionsGeneric(expr ast.Expr, generic string) bool {
+	found := false
+	ast.Inspect(expr, func(n ast.Node) bool {
+		if found {
+			return false
+		}
+		if ident, ok := n.(*ast.Ident); ok && ident.Name == generic {
+			found = true
+			return false
+		}
+		return true
+	})
+	return found
+}
+
+// callArgAt 取按源码位置的第 index 个实参（多值实参不展开）。
+func callArgAt(call *ast.CallExpr, index int) ast.Expr {
+	if index < 0 || index >= len(call.Args) {
+		return nil
+	}
+	return call.Args[index]
+}
+
+// paramFieldAt 取函数类型形参列表按位置展开后的字段。
+func paramFieldAt(params *ast.FieldList, index int) *ast.Field {
+	if params == nil {
+		return nil
+	}
+	pos := 0
+	for _, field := range params.List {
+		count := len(field.Names)
+		if count == 0 {
+			count = 1
+		}
+		if index < pos+count {
+			return field
+		}
+		pos += count
+	}
+	return nil
 }
 
 // conversionFuncDTO 取泛型骨架调用里「显式转换函数」的接收者类型。
@@ -899,18 +1385,19 @@ func explicitTypeArgDTO(call *ast.CallExpr, calleeName string, target *funcSourc
 //
 // 泛型写骨架常见两层：runX(c, ...) → bindX(c) → bindXInto(c, req)。
 // 只跟一层会把第二层误报成「没有可确定的 binder」；深度上限避免把无关调用链并进来。
+//
+// 骨架体可能有多条分支各自 binder（bindJSON[T] 与 bindForm[T] 二选一）：
+// 只取第一个会把「两条协议」报成确定契约。这里收集**所有**分支的协议，
+// 恰有一种才确定；出现两种及以上如实报未检查。
 func chainedBinderProtocol(src *funcSource, index sourceIndex, depth int) bodyBinding {
 	if src == nil || depth <= 0 {
 		return bodyBinding{}
 	}
+	protocols := map[string]bool{}
 	if protocol := skeletonJSONProtocol(src); protocol != "" {
-		return bodyBinding{Protocol: protocol}
+		protocols[protocol] = true
 	}
-	var out bodyBinding
 	ast.Inspect(src.body, func(n ast.Node) bool {
-		if out.Protocol != "" {
-			return false
-		}
 		call, okCall := n.(*ast.CallExpr)
 		if !okCall {
 			return true
@@ -939,20 +1426,99 @@ func chainedBinderProtocol(src *funcSource, index sourceIndex, depth int) bodyBi
 		}
 		if binding, okBinding := index.Bindings[target.name]; okBinding &&
 			binding.Protocol != "" && binding.Protocol != "unknown" {
-			if len(target.generics) > 0 {
-				binding.DTO = ""
-			}
-			out = binding
-			return false
+			protocols[binding.Protocol] = true
+			return true
 		}
 		if protocol := chainedBinderProtocol(target, index, depth-1); protocol.Protocol != "" &&
 			protocol.Protocol != "unknown" {
-			out = bodyBinding{Protocol: protocol.Protocol}
-			return false
+			protocols[protocol.Protocol] = true
 		}
 		return true
 	})
-	return out
+	switch len(protocols) {
+	case 0:
+		return bodyBinding{}
+	case 1:
+		for protocol := range protocols {
+			return bodyBinding{Protocol: protocol}
+		}
+	}
+	names := make([]string, 0, len(protocols))
+	for protocol := range protocols {
+		names = append(names, protocol)
+	}
+	sort.Strings(names)
+	return bodyBinding{Protocol: "unknown", Reason: "泛型写骨架内含多种请求协议：" + strings.Join(names, ", ")}
+}
+
+// isBinderGenericCall 判断一次泛型调用（f[T](c)）的被调方本身是不是 binder。
+//
+// 骨架体里可能先出现无关的泛型调用（warm[R]()），把它当 binder 会把输出类型
+// 认成输入 DTO。只有被调方自身能解析出确定的输入协议时才算。
+func isBinderGenericCall(call *ast.CallExpr, src *funcSource, index sourceIndex) bool {
+	var name string
+	switch fun := call.Fun.(type) {
+	case *ast.IndexExpr:
+		if ident, okIdent := fun.X.(*ast.Ident); okIdent {
+			name = ident.Name
+		}
+	case *ast.IndexListExpr:
+		if ident, okIdent := fun.X.(*ast.Ident); okIdent {
+			name = ident.Name
+		}
+	default:
+		return false
+	}
+	if name == "" {
+		return false
+	}
+	target, ok := index.funcs[src.pkg+"."+name]
+	if !ok || len(target.generics) == 0 {
+		return false
+	}
+	if binding, okBinding := index.Bindings[target.name]; okBinding && resolvedBinding(binding) {
+		return true
+	}
+	return resolvedBinding(chainedBinderProtocol(target, index, 4))
+}
+
+// delegatedUnknownBranch 检查处理器是否还有一条委托分支无法确定输入形状。
+//
+// 处理器常既有本地显式 binder，又把上下文转交给辅助函数；只看本地 binder
+// 就把端点报成确定契约，会把「另一条分支 ShouldBind」的端点洗白成已检查。
+// 沿委托链有界下探，命中的第一处未确定目标即返回。
+func delegatedUnknownBranch(name string, index sourceIndex) (string, bool) {
+	return delegatedUnknownDepth(name, index, 4)
+}
+
+func delegatedUnknownDepth(name string, index sourceIndex, depth int) (string, bool) {
+	src, ok := index.funcs[name]
+	if !ok || depth <= 0 {
+		return "", false
+	}
+	for _, target := range delegatedTargets(src, index) {
+		callee, okTarget := index.funcs[target]
+		if !okTarget {
+			continue
+		}
+		binding, okBinding := index.Bindings[callee.name]
+		switch {
+		case okBinding && resolvedBinding(binding):
+			continue
+		case okBinding && binding.Protocol == "unknown":
+			// 登记为未知协议：除非能按调用方实参重新解析出确定 DTO，否则整条链不定。
+			if resolvedBinding(genericSkeletonBinding(target, index)) ||
+				resolvedBinding(directGenericBinder(target, index)) {
+				continue
+			}
+			return callee.name, true
+		}
+		// 本函数没有登记 binder：可能是读取辅助函数，也可能是再一层转发。
+		if hit, bad := delegatedUnknownDepth(target, index, depth-1); bad {
+			return hit, true
+		}
+	}
+	return "", false
 }
 
 // skeletonJSONProtocol 识别骨架体里的 `binding.ParseJSON[T](c)` 调用。
@@ -1105,13 +1671,15 @@ func directGenericBinder(name string, index sourceIndex) bodyBinding {
 
 // bindingGenericDTO 识别 pkg/binding 的泛型绑定入口。
 //
-//	binding.Form[T](c)      —— 标准表单编码
-//	binding.JSON[T](c)      —— 按 Content-Type 自适应（HTML 写端点仍在用）
-//	binding.Query[T](c)     —— 查询串
-//	binding.ParseForm[T](c) / ParseJSON[T](c) —— 显式表单 / JSON
+//	binding.ParseForm[T](c) —— 显式普通表单（FormPost，只读 body）
+//	binding.ParseJSON[T](c) —— 显式 JSON
+//	binding.Query[T](c)     —— 显式查询串
+//	binding.Form[T](c)      —— 旧入口，c.ShouldBind 按 Content-Type 自适应，
+//	                           还会把 query 并进表单；输入协议不能由函数名认定
+//	binding.JSON[T](c)      —— 同上，无 Content-Type 时才走 JSON
 //
-// 这些都是 pkg/binding 的正式入口，协议由函数名确定、DTO 是类型实参；
-// 不识别会让所有走它的端点都报 unknown，把真正的欠账埋在噪声里。
+// 自适应入口只登记「无法确定协议」，不按函数名猜 form/json：猜错会让模板侧的
+// 协议对账拿一个并不存在的确定性去放行。
 func bindingGenericDTO(call *ast.CallExpr, pkg string, imports map[string]string) (bodyBinding, bool) {
 	fun, ok := call.Fun.(*ast.IndexExpr)
 	if !ok {
@@ -1125,20 +1693,24 @@ func bindingGenericDTO(call *ast.CallExpr, pkg string, imports map[string]string
 	if !ok || imports[ident.Name] != "go_wp/pkg/binding" {
 		return bodyBinding{}, false
 	}
-	protocol := ""
-	switch sel.Sel.Name {
-	case "Form", "ParseForm":
-		protocol = "form"
-	case "JSON", "ParseJSON":
-		protocol = "json"
-	case "Query":
-		protocol = "query"
-	default:
-		return bodyBinding{}, false
-	}
 	dto := typeName(fun.Index, pkg, imports)
 	if dto == "" {
 		return bodyBinding{Protocol: "unknown", Reason: "pkg/binding 泛型调用的类型实参不是具名类型"}, true
 	}
-	return bodyBinding{DTO: dto, Protocol: protocol}, true
+	switch sel.Sel.Name {
+	case "ParseForm":
+		return bodyBinding{DTO: dto, Protocol: "form"}, true
+	case "ParseJSON":
+		return bodyBinding{DTO: dto, Protocol: "json"}, true
+	case "Query":
+		return bodyBinding{DTO: dto, Protocol: "query"}, true
+	case "Form", "JSON":
+		// 兼容入口：按 Content-Type 在 JSON 与表单之间选择，本身不声明唯一协议。
+		// 如实报未检查；声明协议的端点用 ParseForm / ParseJSON / Query，
+		// 或直接写原生 ShouldBindWith / ShouldBindJSON。
+		return bodyBinding{Protocol: "unknown", Reason: "pkg/binding." + sel.Sel.Name +
+			" 是兼容入口，输入协议不由函数名确定；声明协议请用 ParseForm / ParseJSON / Query 或原生显式 binder"}, true
+	default:
+		return bodyBinding{}, false
+	}
 }

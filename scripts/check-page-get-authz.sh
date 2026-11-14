@@ -93,13 +93,39 @@ def scan(text):
 
 
 def has_declaration(source, constants, key, entry):
-    """声明与常量都必须存在：声明改为 middleware.DeclareRoute 的 RouteSpec 字面量。"""
+    """声明与常量都必须存在：声明改为 DeclareRoute 的 RouteSpec 字面量。
+
+    接收者不写死：真实注册处用 `reg.DeclareRoute(...)`（装配方持有的 Registry）
+    或 `rg.Registry().DeclareRoute(...)`，只认 `mw.` 会把已声明判成缺失。
+    """
     method, obj = key
     perm, symbol, _ = entry
-    declaration = (r'(?:mw|middleware)\.DeclareRoute\(\s*(?:mw\.)?RouteSpec\{[^}]*?Path:\s*"' + re.escape(obj) +
-                   r'"[^}]*?Perm:\s*(?:[a-z]+enums|permission)\.' + re.escape(symbol))
+    # 找到每条 DeclareRoute/DeclareRouteIn 的 RouteSpec 块，再在**块内**分别看
+    # 有没有引用该对象（Path 或 AuthObject）与该权限常量。Perm 与对象的书写顺序不固定，
+    # 逐项匹配比一条顺序敏感的大正则更稳。
+    text = uncomment(source)
+    open_re = re.compile(r'(?:[A-Za-z_]\w*(?:\(\))?\.)*DeclareRoute(?:In)?\([\s\S]*?RouteSpec\{')
+    found = False
+    for match in open_re.finditer(text):
+        depth, i = 1, match.end()
+        while i < len(text) and depth > 0:
+            if text[i] == '{':
+                depth += 1
+            elif text[i] == '}':
+                depth -= 1
+            i += 1
+        block = text[match.start():i]
+        mentions_obj = re.search(r'(?:Path|AuthObject):\s*"' + re.escape(obj) + r'"', block)
+        mentions_perm = re.search(r'Perm:\s*(?:[a-z]+enums|permission)\.' + re.escape(symbol), block)
+        # 对象是复用的策略目标时，声明它的是用 AuthObject 指向它的那条真实入口；
+        # 权限常量则在该入口自己的 Perm 上（可能与对象同名常量不同，如 publication）。
+        if mentions_obj and (mentions_perm or re.search(r'AuthObject:\s*"' + re.escape(obj) + r'"', block)):
+            found = True
+            break
+    if not found:
+        return False
     constant = r'\b' + re.escape(symbol) + r'\s*=\s*"' + re.escape(perm) + r'"'
-    return bool(re.search(declaration, uncomment(source)) and re.search(constant, uncomment(constants)))
+    return bool(re.search(constant, uncomment(constants)))
 
 
 def validate(code, menu, routes, exemptions, virtual, page_objects, declarations):
@@ -182,6 +208,13 @@ def self_test():
     expect('source declaration', not has_declaration(decl, 'A = "a:view"', a, entry), False)
     expect('commented declaration', has_declaration('// '+decl, 'A = "a:view"', a, entry), False)
     expect('deleted declaration source', has_declaration('', 'A = "a:view"', a, entry), False)
+    # 真实注册处的两种接收者写法都必须被认到：只认 mw. 会把已声明判成缺失。
+    reg_decl = 'reg.DeclareRoute(mw.RouteSpec{Method: http.MethodGet, Path: "/api/a", Perm: aenums.A})'
+    expect('registry receiver declaration', not has_declaration(reg_decl, 'A = "a:view"', a, entry), False)
+    chained = 'rg.Registry().DeclareRoute(mw.RouteSpec{Method: http.MethodGet, Path: "/api/a", Perm: aenums.A})'
+    expect('chained registry declaration', not has_declaration(chained, 'A = "a:view"', a, entry), False)
+    wrong_perm = 'reg.DeclareRoute(mw.RouteSpec{Method: http.MethodGet, Path: "/api/a", Perm: aenums.B})'
+    expect('wrong permission still rejected', has_declaration(wrong_perm, 'A = "a:view"', a, entry), False)
     print('Page authz self-tests: %d passed' % count)
 
 

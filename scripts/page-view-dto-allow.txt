@@ -42,4 +42,4 @@ internal/module/product/inbound/http/product_score_handle.go gin=0 html=3
 internal/module/product/inbound/http/product_subject_handle.go gin=0 html=1
 internal/module/publication/inbound/http/seo_audit_handle.go gin=0 html=1
 
---total gin=8 html=21
+--total gin=8 html=20

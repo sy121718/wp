@@ -20,7 +20,10 @@ func TestDumpRoutesForAudit(t *testing.T) {
 	}
 	// 读本次装配自己的索引：包级默认实例不在生产装配链上。
 	for _, spec := range auditRegistry.Snapshot() {
-		fmt.Printf("DECLARED %s %s %s\n", spec.Method, spec.Path, spec.Perm)
+		// 同时导出真实入口、权限码与复用的鉴权对象：审计要能区分
+		// 「这个路径需要哪项权限」和「这条权限被检查的是哪个对象/方法」。
+		fmt.Printf("DECLARED %s %s %s |%s|%s|%s|%s\n",
+			spec.Method, spec.Path, spec.Perm, spec.Kind, spec.AuthObject, spec.AuthMethod, spec.Path)
 	}
 	for _, e := range auditRegistry.Exempts() {
 		fmt.Printf("EXEMPT %s\n", e)

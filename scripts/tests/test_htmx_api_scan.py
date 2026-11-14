@@ -13,12 +13,19 @@ class HtmxAPITest(unittest.TestCase):
     def run_on(self, html='<form hx-post="/admin/x" hx-target="#result" hx-swap="innerHTML"></form>', extra_js=''):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            for relative in ('scripts/check-htmx-api.sh', 'internal/templates/static/js/ui/htmx.min.js'):
+            for relative in ('scripts/check-htmx-api.sh', 'pkg/view/ui/assets/js/ui/htmx.min.js'):
                 path = root / relative
                 path.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(ROOT / relative, path)
-            (root / 'internal/templates/fixture.html').write_text(html, encoding='utf-8')
-            (root / 'internal/templates/static/js/control.js').write_text(extra_js, encoding='utf-8')
+            # 门禁现在扫三个模板属主；夹具必须镜像真实布局，否则「扫描根缺失」护栏会判红。
+            for shared in ('pkg/view/ui/templates', 'pkg/builder'):
+                (root / shared).mkdir(parents=True, exist_ok=True)
+            fixture = root / 'internal/templates/fixture.html'
+            fixture.parent.mkdir(parents=True, exist_ok=True)
+            fixture.write_text(html, encoding='utf-8')
+            control = root / 'internal/templates/static/js/control.js'
+            control.parent.mkdir(parents=True, exist_ok=True)
+            control.write_text(extra_js, encoding='utf-8')
             return subprocess.run(['bash', str(root / 'scripts/check-htmx-api.sh')], text=True, capture_output=True)
 
     def test_real_htmx_attributes_pass_without_form_json(self):

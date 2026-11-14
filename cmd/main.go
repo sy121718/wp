@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -48,29 +49,43 @@ func run(migrateOnly bool) error {
 	}
 
 	if migrateOnly {
+		// migrate-only 也要走统一收尾：失败不能绕过显式关闭。
+		seedErr := error(nil)
 		if config.RunMigrationsEnabled() {
-			if err := runSeeds(); err != nil {
-				return err
-			}
-			if err := runPartitionMaintenance(); err != nil {
-				return err
+			if seedErr = runSeeds(); seedErr == nil {
+				seedErr = runPartitionMaintenance()
 			}
 		}
-		logger.Scene("init").Info("数据库迁移与 seed 完成（-migrate-only），未启动 HTTP 服务")
-		if closeErr := config.CloseComponents(); closeErr != nil {
+		closeErr := config.CloseComponents()
+		if seedErr != nil {
+			return errors.Join(seedErr, closeErr)
+		}
+		if closeErr != nil {
 			logger.Scene("init").Error(closeErr, "组件关闭失败")
 		}
+		logger.Scene("init").Info("数据库迁移与 seed 完成（-migrate-only），未启动 HTTP 服务")
 		return nil
 	}
 
 	// 后台循环挂在 bgCtx 上：进程收尾时先 cancel 再 Shutdown，
 	// 循环不会在库已关闭之后还去领任务。
 	bgCtx, stopBackground := context.WithCancel(context.Background())
-	defer stopBackground()
 
-	router := buildHTTPRouter(bgCtx, config.ValidateReady)
+	// 收尾顺序只有这一处：cancel 后台循环 → 等待本次装配启动的任务退出（在途一轮结束）
+	// → 关闭 HTTP 在途请求 → 关闭组件（含数据库）。
+	// 正常退出、监听失败、端口准备失败都走它；重复调用幂等，不掩盖原始错误。
+	inflight := newInflightTracker()
+	router, assembly := buildHTTPRouter(bgCtx, inflight, config.ValidateReady)
+	shutdown := &shutdownChain{
+		stopBackground: stopBackground, waitTasks: assembly.Stop,
+		inflight: inflight.Count, waitInflight: inflight.Wait,
+	}
+	defer shutdown.run()
 
+	// 装配已经启动后台任务：端口准备失败也必须走「cancel → 等待任务 → 关组件」，
+	// 不能只靠 defer 取消就返回（那会让任务在库关闭后仍可能领任务）。
 	if err := utils.EnsurePortReadyWithStrategy(serverCfg.PortStrategy, serverCfg.Mode, serverCfg.Port); err != nil {
+		shutdown.run()
 		return err
 	}
 
@@ -78,6 +93,7 @@ func run(migrateOnly bool) error {
 	logger.Scene("init").With("addr", addr).Info("服务启动")
 
 	srv := buildHTTPServer(serverCfg, router)
+	shutdown.shutdownHTTP = func(ctx context.Context) error { return srv.Shutdown(ctx) }
 
 	serverErrCh := serveHTTPServer(srv)
 
@@ -88,10 +104,9 @@ func run(migrateOnly bool) error {
 	select {
 	case err := <-serverErrCh:
 
+		// 监听失败也要走同一条停止链：先 cancel 后台循环，再等它们退出，最后关组件。
+		shutdown.run()
 		if err != nil {
-			if closeErr := config.CloseComponents(); closeErr != nil {
-				logger.Scene("init").Error(closeErr, "组件关闭失败")
-			}
 			return fmt.Errorf("HTTP 服务启动失败: %w", err)
 		}
 		return nil
@@ -99,22 +114,96 @@ func run(migrateOnly bool) error {
 		logger.Scene("init").Info("收到退出信号，开始关闭...")
 	}
 
-	// 先停后台循环，再关 HTTP 与组件：反过来会让循环在连接已关闭后继续领任务。
-	stopBackground()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	if err := srv.Shutdown(ctx); err != nil {
-		logger.Scene("init").Error(err, "HTTP Server 关闭失败")
-	}
-
-	if err := config.CloseComponents(); err != nil {
-		logger.Scene("init").Error(err, "组件关闭失败")
-	}
-
+	shutdown.run()
 	logger.Scene("init").Info("服务已退出")
 	return nil
+}
+
+// shutdownChain 是一次进程启动拥有的收尾顺序，只执行一次。
+type shutdownChain struct {
+	stopBackground func()
+	waitTasks      func()
+	shutdownHTTP   func(context.Context) error
+
+	// inflight 报告仍在执行的处理器数量。shutdownHTTP 超时返回时处理器可能还在跑，
+	// 此时直接关数据库会让它们读到已关闭的连接；必须等它们退出或明确放弃。
+	inflight func() int
+	// waitInflight 阻塞到在途请求退出，或 ctx 结束。
+	waitInflight func(context.Context)
+
+	// closeComponents 关闭依赖（含数据库）。nil 时用真实 config.CloseComponents；
+	// 测试注入替代实现以观察关闭时机。
+	closeComponents func()
+
+	// httpTimeout 覆盖 http.Server.Shutdown 的等待时长（0 用默认值）。
+	// 生产用 5s；测试可调短，让「Shutdown 真的超时」可被复现，而不是靠桩返回错误。
+	httpTimeout time.Duration
+
+	// drainTimeout 覆盖在途排空的兜底等待时长（0 用默认值，测试可调短）。
+	drainTimeout time.Duration
+
+	once sync.Once
+}
+
+// 关闭两段超时：先让 http.Server 停止接收并排空，再给仍在执行的处理器一段兜底等待。
+const (
+	shutdownHTTPTimeout  = 5 * time.Second
+	shutdownDrainTimeout = 10 * time.Second
+)
+
+// run 是幂等的统一收尾：cancel → 等任务 → 关 HTTP（含在途排空）→ 关组件。
+func (s *shutdownChain) run() {
+	if s == nil {
+		return
+	}
+	s.once.Do(func() {
+		if s.stopBackground != nil {
+			s.stopBackground()
+		}
+		if s.waitTasks != nil {
+			// 等待在途一轮结束，之后才允许关闭数据库。
+			s.waitTasks()
+		}
+		if s.shutdownHTTP != nil {
+			timeout := s.httpTimeout
+			if timeout <= 0 {
+				timeout = shutdownHTTPTimeout
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), timeout)
+			defer cancel()
+			if err := s.shutdownHTTP(ctx); err != nil {
+				logger.Scene("init").Error(err, "HTTP Server 关闭失败")
+			}
+			// Shutdown 超时/失败时处理器可能仍在执行：直接关数据库会让它们
+			// 读到已关闭的连接。这里显式再等一段，仍有残留就记录放弃数量 ——
+			// 「等不到」是明确决定，不是静默跳过。
+			if s.inflight != nil && s.inflight() > 0 {
+				drain := s.drainTimeout
+				if drain <= 0 {
+					drain = shutdownDrainTimeout
+				}
+				waitCtx, waitCancel := context.WithTimeout(context.Background(), drain)
+				if s.waitInflight != nil {
+					s.waitInflight(waitCtx)
+				}
+				waitCancel()
+				if left := s.inflight(); left > 0 {
+					logger.Scene("init").
+						With("inflight", left).
+						Error(nil, "HTTP 关闭后仍有在途请求未退出，超时放弃等待并关闭组件（这些请求会拿到连接已关闭的错误）")
+				}
+			}
+		}
+		closeComponents := s.closeComponents
+		if closeComponents == nil {
+			closeComponents = func() {
+				if err := config.CloseComponents(); err != nil {
+					logger.Scene("init").Error(err, "组件关闭失败")
+				}
+			}
+		}
+		closeComponents()
+	})
 }
 
 func runPartitionMaintenance() error {
@@ -163,11 +252,19 @@ func loadAndPrepareRuntime(configPath string) (config.ServerConfig, error) {
 	return serverCfg, nil
 }
 
+// buildHTTPRouter 装配路由并返回本次装配句柄：收尾时先 cancel bgCtx，
+// 再调 assembly.Stop() 等待后台任务退出，最后才关闭组件（含数据库）。
 func buildHTTPRouter(
 	bgCtx context.Context,
+	inflight *inflightTracker,
 	ready func() error,
-) *gin.Engine {
+) (*gin.Engine, *routers.Assembly) {
 	router := gin.New()
+	// 在途追踪必须是**最外层**中间件，且要在任何路由注册之前挂：
+	// Gin 在注册时固定处理器链，注册后再 Use 不会进入已有链路。
+	if inflight != nil {
+		router.Use(inflight.Middleware())
+	}
 	if gin.Mode() == gin.ReleaseMode {
 		if err := router.SetTrustedProxies(nil); err != nil {
 			logger.Scene("init").Error(err, "设置 TrustedProxies 失败")
@@ -180,8 +277,8 @@ func buildHTTPRouter(
 
 	middleware.Setup(router)
 
-	routers.SetupRoutesWithContext(bgCtx, router, ready)
-	return router
+	assembly := routers.StartAssembly(bgCtx, router, ready)
+	return router, assembly
 }
 
 func listenAddr(cfg config.ServerConfig) string {

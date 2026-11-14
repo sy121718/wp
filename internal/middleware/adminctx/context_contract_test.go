@@ -26,6 +26,9 @@ func (contextKeyAuthzStub) ListByCodes(context.Context, []string) ([]admindto.Pe
 func (contextKeyAuthzStub) ExistsEnabledCode(context.Context, string) (bool, error) {
 	return false, nil
 }
+func (contextKeyAuthzStub) ListByPathMethod(context.Context, string, string) ([]admindto.PermBrief, error) {
+	return nil, nil
+}
 func (contextKeyAuthzStub) EffectivePermissionCodes(context.Context, uint64) ([]string, error) {
 	return []string{"page:view"}, nil
 }

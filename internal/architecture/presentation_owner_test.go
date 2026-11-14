@@ -157,7 +157,7 @@ var allowedPkgDirs = map[string]struct{}{
 	"mailer": {}, "money": {}, "pagination": {}, "pathkit": {}, "queue": {},
 	"reqparams": {}, "response": {}, "rls": {}, "safepath": {}, "sitehttps": {},
 	"sitetz": {}, "ssrf": {}, "tree": {}, "upload": {}, "utils": {}, "validate": {},
-	"view": {}, "middleware": {}, "seo": {}, "uispec": {}, "builder": {}, "lifecycle": {}, "mcp": {}, "publish": {}, "scaffold": {},
+	"view": {}, "middleware": {}, "seo": {}, "uispec": {}, "builder": {}, "lifecycle": {}, "mcp": {}, "publish": {}, "scaffold": {}, "richtext": {},
 }
 
 var pendingPkgDirs = map[string]int{}

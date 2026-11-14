@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"go_wp/pkg/builder/core"
+	"go_wp/pkg/richtext"
 )
 
 func CompileCSS(id string, p *Props, b *core.CSSBuckets) {
@@ -222,7 +223,7 @@ func BuildView(p *Props, content core.ContentResolver, projectID, lang string, s
 			if err != nil {
 				return View{}, fmt.Errorf("商品描述字段 %s: %w", s.Field, err)
 			}
-			view.HasDescription, view.DescriptionHTML = true, core.RichTextHTML(normalized)
+			view.HasDescription, view.DescriptionHTML = true, richtext.RichTextHTML(normalized)
 		case slotOptions:
 			rawOptions = value
 		case slotVariants:

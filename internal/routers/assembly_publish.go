@@ -85,7 +85,8 @@ func (a *assembly) buildPublishingModules() {
 
 	presentationSvc := presentationhttp.SetupPresentationRoutes(authorizedAPI, db, contentTemplateSvc, entityRegistry, projectService, blockSvc, collectionRegistry, publicationSvc)
 
-	pluginSvc := pluginhttp.SetupPluginRoutes(authorizedAPI, db, adminAuthzSvc)
+	pluginSvc, stopPluginPatrol := pluginhttp.SetupPluginRoutes(a.bgCtx, authorizedAPI, db, adminAuthzSvc)
+	a.stopPatrols = append(a.stopPatrols, stopPluginPatrol)
 
 	marks.mark(portPluginAdminAuthz)
 
@@ -313,10 +314,10 @@ func (a *assembly) wirePublishingPorts() {
 
 	registerMenuStaleExecutor(buildSvc, pageService, presentationSvc)
 
-	buildSvc.StartWorkers(context.Background(), 2)
+	a.stopPatrols = append(a.stopPatrols, buildSvc.StartWorkers(a.bgCtx, 2))
 
 	if config.RunMigrationsEnabled() {
-		partition.StartScheduler(context.Background(), a.db)
+		a.stopPatrols = append(a.stopPatrols, partition.StartScheduler(a.bgCtx, a.db))
 	}
 
 	builtin.SetAccessGuardLoginProbe(newVisitorLoginProbe(a.userSvc))
@@ -483,9 +484,9 @@ func (a *assembly) startRuntimeTasks() {
 	marks.mark(portProductDependencyInvalidator)
 
 	if starter, ok := productSvc.(interface {
-		StartOutboxWorker(ctx context.Context, interval time.Duration)
+		StartOutboxWorker(ctx context.Context, interval time.Duration) func()
 	}); ok {
-		starter.StartOutboxWorker(context.Background(), 0)
+		a.stopPatrols = append(a.stopPatrols, starter.StartOutboxWorker(a.bgCtx, 0))
 	} else {
 		panic("商品模块未提供依赖事件消费入口（StartOutboxWorker）")
 	}
@@ -577,14 +578,14 @@ func (a *assembly) mountAdminPages() {
 	adminhttp.SetupAdminPages(a.registry, a.adminPages, adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminCRUD, a.pageService, a.sysConfigDict)
 	adminhttp.SetupAdminShellPages(a.router)
 
-	blockhttp.SetupBlockPages(a.adminPages, a.blockSvc, a.projectService, a.pageService)
-	mediahttp.SetupMediaPages(a.adminPages)
-	pluginhttp.SetupPluginPages(a.adminPages, a.pluginSvc)
-	navigationhttp.SetupNavigationPages(a.adminPages, a.navigationSvc, a.projectService, a.pageService, a.blockSvc)
+	blockhttp.SetupBlockPages(a.registry, a.adminPages, a.blockSvc, a.projectService, a.pageService)
+	mediahttp.SetupMediaPages(a.registry, a.adminPages)
+	pluginhttp.SetupPluginPages(a.registry, a.adminPages, a.pluginSvc)
+	navigationhttp.SetupNavigationPages(a.registry, a.adminPages, a.navigationSvc, a.projectService, a.pageService, a.blockSvc)
 
-	contenthttp.SetupContentPages(a.adminPages, a.contentSvc, a.projectService,
+	contenthttp.SetupContentPages(a.registry, a.adminPages, a.contentSvc, a.projectService,
 		a.contentTemplateSvc, a.pageService, a.presentationSvc)
-	contenttemplatehttp.SetupContentTemplatePages(a.adminPages, a.contentTemplateSvc,
+	contenttemplatehttp.SetupContentTemplatePages(a.registry, a.adminPages, a.contentTemplateSvc,
 		a.projectService, a.productSvc, a.contentSvc)
 
 	membershipAdmin, membershipAdminOK := a.membershipSvc.(membershipcontract.AssignmentAdminPort)
@@ -595,13 +596,13 @@ func (a *assembly) mountAdminPages() {
 	if !membershipTiersOK {
 		panic("会员模块未实现 TierAdminPort（客户列表的等级下拉依赖它），装配缺陷")
 	}
-	userhttp.SetupCustomerPages(a.adminPages, a.userAdminSvc, a.orderSvc, a.projectService,
+	userhttp.SetupCustomerPages(a.registry, a.adminPages, a.userAdminSvc, a.orderSvc, a.projectService,
 		a.membershipSvc, a.orderSvc, a.orderSvc, a.orderSvc, a.orderSvc,
 		membershipAdmin, membershipTiers)
-	producthttp.SetupProductPages(a.adminPages, a.authorizedAPI, a.productHandle, a.productSvc, a.productReader, a.projectService,
+	producthttp.SetupProductPages(a.registry, a.adminPages, a.authorizedAPI, a.productHandle, a.productSvc, a.productReader, a.projectService,
 		a.contentTemplateSvc, a.presentationSvc, a.inventorySvc, a.pageService, a.contentSvc)
 
-	producthttp.SetupProductTranslationRoutes(a.authorizedAPI, a.adminPages,
+	producthttp.SetupProductTranslationRoutes(a.authorizedAPI, a.registry, a.adminPages,
 		a.productSvc, a.pageService, a.presentationSvc)
 
 	marks.mark(portProductPageWarehouses)
@@ -611,9 +612,9 @@ func (a *assembly) mountAdminPages() {
 	marks.mark(portProductDetailTemplateWriteDeps)
 
 	marks.mark(portAdminI18nPageMarker)
-	projecthttp.SetupProjectPages(a.adminPages, a.workbenchPages, a.projectService, a.pageService, a.blockSvc, a.sysConfigDict)
+	projecthttp.SetupProjectPages(a.registry, a.adminPages, a.workbenchPages, a.projectService, a.pageService, a.blockSvc, a.sysConfigDict)
 
-	workbenchHandle := workbenchhttp.SetupWorkbenchRoutes(a.workbenchPages, a.pageService, a.projectService,
+	workbenchHandle := workbenchhttp.SetupWorkbenchRoutes(a.registry, a.workbenchPages, a.pageService, a.projectService,
 		a.blockSvc, a.pluginSvc, a.collectionResolver, a.contentTemplateSvc, a.presentationSvc,
 		a.blueprintSvc, a.productSvc, nil)
 
@@ -642,7 +643,9 @@ func (a *assembly) runSelfCheck() {
 // 也不留「先启动再补库」的窗口。
 func (a *assembly) verifyPermissionDirectory() {
 	dir := newAdminPermDirectory(a.adminAuthzSvc)
-	problems := verifyDeclaredPermissions(a.bgCtx, a.registry, dir)
+	// 真实装配把工具权限码与**策略存在性**一起核：工具不走路由，只核 Registry
+	// 会看不见它们；目录行只说明权限点定义过，一条 p 策略都没有时入口全员 403。
+	problems := verifyDeclaredPermissionsFull(a.bgCtx, a.registry, a.tools(), dir, casbinPolicies{})
 	if len(problems) == 0 {
 		if ex := a.registry.Exempts(); len(ex) > 0 {
 			logger.Scene("init").With("count", len(ex)).

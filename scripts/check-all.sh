@@ -56,6 +56,9 @@ PLAIN_SCRIPTS=(
   check-frontend-naming.sh
   check-write-attributes.sh
   check-write-combinations.sh
+  # 字段门禁的数据源之一：先真实执行 JSON 对象提供器产出台账，
+  # 再由 check-write-fields.sh 按台账摘出已核对的端点。
+  tests/run_write_object_providers.sh
   check-write-fields.sh
   # 这两条曾经只在 scripts/ 下摆着、从未进过任何数组 —— 于是永远不会变红。
   # check-page-view-dto.sh 的台账里写着「gin.H 归零」，实际还在增长（mail 1 / order 2 /

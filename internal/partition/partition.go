@@ -35,8 +35,9 @@ func ReconcileRLS(ctx context.Context, db *gorm.DB) error {
 	return pkgpartition.ReconcileRLS(ctx, db, migrations.ReconcilePartitionRLSSQL)
 }
 
-func StartScheduler(ctx context.Context, db *gorm.DB) {
-	pkgpartition.StartScheduler(ctx, db, DefaultOptions())
+// 返回的 stop 等待循环退出：调用方必须在关闭数据库之前调用它。
+func StartScheduler(ctx context.Context, db *gorm.DB) func() {
+	return pkgpartition.StartScheduler(ctx, db, DefaultOptions())
 }
 
 type Table = pkgpartition.Table

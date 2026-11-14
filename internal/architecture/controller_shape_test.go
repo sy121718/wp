@@ -12,18 +12,21 @@ import (
 )
 
 var pendingControllerNormalize = map[string]bool{
-	"internal/module/admin/inbound/http/admin_i18n_write.go":                 true,
-	"internal/module/block/inbound/http/block_handle.go":                     true,
-	"internal/module/inventory/inbound/http/inventory_reason_handle.go":      true,
-	"internal/module/purchase/inbound/http/source_page_handle.go":            true,
-	"internal/module/inventory/inbound/http/inventory_warehouse_handle.go":   true,
-	"internal/module/mail/inbound/http/mail_contact_write.go":                true,
+	"internal/module/admin/inbound/http/admin_i18n_write.go": true,
+	// admin_page.go 的 bulkids.Normalize 只做「请求形状」的上限判断（整批拒绝一句提示），
+	// 不参与业务 id 归一去重 —— 后者仍在 service 的 checkBulkDeleteLimit。
+	"internal/module/admin/inbound/http/admin_page.go":                     true,
+	"internal/module/block/inbound/http/block_handle.go":                   true,
+	"internal/module/inventory/inbound/http/inventory_reason_handle.go":    true,
+	"internal/module/purchase/inbound/http/source_page_handle.go":          true,
+	"internal/module/inventory/inbound/http/inventory_warehouse_handle.go": true,
+	"internal/module/mail/inbound/http/mail_contact_write.go":              true,
 }
 
 var pendingControllerFiles = map[string]bool{
+	"internal/module/admin/inbound/http/admin_page.go":                     true,
 	"internal/module/admin/inbound/http/admin_err.go":                      true,
 	"internal/module/admin/inbound/http/admin_jump.go":                     true,
-	"internal/module/admin/inbound/http/admin_page.go":                     true,
 	"internal/module/ai/inbound/http/ai_err.go":                            true,
 	"internal/module/admin/inbound/http/admin_i18n_write.go":               true,
 	"internal/module/ai/inbound/http/ai_page.go":                           true,
@@ -63,11 +66,14 @@ var pendingControllerFiles = map[string]bool{
 	"internal/module/workbench/inbound/http/workbench_page.go": true,
 }
 
+// pendingControllerBinding 是「仍用手工逐字段读表单」的存量文件（棘轮：只减不增）。
+//
+// 规范的入口是**原生显式绑定**：ShouldBindWith(..., binding.FormPost)、
+// ShouldBindJSON、ShouldBindQuery，或 pkg/binding 的 ParseForm/ParseJSON/Query。
+// 不再新增 c.PostForm / c.Query 这类手工逐字段读取，也不新增同义绑定包装。
 var pendingControllerBinding = map[string]bool{
-	"internal/module/admin/inbound/http/admin_page.go":                  true,
-	"internal/module/ai/inbound/http/ai_page.go":                        true,
-	"internal/module/order/inbound/http/order_create_page.go":           true,
-	"internal/module/project/inbound/http/project_page.go":              true,
+	"internal/module/admin/inbound/http/admin_page.go":     true,
+	"internal/module/ai/inbound/http/ai_page.go":           true,
 }
 
 var pendingControllerQuery = map[string]bool{
@@ -114,7 +120,6 @@ var pendingControllerQuery = map[string]bool{
 }
 
 var pendingControllerMethods = map[string]bool{
-	"internal/module/admin/inbound/http/admin_page.go:dataruleConfigFromForm":                   true,
 	"internal/module/admin/inbound/http/admin_pages_router.go:SetupAdminPages":                  true,
 	"internal/module/admin/inbound/http/admin_router.go:SetupAdminRoutes":                       true,
 	"internal/module/ai/inbound/http/ai_handle.go:FabAskStream":                                 true,
@@ -124,46 +129,50 @@ var pendingControllerMethods = map[string]bool{
 	"internal/module/content/inbound/http/content_page.go:SaveArticleTranslations":              true,
 	"internal/module/content/inbound/http/content_page.go:build":                                true,
 	"internal/module/content/inbound/http/content_page_router.go:SetupContentPages":             true,
-	"internal/module/contenttemplate/inbound/http/contenttemplate_page.go:ContentTemplatesPage": true,
 	"internal/module/inventory/inbound/http/inventory_page_handle.go:InventoryPage":             true,
-	"internal/module/mail/inbound/http/mail_page_router.go:setupMailPageRoutes":                true,
-	"internal/module/masterdata/inbound/http/masterdata_page.go:MasterDataChangesPage":         true,
-	"internal/module/membership/inbound/http/membership_page.go:MembershipAssignmentsPage":     true,
-	"internal/module/navigation/inbound/http/navigation_page_handle.go:build":                  true,
-	"internal/module/order/inbound/http/coupon_page.go:CouponsPage":                            true,
-	"internal/module/order/inbound/http/order_create_page.go:render":                           true,
-	"internal/module/order/inbound/http/order_list_page.go:OrdersPage":                         true,
-	"internal/module/order/inbound/http/order_page_router.go:SetupOrderPages":                  true,
-	"internal/module/order/inbound/http/order_router.go:SetupOrderRoutes":                      true,
-	"internal/module/order/inbound/http/return_page.go:ReturnsPage":                            true,
-	"internal/module/order/inbound/http/sales_page.go:SalesOverviewPage":                       true,
-	"internal/module/page/inbound/http/page_router.go:registerPageRoutes":                      true,
-	"internal/module/page/inbound/http/page_translations_handle.go:SavePageTranslations":       true,
-	"internal/module/page/inbound/http/page_translations_handle.go:buildPageTranslationsData":  true,
-	"internal/module/page/inbound/http/page_translations_handle.go:buildSiteContentIndex":      true,
-	"internal/module/project/inbound/http/project_page.go:SaveSiteLocales":                     true,
-	"internal/module/project/inbound/http/project_page.go:SaveSiteSettings":                    true,
-	"internal/module/project/inbound/http/project_page.go:SaveThemeSettings":                   true,
-	"internal/module/project/inbound/http/project_page.go:loadThemeSettings":                   true,
-	"internal/module/project/inbound/http/project_page.go:mergeSiteSettings":                   true,
-	"internal/module/user/inbound/http/user_page.go:CustomerDetailPage":                        true,
-	"internal/module/user/inbound/http/user_page.go:CustomersPage":                             true,
-	"internal/module/user/inbound/http/user_page.go:customerCounterTabs":                       true,
-	"internal/module/user/inbound/http/user_page.go:customerDetailPageData":                    true,
-	"internal/module/workbench/inbound/http/canvas_handle.go:Workbench":                        true,
-	"internal/module/workbench/inbound/http/workbench_page.go:collectOrderOverview":            true,
-	"internal/module/workbench/inbound/http/canvas_handle.go:workbenchBlock":                   true,
-	"internal/module/workbench/inbound/http/canvas_preview_handle.go:workbenchInstance":        true,
-	"internal/module/workbench/inbound/http/canvas_handle.go:workbenchTemplate":                true,
+	"internal/module/mail/inbound/http/mail_page_router.go:setupMailPageRoutes":                 true,
+	"internal/module/masterdata/inbound/http/masterdata_page.go:MasterDataChangesPage":          true,
+	"internal/module/membership/inbound/http/membership_page.go:MembershipAssignmentsPage":      true,
+	"internal/module/navigation/inbound/http/navigation_page_handle.go:build":                   true,
+	"internal/module/order/inbound/http/coupon_page.go:CouponsPage":                             true,
+	"internal/module/order/inbound/http/order_create_page.go:render":                            true,
+	"internal/module/order/inbound/http/order_list_page.go:OrdersPage":                          true,
+	"internal/module/order/inbound/http/order_page_router.go:SetupOrderPages":                   true,
+	"internal/module/order/inbound/http/order_router.go:SetupOrderRoutes":                       true,
+	"internal/module/order/inbound/http/return_page.go:ReturnsPage":                             true,
+	"internal/module/order/inbound/http/sales_page.go:SalesOverviewPage":                        true,
+	"internal/module/page/inbound/http/page_router.go:registerPageRoutes":                       true,
+	"internal/module/page/inbound/http/page_translations_handle.go:SavePageTranslations":        true,
+	"internal/module/page/inbound/http/page_translations_handle.go:buildPageTranslationsData":   true,
+	"internal/module/page/inbound/http/page_translations_handle.go:buildSiteContentIndex":       true,
+	"internal/module/project/inbound/http/project_page.go:SaveSiteLocales":                      true,
+	"internal/module/project/inbound/http/project_page.go:SaveSiteSettings":                     true,
+	"internal/module/project/inbound/http/project_page.go:SaveThemeSettings":                    true,
+	"internal/module/project/inbound/http/project_page.go:loadThemeSettings":                    true,
+	"internal/module/project/inbound/http/project_page.go:mergeSiteSettings":                    true,
+	"internal/module/user/inbound/http/user_page.go:CustomerDetailPage":                         true,
+	"internal/module/user/inbound/http/user_page.go:CustomersPage":                              true,
+	"internal/module/user/inbound/http/user_page.go:customerCounterTabs":                        true,
+	"internal/module/user/inbound/http/user_page.go:customerDetailPageData":                     true,
+	"internal/module/workbench/inbound/http/canvas_handle.go:Workbench":                         true,
+	"internal/module/workbench/inbound/http/workbench_page.go:collectOrderOverview":             true,
+	"internal/module/workbench/inbound/http/canvas_handle.go:workbenchBlock":                    true,
+	"internal/module/workbench/inbound/http/canvas_preview_handle.go:workbenchInstance":         true,
+	"internal/module/workbench/inbound/http/canvas_handle.go:workbenchTemplate":                 true,
 }
 
 const controllerMethodMaxLines = 60
 
 var (
 	controllerFileName = regexp.MustCompile(`^[a-z0-9_]+_(router|handle)\.go$`)
-	bindingMethodNames = map[string]bool{
-		"ShouldBind": true, "ShouldBindJSON": true, "ShouldBindQuery": true,
-		"ShouldBindUri": true, "ShouldBindHeader": true, "ShouldBindBodyWith": true,
+	// 只禁**自动合并**的入口：ShouldBind/Bind 会按 Content-Type 选 binder 并把
+	// query 并进表单，写 body 与查询串的边界因此不存在。原生显式绑定
+	// （ShouldBindWith/ShouldBindJSON/ShouldBindQuery）与手工读表单属另一条判据。
+	controllerAutoBindMethods = map[string]bool{
+		"ShouldBind": true, "Bind": true,
+	}
+	// 手工逐字段读表单：按文件棘轮，只减不增。
+	controllerManualFormMethods = map[string]bool{
 		"PostForm": true, "GetPostForm": true, "PostFormArray": true, "GetPostFormArray": true,
 	}
 
@@ -214,7 +223,46 @@ func TestControllerFileNames(t *testing.T) {
 	}
 }
 
-func TestControllerBindingEntry(t *testing.T) {
+// TestControllerNoAutoBinding 禁止自动合并的绑定入口（ShouldBind / Bind）。
+//
+// 它们按 Content-Type 选 binder 并把 query 并进表单，写 body 与查询串的边界因此不存在。
+// 原生显式绑定是规范允许的：ShouldBindWith(FormPost/FormMultipart)、ShouldBindJSON、
+// ShouldBindQuery，以及 pkg/binding 的 ParseForm / ParseJSON / Query。
+func TestControllerNoAutoBinding(t *testing.T) {
+	root := repoRoot(t)
+	fset := token.NewFileSet()
+	for _, dir := range controllerDirs(t) {
+		pkgs, err := parser.ParseDir(fset, dir, func(fi os.FileInfo) bool {
+			return !strings.HasSuffix(fi.Name(), "_test.go")
+		}, 0)
+		if err != nil {
+			t.Fatalf("解析 %s 失败: %v", dir, err)
+		}
+		for _, pkg := range pkgs {
+			for path, file := range pkg.Files {
+				rel, _ := filepath.Rel(root, path)
+				rel = filepath.ToSlash(rel)
+				ast.Inspect(file, func(n ast.Node) bool {
+					call, ok := n.(*ast.CallExpr)
+					if !ok {
+						return true
+					}
+					sel, ok := call.Fun.(*ast.SelectorExpr)
+					if !ok || !controllerAutoBindMethods[sel.Sel.Name] {
+						return true
+					}
+					t.Errorf("%s:%d：控制器不用自动绑定的 %s（按 Content-Type 选 binder 且合并 query）—— "+
+						"普通写用 ShouldBindWith(..., binding.FormPost)，复杂输入用 ShouldBindJSON，查询用 ShouldBindQuery",
+						rel, fset.Position(call.Pos()).Line, sel.Sel.Name)
+					return true
+				})
+			}
+		}
+	}
+}
+
+// TestControllerNoManualFormReads 是手工逐字段读表单的棘轮：存量只减不增。
+func TestControllerNoManualFormReads(t *testing.T) {
 	root := repoRoot(t)
 	seen := map[string]bool{}
 	fset := token.NewFileSet()
@@ -235,12 +283,12 @@ func TestControllerBindingEntry(t *testing.T) {
 						return true
 					}
 					sel, ok := call.Fun.(*ast.SelectorExpr)
-					if !ok || !bindingMethodNames[sel.Sel.Name] {
+					if !ok || !controllerManualFormMethods[sel.Sel.Name] {
 						return true
 					}
 					seen[rel] = true
 					if !pendingControllerBinding[rel] {
-						t.Errorf("%s:%d：控制器不直调 %s —— 入参走 pkg/binding 的 JSON[T] / Form[T] / Query[T]",
+						t.Errorf("%s:%d：控制器不手工逐字段读表单 %s —— 绑定成 DTO（原生显式绑定或 ParseForm）",
 							rel, fset.Position(call.Pos()).Line, sel.Sel.Name)
 					}
 					return true
@@ -250,7 +298,7 @@ func TestControllerBindingEntry(t *testing.T) {
 	}
 	for rel := range pendingControllerBinding {
 		if !seen[rel] {
-			t.Errorf("pendingControllerBinding 登记了 %s，但该文件已无手工绑定 —— 请删掉这条登记", rel)
+			t.Errorf("pendingControllerBinding 登记了 %s，但该文件已无手工读表单 —— 请删掉这条登记", rel)
 		}
 	}
 }
@@ -343,16 +391,14 @@ func TestControllerMethodSize(t *testing.T) {
 	}
 }
 
-var pendingControllerRenderExit = map[string]bool{}
+// 页面出口判据：控制器可以选真实模板并交业务事实（AGENTS.md 两种合法出口形状），
+// 但只能用共享渲染入口——它们注入请求语言、CSRF 与后台请求事实；不得直连模板引擎。
 
-// controllerRenderCalls 只约束**页面槽渲染**：整页/裸页的模板名必须归路由层，
-// 控制器返回视图（any, error）由 *_router.go 装配。
-//
-// 片段出口（c.HTML 写 HTML fragment）是 AGENTS.md 明确允许的第二种合法出口形状，
-// 控制器选真实模板并交业务 data，不在本判据范围内。
-var controllerRenderCalls = map[string]bool{
-	"RenderPage": true,
-	"RenderBare": true,
+// controllerRawRenderEntries 是绕过共享接线的直连出口：控制器不得使用。
+var controllerRawRenderEntries = map[string]bool{
+	"RenderHTML":      true,
+	"HTMLRender":      true,
+	"ExecuteTemplate": true,
 }
 
 func controllerIsRouter(name string) bool {
@@ -361,7 +407,6 @@ func controllerIsRouter(name string) bool {
 
 func TestControllerRenderExit(t *testing.T) {
 	root := repoRoot(t)
-	seen := map[string]bool{}
 	fset := token.NewFileSet()
 	for _, dir := range controllerDirs(t) {
 		pkgs, err := parser.ParseDir(fset, dir, func(fi os.FileInfo) bool {
@@ -383,22 +428,16 @@ func TestControllerRenderExit(t *testing.T) {
 						return true
 					}
 					sel, ok := call.Fun.(*ast.SelectorExpr)
-					if !ok || !controllerRenderCalls[sel.Sel.Name] {
+					if !ok {
 						return true
 					}
-					seen[rel] = true
-					if !pendingControllerRenderExit[rel] {
-						t.Errorf("%s:%d：控制器不渲染 —— 返回视图（any, error），由 *_router.go 用 pkg/view 的 Page / Bare 装配",
-							rel, fset.Position(call.Pos()).Line)
+					if controllerRawRenderEntries[sel.Sel.Name] {
+						t.Errorf("%s:%d：控制器不经共享渲染入口直接调用 %s —— 用 pkg/view 的 RenderPage / RenderBare / RenderTemplate / RenderFragment，由它注入请求语言与后台请求事实",
+							rel, fset.Position(call.Pos()).Line, sel.Sel.Name)
 					}
 					return true
 				})
 			}
-		}
-	}
-	for rel := range pendingControllerRenderExit {
-		if !seen[rel] {
-			t.Errorf("pendingControllerRenderExit 登记了 %s，但该文件已无渲染出口 —— 请删掉这条登记", rel)
 		}
 	}
 }
@@ -486,74 +525,4 @@ func TestControllerNoNormalization(t *testing.T) {
 			t.Errorf("pendingControllerNormalize 登记了 %s，但该文件已不做归一 —— 请删掉这条登记", rel)
 		}
 	}
-}
-
-func TestControllerPageExitSignature(t *testing.T) {
-	root := repoRoot(t)
-	mods, err := filepath.Glob(filepath.Join(root, "internal", "module", "*", "inbound", "http", "*.go"))
-	if err != nil || len(mods) == 0 {
-		t.Fatalf("找不到控制器目录: %v", err)
-	}
-	for _, path := range mods {
-		if strings.HasSuffix(path, "_test.go") {
-			continue
-		}
-		rel, _ := filepath.Rel(root, path)
-		rel = filepath.ToSlash(rel)
-		fset := token.NewFileSet()
-		file, perr := parser.ParseFile(fset, path, nil, 0)
-		if perr != nil {
-			t.Fatalf("解析 %s 失败: %v", rel, perr)
-		}
-		router := controllerIsRouter(filepath.Base(path))
-		ast.Inspect(file, func(n ast.Node) bool {
-			switch node := n.(type) {
-			case *ast.FuncDecl:
-				if isAnyErrorResult(node.Type.Results) {
-					t.Errorf("%s:%d：页面处理器不再交 (any, error) —— 签名改 func(*gin.Context)，"+
-						"成功 view.Render(c, data)、失败 view.Fail(c, err)",
-						rel, fset.Position(node.Pos()).Line)
-				}
-			case *ast.SelectorExpr:
-				if router {
-					return true
-				}
-				ident, ok := node.X.(*ast.Ident)
-				if !ok || !viewsRenderIdent(ident.Name) {
-					return true
-				}
-				if node.Sel.Name == "RenderPage" || node.Sel.Name == "RenderBare" {
-					t.Errorf("%s:%d：控制器不装配页面出口（view.%s）—— 模板名与渲染归 *_router.go",
-						rel, fset.Position(node.Pos()).Line, node.Sel.Name)
-				}
-			}
-			return true
-		})
-	}
-}
-
-// viewsRenderIdent 判断这个标识符是否指向 pkg/view 的渲染入口。
-// 导入别名可以是 pageview / view / viewpkg，按实际别名匹配而不是写死一个。
-func viewsRenderIdent(name string) bool {
-	switch name {
-	case "adminui", "view", "pageview", "viewpkg":
-		return true
-	}
-	return false
-}
-
-func isAnyErrorResult(results *ast.FieldList) bool {
-	if results == nil || len(results.List) != 2 {
-		return false
-	}
-	first, second := results.List[0], results.List[1]
-	if len(first.Names) > 1 || len(second.Names) > 1 {
-		return false
-	}
-	iface, ok := first.Type.(*ast.InterfaceType)
-	if !ok || iface.Methods == nil || len(iface.Methods.List) != 0 {
-		return false
-	}
-	errIdent, ok := second.Type.(*ast.Ident)
-	return ok && errIdent.Name == "error"
 }

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """真实 METHOD+PATH、原生字段名与确定输入协议的字段门禁回归。"""
+import hashlib
 import json
 import pathlib
 import subprocess
@@ -34,6 +35,144 @@ class WriteFieldsScanTest(unittest.TestCase):
         result = self.run_fixture(contracts, templates)
         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn(message, result.stdout + result.stderr)
+
+    def test_empty_contract_fails(self):
+        # 空契约不能当作「全部对账」：没有任何端点可核对时门禁必须失败。
+        self.assert_bad({}, {'a.html': '<form hx-post="/save"><input name="id"></form>'},
+                        '写端点契约为空')
+
+    def test_json_provider_ledger_requires_matching_dto(self):
+        # 台账存在但 DTO 与当前契约不一致（生成物过期）：不能摘出该端点。
+        self.assert_bad({'POST /save': contract('id', protocol='json')},
+                        {'a.html': '<form data-write-builder="x" hx-post="/save"><input name="id"></form>'},
+                        'JSON 对象提供器字段')
+
+    def test_json_provider_requires_ledger(self):
+        templates = {'a.html': '<form data-write-builder="x" hx-post="/save"><input name="id"></form>'}
+        contracts = {'POST /save': contract('id', protocol='json')}
+        self.assert_bad(contracts, templates, 'JSON 对象提供器字段')
+
+    def test_json_provider_ledger_with_matching_dto_passes(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp)
+            (root / 'contracts.json').write_text(
+                json.dumps({'POST /save': contract('id', protocol='json')}), encoding='utf-8')
+            # 台账必须带契约字段表与 provider 源码指纹；缺任一项都视为过期证据。
+            (root / 'provider.js').write_text('// provider', encoding='utf-8')
+            import hashlib
+            fingerprint = hashlib.sha256(b'// provider').hexdigest()[:16]
+            # 台账必须带字段契约指纹与场景形状指纹：缺任一项都视为过期证据。
+            import hashlib
+            fields_payload = [['id', True]]
+            fields_hash = hashlib.sha256(
+                json.dumps(fields_payload, ensure_ascii=False, separators=(',', ':')).encode()).hexdigest()[:16]
+            cases = [{'name': 'case', 'keys': ['id'], 'endpoint': 'POST /save'}]
+            case_payload = sorted([['case', ['id']]], key=lambda p: json.dumps(p, ensure_ascii=False))
+            case_hash = hashlib.sha256(
+                json.dumps(case_payload, ensure_ascii=False, separators=(',', ':')).encode()).hexdigest()[:16]
+            # 台账还必须登记产出它的驱动脚本指纹：驱动改过而台账没重跑时证据过期。
+            driver = root / 'scripts' / 'write-object-keys.js'
+            driver.parent.mkdir(parents=True, exist_ok=True)
+            driver.write_text('// driver', encoding='utf-8')
+            driver_hash = hashlib.sha256(b'// driver').hexdigest()[:16]
+            (root / 'write-object-providers.json').write_text(
+                json.dumps({'POST /save': {'dto': 'Request', 'provider': 'x', 'source': 'provider.js',
+                                           'sourceHash': fingerprint, 'fields': ['id'], 'keys': ['id'],
+                                           'fieldsHash': fields_hash, 'caseShape': case_hash,
+                                           'driver': 'scripts/write-object-keys.js',
+                                           'driverHash': driver_hash,
+                                           'cases': cases}}),
+                encoding='utf-8')
+            (root / 'a.html').write_text('<form data-write-builder="x" hx-post="/save"><input name="id"></form>', encoding='utf-8')
+            result = subprocess.run(
+                [sys.executable, str(SCANNER), str(root / 'contracts.json'), str(root)],
+                text=True, capture_output=True)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def _ledger_root(self, root):
+        """与 test_json_provider_ledger_with_matching_dto_passes 同构的可用台账夹具。"""
+        import hashlib
+        (root / 'contracts.json').write_text(
+            json.dumps({'POST /save': contract('id', protocol='json')}), encoding='utf-8')
+        (root / 'provider.js').write_text('// provider', encoding='utf-8')
+        (root / 'a.html').write_text('<form data-write-builder="x" hx-post="/save"><input name="id"></form>', encoding='utf-8')
+        fields_hash = hashlib.sha256(
+            json.dumps([['id', True]], ensure_ascii=False, separators=(',', ':')).encode()).hexdigest()[:16]
+        cases = [{'name': 'case', 'keys': ['id'], 'endpoint': 'POST /save'}]
+        case_hash = hashlib.sha256(
+            json.dumps([['case', ['id']]], ensure_ascii=False, separators=(',', ':')).encode()).hexdigest()[:16]
+        driver = root / 'scripts' / 'write-object-keys.js'
+        driver.parent.mkdir(parents=True, exist_ok=True)
+        driver.write_text('// driver', encoding='utf-8')
+        return fields_hash, cases, case_hash
+
+    def test_changed_driver_invalidates_old_ledger(self):
+        # 核心反例：驱动改了（场景/预期值/嵌套断言），台账没重跑。
+        # 台账里的 cases 与它自己的 caseShape 依然自洽 —— 只比 caseShape 会放过旧证据。
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp)
+            fields_hash, cases, case_hash = self._ledger_root(root)
+            old_hash = hashlib.sha256(b'// driver').hexdigest()[:16]
+            (root / 'write-object-providers.json').write_text(json.dumps({
+                'POST /save': {'dto': 'Request', 'provider': 'x', 'source': 'provider.js',
+                               'sourceHash': hashlib.sha256(b'// provider').hexdigest()[:16],
+                               'fields': ['id'], 'keys': ['id'], 'fieldsHash': fields_hash,
+                               'caseShape': case_hash, 'cases': cases,
+                               'driver': 'scripts/write-object-keys.js', 'driverHash': old_hash},
+            }), encoding='utf-8')
+            # 驱动被编辑：预期值/嵌套断言变化不影响台账自身自洽，但驱动指纹必须对不上。
+            (root / 'scripts' / 'write-object-keys.js').write_text(
+                '// driver edited: expect 1 -> 2', encoding='utf-8')
+            result = subprocess.run(
+                [sys.executable, str(SCANNER), str(root / 'contracts.json'), str(root)],
+                text=True, capture_output=True)
+            self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn('JSON 对象提供器字段', result.stdout + result.stderr)
+
+    def test_ledger_without_driver_fingerprint_fails(self):
+        # 没有驱动指纹的旧台账不能继续自证：按过期证据处理。
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp)
+            fields_hash, cases, case_hash = self._ledger_root(root)
+            (root / 'write-object-providers.json').write_text(json.dumps({
+                'POST /save': {'dto': 'Request', 'provider': 'x', 'source': 'provider.js',
+                               'sourceHash': hashlib.sha256(b'// provider').hexdigest()[:16],
+                               'fields': ['id'], 'keys': ['id'], 'fieldsHash': fields_hash,
+                               'caseShape': case_hash, 'cases': cases},
+            }), encoding='utf-8')
+            result = subprocess.run(
+                [sys.executable, str(SCANNER), str(root / 'contracts.json'), str(root)],
+                text=True, capture_output=True)
+            self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn('JSON 对象提供器字段', result.stdout + result.stderr)
+
+    def test_json_provider_ledger_with_wrong_dto_fails(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp)
+            (root / 'contracts.json').write_text(
+                json.dumps({'POST /save': contract('id', protocol='json')}), encoding='utf-8')
+            (root / 'write-object-providers.json').write_text(
+                json.dumps({'POST /save': {'dto': 'Other', 'provider': 'x', 'keys': ['id']}}),
+                encoding='utf-8')
+            (root / 'a.html').write_text('<form data-write-builder="x" hx-post="/save"><input name="id"></form>', encoding='utf-8')
+            result = subprocess.run(
+                [sys.executable, str(SCANNER), str(root / 'contracts.json'), str(root)],
+                text=True, capture_output=True)
+            self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_stale_provider_ledger_fails(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp)
+            (root / 'contracts.json').write_text(
+                json.dumps({'POST /save': contract('id')}), encoding='utf-8')
+            (root / 'write-object-providers.json').write_text(
+                json.dumps({'POST /gone': {'dto': 'Request'}}), encoding='utf-8')
+            (root / 'a.html').write_text('<form hx-post="/save"><input name="id"></form>', encoding='utf-8')
+            result = subprocess.run(
+                [sys.executable, str(SCANNER), str(root / 'contracts.json'), str(root)],
+                text=True, capture_output=True)
+            self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn('已退役端点', result.stdout + result.stderr)
 
     def test_missing_or_empty_scan_scope_is_not_verified(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -149,7 +288,10 @@ class WriteFieldsScanTest(unittest.TestCase):
         }, 'JSON 对象提供器字段')
 
     def test_old_exemption_does_not_hide_missing_contract(self):
-        self.assert_bad({}, {'page.html': '<form hx-post="/api/order/status"></form>'}, 'POST /api/order/status 不在')
+        # 空契约现在会先被「契约为空」拦下；用一条无关契约证明「不在契约里」仍会报。
+        self.assert_bad({'POST /other': contract('id')},
+                        {'page.html': '<form hx-post="/api/order/status"></form>'},
+                        'POST /api/order/status 不在')
 
     def test_dynamic_path_not_accepted_by_prefix_but_query_does_not_change_route(self):
         self.assert_bad({'POST /save/:id': contract('id')}, {
@@ -176,7 +318,9 @@ class WriteFieldsScanTest(unittest.TestCase):
         }, '必填字段 "id"')
 
     def test_disabled_standalone_request_is_not_a_submission_entry(self):
-        self.assert_ok({}, {'page.html': '<button disabled hx-post="/missing">禁用</button>'})
+        # 空契约本身会让门禁失败，因此给一条无关契约，只验证「禁用的独立入口不是提交入口」。
+        self.assert_ok({'POST /other': contract('id')},
+                       {'page.html': '<button disabled hx-post="/missing">禁用</button>'})
 
     def test_template_form_does_not_steal_outer_form_controls(self):
         self.assert_ok({'POST /outer': contract('id'), 'POST /inner': contract('title')}, {
@@ -202,6 +346,126 @@ class WriteFieldsScanTest(unittest.TestCase):
                 'page.html': '<form hx-post="/save"><div ' + legacy + '></div></form>',
             }, '必填字段 "rows"')
 
+    def test_static_field_source_registration_must_match_dto(self):
+        # 登记了静态字段来源，但 DTO 已删字段：登记过期必须红。
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp)
+            contracts = {'POST /save': {'dto': 'Request', 'protocol': 'form',
+                                        'fields': [{'name': 'kept'}]}}
+            (root / 'contracts.json').write_text(json.dumps(contracts), encoding='utf-8')
+            (root / 'a.html').write_text(
+                '<form hx-post="/save">{{for f := .Fields}}<input name="{{f.Name}}">{{end}}</form>',
+                encoding='utf-8')
+            result = subprocess.run(
+                [sys.executable, str(SCANNER), str(root / 'contracts.json'), str(root)],
+                text=True, capture_output=True)
+            # 没有登记时如实报未检查，不会静默通过。
+            self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn('动态字段名', result.stdout + result.stderr)
+
+
+
+
+    # —— 新增协议：nobody / raw / query 的反例 ——
+
+    def test_nobody_endpoint_rejects_business_fields(self):
+        # 处理器完全不读 body：表单带业务字段会被静默丢弃，门禁必须报出来。
+        self.assert_bad({'POST /logout': {'protocol': 'nobody', 'fields': []}},
+                        {'a.html': '<form hx-post="/logout"><input name="id"></form>'},
+                        '不读请求体')
+
+    def test_nobody_endpoint_allows_csrf_only(self):
+        # 只带 CSRF 的登出表单是合法形态。
+        self.assert_ok({'POST /logout': {'protocol': 'nobody', 'fields': []}},
+                       {'a.html': '<form hx-post="/logout"><input name="csrf_token"></form>'})
+
+    def test_raw_endpoint_rejects_template_submission(self):
+        # 原始字节协议由外部定义，界面模板不能提交。
+        self.assert_bad({'POST /callback': {'protocol': 'raw', 'fields': []}},
+                        {'a.html': '<form hx-post="/callback"><input name="csrf_token"></form>'},
+                        '原始字节协议端点')
+
+    def test_query_endpoint_rejects_body_fields(self):
+        # 查询串端点：body 字段不会生效，必须报出来。
+        self.assert_bad({'POST /list': {'dto': 'ListReq', 'protocol': 'query',
+                                        'fields': [{'name': 'page'}]}},
+                        {'a.html': '<form hx-post="/list"><input name="page"></form>'},
+                        '查询串端点')
+
+    def test_query_endpoint_accepts_keys_on_action_url(self):
+        # 键在 action URL 的 query 上、且落在 DTO 字段表里时通过。
+        self.assert_ok({'POST /list': {'dto': 'ListReq', 'protocol': 'query',
+                                       'fields': [{'name': 'page'}]}},
+                       {'a.html': '<form hx-post="/list?page=1"><input name="csrf_token"></form>'})
+
+    def test_query_endpoint_rejects_unknown_query_key(self):
+        self.assert_bad({'POST /list': {'dto': 'ListReq', 'protocol': 'query',
+                                        'fields': [{'name': 'page'}]}},
+                        {'a.html': '<form hx-post="/list?pgae=1"><input name="csrf_token"></form>'},
+                        '不在')
+
+
+class StaticSourceAndVariantTest(unittest.TestCase):
+    """静态来源 / 变体分支的漏检反例：这些形状以前会被放过。"""
+
+    SCANNER = SCANNER
+
+    def run_fixture(self, contracts, templates):
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp)
+            (root / 'contracts.json').write_text(json.dumps(contracts), encoding='utf-8')
+            for name, source in templates.items():
+                path = root / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(source, encoding='utf-8')
+            return subprocess.run([sys.executable, str(self.SCANNER), str(root / 'contracts.json'), str(root)],
+                                  text=True, capture_output=True)
+
+    def test_variant_with_all_branches_missing_required_fails(self):
+        contracts = {
+            'POST /save': {
+                'dto': 'MainReq', 'protocol': 'form',
+                'fields': [{'name': 'id', 'required': True}],
+                'variants': [{'dto': 'AltReq', 'protocol': 'form',
+                              'fields': [{'name': 'ids', 'required': True}]}],
+            }
+        }
+        source = '<form hx-post="/save"><input name="other"></form>'
+        result = self.run_fixture(contracts, {'a.html': source})
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('每个输入分支都缺必填字段', result.stdout + result.stderr)
+
+    def test_variant_with_one_complete_branch_passes(self):
+        contracts = {
+            'POST /save': {
+                'dto': 'MainReq', 'protocol': 'form',
+                'fields': [{'name': 'id', 'required': True}],
+                'variants': [{'dto': 'AltReq', 'protocol': 'form',
+                              'fields': [{'name': 'ids', 'required': True}]}],
+            }
+        }
+        # 只提交 ids：主分支缺 id，但变体分支齐备 —— 真实提交可能走变体，应通过。
+        result = self.run_fixture(contracts, {'a.html': '<form hx-post="/save"><input name="ids"></form>'})
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_static_typo_fails_even_when_dynamic_names_present(self):
+        # 用一个显式登记的端点做真实扫描：动态名之外再拼错一个静态名。
+        contracts = json.loads(pathlib.Path(
+            'internal/templates/static/js/ui/write-contracts.json').read_text(encoding='utf-8'))
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp)
+            (root / 'contracts.json').write_text(json.dumps(contracts), encoding='utf-8')
+            rel = 'internal/templates/admin/project'
+            (root / rel).mkdir(parents=True)
+            # 与真实模板同一端点，但静态字段拼错一个字符。
+            (root / rel / 'bad.html').write_text(
+                '<form hx-post="/admin/themes/settings/save">'
+                '<input name="motion.eeasing"><input name="{{f.Name}}">'
+                '</form>', encoding='utf-8')
+            result = subprocess.run([sys.executable, str(self.SCANNER), str(root / 'contracts.json'), str(root)],
+                                    text=True, capture_output=True)
+            self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn('motion.eeasing', result.stdout + result.stderr)
 
 if __name__ == '__main__':
     unittest.main()

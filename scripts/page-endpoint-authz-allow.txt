@@ -22,15 +22,5 @@ cmd/builder/main.go /builder/generate	测试构建工具进程：cmd/builder 是
 # ---- 自助面（登录即授权） ----
 
 # ---- 只读 / 纯计算（POST 传参，不写库不写产物） ----
-internal/module/workbench/inbound/http/workbench_router.go /workbench/preview	工作台预览：渲染草稿，不落库不写产物，与本页 GET 同权
-internal/module/workbench/inbound/http/workbench_router.go /workbench/inspector	工作台检查器：只读分析当前文档
-internal/module/workbench/inbound/http/workbench_router.go /workbench/outline	工作台大纲：只读结构树
-internal/module/workbench/inbound/http/workbench_router.go /workbench/seo-score	工作台 SEO 评分：纯计算
-internal/module/workbench/inbound/http/workbench_router.go /workbench/template/preview	模板预览：只读渲染
-internal/module/page/inbound/http/page_router.go /workbench/history	修订历史列表：只读（同组的 /workbench/history/restore 会覆盖草稿，已挂 /api/page/draft/save）
-internal/module/project/inbound/http/project_page_router.go /workbench/settings	页面设置表单片段：纯渲染（真正写入走 /admin/settings/save，已挂 /api/project/update）
-internal/module/project/inbound/http/project_page_router.go /workbench/seo-score-panel	SEO 评分区片段：纯渲染
-internal/module/project/inbound/http/project_page_router.go /workbench/global	全局设置面板片段：纯渲染（真正写入走 /admin/themes/settings/save）
-internal/module/content/inbound/http/content_page_router.go /articles/score	文章评分侧栏：纯计算不写库不写产物（代码注释已声明该取舍）
-internal/module/content/inbound/http/content_page_router.go /articles/link-suggestions	内链建议（SEO-015）：候选来自已上线路径解析端口，只读计算
-internal/module/content/inbound/http/content_page_router.go /articles/import-preview	导入预览：纯计算（真正创建走 /articles/import-page，已挂 /api/page/create）
+# 原有 12 条工作台预览/检查器/大纲/评分与文章评分、内链建议、导入预览已随路由改造
+# 挂上显式 Casbin 鉴权（CasbinMiddlewareForPath / DeclarePageWrite），不再需要豁免。

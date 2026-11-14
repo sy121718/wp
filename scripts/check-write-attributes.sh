@@ -136,8 +136,18 @@ def main():
             bad += len(errors)
         print('BAD' + TAB + str(bad))
         return 1 if bad else 0
-    files = sorted(p for p in (ROOT / 'internal/templates').rglob('*')
-                   if p.suffix in ('.html', '.jet') and (not MODE or MODE in str(p)))
+    # 三个模板属主都要扫：应用模板、公共 UI 模板、工具模板资产。
+    # 只扫 internal/templates 会让 pkg 侧的写属性/控件绕过判据。
+    files = []
+    for root_name in ('internal/templates', 'pkg/view/ui/templates', 'pkg/builder'):
+        base = ROOT / root_name
+        if not base.is_dir():
+            print(f'扫描根不存在：{root_name}', file=sys.stderr)
+            bad += 1
+            continue
+        files.extend(p for p in base.rglob('*')
+                     if p.suffix in ('.html', '.jet') and (not MODE or MODE in str(p)))
+    files.sort()
     for path in files:
         try:
             for kind, tag in tags(path.read_text(encoding='utf-8-sig')):

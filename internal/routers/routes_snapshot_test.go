@@ -10,17 +10,21 @@ import (
 	"sync"
 	"testing"
 
-	mw "go_wp/pkg/middleware"
 	"go_wp/config"
+	mw "go_wp/pkg/middleware"
 
 	"github.com/gin-gonic/gin"
 )
 
 const routeSnapshotEnv = "WP_DUMP_ROUTES"
 
-// auditRegistry 是 assembleRouteDump 那次装配的登记索引；
-// 审计输出读它，不读包级默认实例。
-var auditRegistry *mw.Registry
+// auditRegistry / auditPermProblems 是 assembleRouteDump 那次装配的登记索引与
+// 权限核对结果；审计输出读它们，不读包级默认实例。
+var (
+	auditRegistry     *mw.Registry
+	auditPermProblems []string
+	auditGateReady    bool
+)
 
 func bootstrapRouter(t *testing.T) []string {
 	t.Helper()
@@ -59,8 +63,22 @@ func assembleRouteDump() ([]string, error) {
 		return nil, fmt.Errorf("组件初始化失败: %w", err)
 	}
 	gin.SetMode(gin.TestMode)
+	// 审计装配跳过 seed：seed 会把被删掉的权限码补回来，
+	// 「目录里根本没有这条权限点」就会被自动修复掩盖，漂移永远看不见。
+	// 只读现有目录才能做真实对账（测试结束由进程退出，不写回任何东西）。
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("WP_AUDIT_NO_SEED")), "1") {
+		if v, verr := config.GetViper(); verr == nil && v != nil {
+			v.Set("database.run_migrations", false)
+		}
+	}
 	router := gin.New()
-	auditRegistry = SetupRoutesWithRegistry(context.Background(), router, func() error { return nil })
+	// 与生产同一条装配路径（SetupRoutesWithRegistry 只交回 Registry，核对结果留在实例里），
+	// 这里直接建装配实例，把「权限核对结论」和「闸门状态」一起取出来供断言。
+	asm := newAssembly(context.Background(), router)
+	runAssembly(asm, func() error { return nil })
+	auditRegistry = asm.registry
+	auditPermProblems = append([]string(nil), asm.permProblems...)
+	auditGateReady = asm.gate.allow()
 
 	lines := make([]string, 0, 512)
 	for _, r := range router.Routes() {

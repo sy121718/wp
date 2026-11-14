@@ -23,4 +23,10 @@ if [[ ! -f "$CONTRACTS" ]]; then
   exit 1
 fi
 
-python3 scripts/write-fields-scan.py "$CONTRACTS" internal/templates "${1:-}"
+# 默认扫三个模板属主（应用 / 公共 UI / 工具）；传模块前缀时是**定向过滤**，
+# 扫描根不变，只把匹配该前缀的模板纳入对账。
+if [[ -n "${1:-}" ]]; then
+  python3 scripts/write-fields-scan.py "$CONTRACTS" --module "$1"
+else
+  python3 scripts/write-fields-scan.py "$CONTRACTS"
+fi

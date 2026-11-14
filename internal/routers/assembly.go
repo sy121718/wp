@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"go_wp/config"
-	"go_wp/pkg/mcp"
 	"go_wp/internal/middleware/adminctx"
 	"go_wp/internal/middleware/builtin"
 	admincontract "go_wp/internal/module/admin/contract"
@@ -98,6 +97,7 @@ import (
 	"go_wp/pkg/database"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
+	"go_wp/pkg/mcp"
 	mw "go_wp/pkg/middleware"
 	"go_wp/pkg/response"
 	"go_wp/pkg/view"
@@ -108,12 +108,63 @@ import (
 	"gorm.io/gorm"
 )
 
+// toolPermissions 返回全部已注册 AI 工具的权限码（去重）。
+//
+// 工具不走 HTTP 路由，只核 Registry 会漏掉「工具声明的权限点在目录里不存在」。
+// 运行期这会被 fail-closed 拒绝（不会越权），但属于装配漂移，必须在启动时就报出来。
+func toolPermissions(reg *mcp.Registry) []string {
+	if reg == nil {
+		return nil
+	}
+	out := make([]string, 0, reg.Len())
+	seen := make(map[string]struct{}, reg.Len())
+	for _, tool := range reg.List() {
+		perm := tool.Permission()
+		if perm == "" {
+			continue
+		}
+		if _, dup := seen[perm]; dup {
+			continue
+		}
+		seen[perm] = struct{}{}
+		out = append(out, perm)
+	}
+	return out
+}
+
+// PermissionPolicies 是「某个权限码还有没有有效策略」的只读事实来源。
+//
+// 目录行（sys_permission）只说明「这个权限点被定义过」；一条策略都没有时，
+// 入口仍会注册、鉴权仍会拒绝，含超管在内全员 403。两者必须分别核对，
+// 不能用「目录里有行」替代「策略确实存在」。
+type PermissionPolicies interface {
+	// HasPolicies 报告该权限码当前是否至少有一条 p 策略（任一主体）。
+	HasPolicies(ctx context.Context, code string) (bool, error)
+}
+
 // verifyDeclaredPermissions 在路由与工具登记完成后核对权限目录：
 // 每条已声明的绑定（含页面复用的 AuthObject/AuthMethod）必须在库里存在、启用，
 // 且路径/方法与登记事实一致。不一致只报告并让就绪检查失败，不再启动反写。
 //
 // 这样既没有「先启动再写回」的窗口，也不会在冲突时自动挑一条覆盖用户定义。
 func verifyDeclaredPermissions(ctx context.Context, reg *mw.Registry, dir aicontract.PermDirectory) []string {
+	return verifyDeclaredPermissionsFull(ctx, reg, nil, dir, nil)
+}
+
+// verifyDeclaredPermissionsWithTools 在上面基础上把 AI 工具权限码也纳入核对。
+//
+// 现有测试与轻量装配只关心路由时仍可用无工具版本；真实装配走 verifyDeclaredPermissionsFull，
+// 避免「工具登记在路由之外、核对链看不见」。
+func verifyDeclaredPermissionsWithTools(ctx context.Context, reg *mw.Registry, tools *mcp.Registry, dir aicontract.PermDirectory) []string {
+	return verifyDeclaredPermissionsFull(ctx, reg, tools, dir, nil)
+}
+
+// verifyDeclaredPermissionsFull 是核对链的完整形态：路由 + 工具 + 目录 + 策略存在性。
+//
+// policies 为 nil 时跳过策略核对（只有纯逻辑单测会这样用）；真实装配必须传，
+// 否则「目录有行、策略没写」会被报成一切正常。
+func verifyDeclaredPermissionsFull(ctx context.Context, reg *mw.Registry, tools *mcp.Registry,
+	dir aicontract.PermDirectory, policies PermissionPolicies) []string {
 	if reg == nil {
 		return []string{"路由登记索引未注入：装配缺陷"}
 	}
@@ -121,17 +172,24 @@ func verifyDeclaredPermissions(ctx context.Context, reg *mw.Registry, dir aicont
 	if len(specs) == 0 {
 		return []string{"没有任何已声明的路由绑定：装配缺陷"}
 	}
-	codes := make([]string, 0, len(specs))
-	seen := make(map[string]struct{}, len(specs))
+	toolCodes := toolPermissions(tools)
+	codes := make([]string, 0, len(specs)+len(toolCodes))
+	seen := make(map[string]struct{}, len(specs)+len(toolCodes))
+	appendCode := func(code string) {
+		if code == "" {
+			return
+		}
+		if _, dup := seen[code]; dup {
+			return
+		}
+		seen[code] = struct{}{}
+		codes = append(codes, code)
+	}
 	for _, spec := range specs {
-		if spec.Perm == "" {
-			continue
-		}
-		if _, dup := seen[spec.Perm]; dup {
-			continue
-		}
-		seen[spec.Perm] = struct{}{}
-		codes = append(codes, spec.Perm)
+		appendCode(spec.Perm)
+	}
+	for _, code := range toolCodes {
+		appendCode(code)
 	}
 	if dir == nil {
 		return []string{"权限目录端口未注入：不能核对权限点落库"}
@@ -145,13 +203,56 @@ func verifyDeclaredPermissions(ctx context.Context, reg *mw.Registry, dir aicont
 		byCode[e.Code] = e
 	}
 	var problems []string
+	// 对象查到目录不等于鉴权可用：复用和额外检查都必须继续核其启用权限码。
+	checkObjectPolicies := func(entries []aicontract.PermEntry, target string) {
+		if policies == nil {
+			return
+		}
+		for _, entry := range entries {
+			if entry.Status != 1 {
+				continue
+			}
+			ok, perr := policies.HasPolicies(ctx, entry.Code)
+			if perr != nil {
+				problems = append(problems, "读取权限策略失败（核对 "+target+" 的 "+entry.Code+"）："+perr.Error())
+			} else if !ok {
+				problems = append(problems, target+" 的 "+entry.Code+" 没有任何策略行（Casbin 无 p 策略）")
+			}
+		}
+	}
 	for _, spec := range specs {
 		if spec.Perm == "" {
+			// 空权限的页面/后台写入口不是「不查权限」，而是**复用别的操作的鉴权对象**。
+			// 必须按它实际检查的 AuthObject/AuthMethod 去目录里确认存在对应策略行，
+			// 否则「登记了一个指向不存在对象的入口」会静默放行核对。
+			if spec.Kind == mw.RouteExempt || spec.AuthObject == "" {
+				continue
+			}
+			matched, perr := dir.ListByPathMethod(ctx, spec.AuthObject, spec.AuthMethod)
+			if perr != nil {
+				problems = append(problems, "读取权限目录失败（核对 "+spec.Method+" "+spec.Path+"）："+perr.Error())
+				continue
+			}
+			if len(matched) == 0 {
+				problems = append(problems, spec.Method+" "+spec.Path+" 复用的鉴权对象 "+
+					spec.AuthMethod+" "+spec.AuthObject+" 在权限目录里没有任何对应策略行")
+			}
+			checkObjectPolicies(matched, spec.Method+" "+spec.Path+" 复用的鉴权对象 "+spec.AuthMethod+" "+spec.AuthObject)
 			continue
 		}
-		obj, act := spec.AuthObject, spec.AuthMethod
+		// 目录的 api_path/api_method 记的是**这项权限对应的入口**。按 Kind 决定比对哪一对：
+		//   · RouteProtected 是自鉴权操作：目录记它自己的真实入口 Path/Method，
+		//     与 AuthObject 无关 —— /api/publication/seo-audit 额外检查
+		//     /api/seo/audit，目录仍记前者（额外对象另有一跳核对）；
+		//   · RoutePage / RoutePageWrite 是复用别的操作：目录记的是**被复用对象**，
+		//     也就是登记里的 AuthObject/AuthMethod（/admin/mail 复用 /api/mail/account/list）。
+		// 拿真实后台路径去比页面复用项，会把一整批合法页面报成漂移。
+		obj, act := spec.Path, spec.Method
+		if spec.Kind != mw.RouteProtected {
+			obj, act = spec.AuthObject, spec.AuthMethod
+		}
 		if obj == "" {
-			obj = spec.Path
+			obj, act = spec.Path, spec.Method
 		}
 		if act == "" {
 			act = spec.Method
@@ -161,6 +262,23 @@ func verifyDeclaredPermissions(ctx context.Context, reg *mw.Registry, dir aicont
 			problems = append(problems, spec.Perm+" 未在权限目录中登记（"+act+" "+obj+"）")
 			continue
 		}
+		// 有独立权限点、同时又**额外**检查了别的鉴权对象（SEO 审核那类）：
+		// 目录行只能证明自己那一项存在，多检查的那一跳也必须能在目录里找到，
+		// 否则入口永远拒绝却报「已核对」。只有自鉴权操作（RouteProtected）才有
+		// 「主对象 + 额外对象」两跳；页面/写入口的 AuthObject 就是主对象，已在上方比对。
+		if spec.Kind == mw.RouteProtected &&
+			spec.AuthObject != "" && (spec.AuthObject != spec.Path || spec.AuthMethod != spec.Method) {
+			extra, perr := dir.ListByPathMethod(ctx, spec.AuthObject, spec.AuthMethod)
+			if perr != nil {
+				problems = append(problems, "读取权限目录失败（核对额外鉴权对象 "+spec.AuthMethod+" "+spec.AuthObject+"）："+perr.Error())
+				continue
+			}
+			if len(extra) == 0 {
+				problems = append(problems, spec.Method+" "+spec.Path+" 额外检查的鉴权对象 "+
+					spec.AuthMethod+" "+spec.AuthObject+" 在权限目录里没有任何对应策略行")
+			}
+			checkObjectPolicies(extra, spec.Method+" "+spec.Path+" 额外检查的鉴权对象 "+spec.AuthMethod+" "+spec.AuthObject)
+		}
 		// 禁用是**合法启停**：管理员停用一个权限点后，入口仍要注册、鉴权仍会拒绝，
 		// 只是它不再属于「可用目录」。把禁用当成目录缺失会让一次正常的停用变成不就绪。
 		if e.Status != 1 {
@@ -169,6 +287,67 @@ func verifyDeclaredPermissions(ctx context.Context, reg *mw.Registry, dir aicont
 		if e.Path != obj || e.Method != act {
 			problems = append(problems, spec.Perm+" 目录记的是 "+e.Method+" "+e.Path+
 				"，注册处通过的是 "+act+" "+obj)
+		}
+	}
+	// 工具权限码不在路由登记里：它们既要能在目录中查到启用行，**也要**能进入
+	// 执行授权索引。执行期 RouteAuthorizer 只读 BuiltPermIndex（只收 RouteProtected），
+	// 所以「目录里有行、但没有受保护操作绑定」会让工具在运行期被 fail-closed 拒绝，
+	// 而启动核对却报「一切正常」——目录行不是执行入口，两者必须分别核对。
+	indexed := make(map[string]struct{}, len(specs))
+	for _, spec := range specs {
+		if spec.Perm != "" && spec.Kind == mw.RouteProtected {
+			indexed[spec.Perm] = struct{}{}
+		}
+	}
+	for _, code := range toolCodes {
+		e, ok := byCode[code]
+		if !ok {
+			problems = append(problems, "AI 工具权限 "+code+" 未在权限目录中登记")
+			continue
+		}
+		// 禁用是合法启停：工具停用后被拒绝是预期行为，不算装配损坏。
+		if _, bound := indexed[code]; !bound {
+			problems = append(problems, "AI 工具权限 "+code+
+				" 没有绑定任何受保护操作（执行授权索引里查不到，工具运行期必被拒绝）")
+			continue
+		}
+		if e.Status != 1 {
+			continue
+		}
+	}
+	// 目录行 ≠ 策略存在：sys_permission 有这一行，只说明权限点被定义过；
+	// Casbin 里一条 p 策略都没有时，该入口运行期全员 403（含超管）。
+	// 合法禁用不在此列 —— 管理员停用权限点时本来就不该保留可用策略。
+	if policies != nil {
+		for _, spec := range specs {
+			if spec.Perm == "" {
+				continue
+			}
+			if e, ok := byCode[spec.Perm]; ok && e.Status != 1 {
+				continue
+			}
+			ok, perr := policies.HasPolicies(ctx, spec.Perm)
+			if perr != nil {
+				problems = append(problems, "读取权限策略失败（核对 "+spec.Perm+"）："+perr.Error())
+				continue
+			}
+			if !ok {
+				problems = append(problems, spec.Perm+" 没有任何策略行（目录有定义但 Casbin 无 p 策略，"+
+					"该入口对全部角色都会被拒绝）")
+			}
+		}
+		for _, code := range toolCodes {
+			if e, ok := byCode[code]; ok && e.Status != 1 {
+				continue
+			}
+			ok, perr := policies.HasPolicies(ctx, code)
+			if perr != nil {
+				problems = append(problems, "读取权限策略失败（核对 AI 工具权限 "+code+"）："+perr.Error())
+				continue
+			}
+			if !ok {
+				problems = append(problems, "AI 工具权限 "+code+" 没有任何策略行（工具运行期必被拒绝）")
+			}
 		}
 	}
 	return problems
@@ -193,6 +372,12 @@ type assembly struct {
 	// 不读包级默认实例（测试重置不能清掉正在服务实例的索引）。
 	registry *mw.Registry
 
+	// aiRouteBindings 是 AI 两个执行入口（站内 Runner、外部 MCP）与令牌 scope
+	// 校验共用的**不可变**权限查询。它在 SetupAIRoutes 时为空占位，全部登记与
+	// 目录核对通过后才由 routers 构造并注入 —— 早期截取会漏掉后注册的操作，
+	// 而「核对未通过」时不能注入可用授权闭包。
+	aiRouteBindings *mw.PermIndex
+
 	sysConfigSvc sysconfigcontract.Service
 
 	sysConfigDict sysconfigcontract.DictReader
@@ -203,8 +388,16 @@ type assembly struct {
 
 	adminAuthzSvc admincontract.AuthzContextService
 
-	// permProblems 是启动期权限目录核对出的不一致项；非空时 /readyz 返回 not_ready。
+	// permProblems 是启动期权限目录核对出的不一致项；非空时 /readyz 返回 not_ready，
+	// 且 startupGate 保持拒绝业务流量（不只在探针上报告）。
 	permProblems []string
+
+	// gate 是装配收尾前默认拒绝业务流量的闸门；nil 表示测试直接构造 assembly 时未装。
+	gate *startupGate
+
+	// stopPatrols 是媒体/插件等后台巡检的停止函数：收尾时先 cancel bgCtx，
+	// 再逐个调用它们等待在途一轮结束，最后才关数据库。
+	stopPatrols []func()
 
 	mediaSvc       mediacontract.MediaService
 	projectService projectcontract.ProjectService
@@ -253,14 +446,15 @@ type assembly struct {
 // adminSideEffectStarter 是 admin 模块提供的副作用重放入口。
 //
 // 装配端只认这个最小接口：ctx 取消即停，interval<=0 用模块自己的默认间隔。
+// StartSideEffectWorker 返回的 stop 等待在途一轮结束，供进程收尾在关库前调用。
 type adminSideEffectStarter interface {
-	StartSideEffectWorker(ctx context.Context, interval time.Duration)
+	StartSideEffectWorker(ctx context.Context, interval time.Duration) func()
 }
 
 type dataRuleSnapshotPort interface {
 	LoadDataRuleSnapshot(ctx context.Context) error
 
-	StartDataRuleSnapshotAutoRefresh(ctx context.Context)
+	StartDataRuleSnapshotAutoRefresh(ctx context.Context) func()
 
 	DeptSubtreeIDsFromSnapshot(deptID uint64) []uint64
 }
@@ -407,7 +601,7 @@ func (a *assembly) buildAPIAndCoreCRUD() {
 	// 管理员副作用任务的重放循环：策略重载与会话吊销跨库/跨进程，PG 回滚不了它们，
 	// 只能靠持久任务 + 自己的 worker 补做。装配阶段启动一次，挂在进程级可取消 ctx 上。
 	if starter, ok := adminAuthzSvc.(adminSideEffectStarter); ok {
-		starter.StartSideEffectWorker(a.bgCtx, 0)
+		a.stopPatrols = append(a.stopPatrols, starter.StartSideEffectWorker(a.bgCtx, 0))
 		marks.mark(portAdminSideEffectWorker)
 	}
 
@@ -415,7 +609,7 @@ func (a *assembly) buildAPIAndCoreCRUD() {
 	if !ok {
 		panic("admin 模块未实现数据权限快照端口（装配缺陷：部门快照无法注入中间件）")
 	}
-	snapPort.StartDataRuleSnapshotAutoRefresh(context.Background())
+	a.stopPatrols = append(a.stopPatrols, snapPort.StartDataRuleSnapshotAutoRefresh(a.bgCtx))
 	builtin.SetDataRuleDeptResolver(snapPort.DeptSubtreeIDsFromSnapshot)
 	marks.mark(portDataRuleDeptResolver)
 
@@ -432,6 +626,7 @@ func (a *assembly) buildAPIAndCoreCRUD() {
 
 	if v, err := config.GetViper(); err == nil && strings.EqualFold(v.GetString("server.mode"), "debug") {
 		router.GET("/admin/dev-login", adminhttp.DevLoginHandler(db))
+		declareExempt(a.registry, http.MethodGet, "/admin/dev-login")
 	}
 
 	authorizedAPI := mw.NewRouteGroupIn(a.registry,
@@ -440,11 +635,23 @@ func (a *assembly) buildAPIAndCoreCRUD() {
 	a.api = api
 	a.authorizedAPI = authorizedAPI
 
+	// 明确豁免的入口：登录页、免登录回跳、访问口令解锁与访客采集/回调。
+	// 它们各有自己的认证/CSRF/限流，不进后台权限目录，但**必须显式登记**，
+	// 否则「这条入口不查权限」就只是没写，而不是声明过的决定。
+	declareExempt(a.registry, http.MethodGet, "/admin/login")
+	declareExempt(a.registry, http.MethodPost, "/access/unlock")
+	declareExempt(a.registry, http.MethodPost, "/analytics/collect")
+	declareExempt(a.registry, http.MethodPost, "/payment/callback")
+	declareExempt(a.registry, http.MethodPost, "/mcp")
+
 	sysconfighttp.SetupSysConfigRoutes(authorizedAPI, a.adminPages, a.sysConfigSvc)
 
-	aihttp.SetupAIRoutes(authorizedAPI, a.adminPages, db, a.tools(), router, a.sysConfigSvc, newAdminPermDirectory(adminAuthzSvc), a.registry.Snapshot())
+	// 索引在核对通过后才构造（见 routes.go 的 runAssembly 收尾），这里先交 nil：
+	// SetupAIRoutes 里的校验闭包读到 nil 一律拒绝，不会放行。
+	aihttp.SetupAIRoutes(authorizedAPI, a.adminPages, db, a.tools(), router, a.sysConfigSvc, newAdminPermDirectory(adminAuthzSvc), &a.aiRouteBindings)
 
-	mediaSvc := mediahttp.SetupMediaRoutes(authorizedAPI, db)
+	mediaSvc, stopMediaPatrol := mediahttp.SetupMediaRoutes(a.bgCtx, authorizedAPI, db)
+	a.stopPatrols = append(a.stopPatrols, stopMediaPatrol)
 	projectService := projecthttp.SetupProjectRoutes(authorizedAPI, db, a.sysConfigDict)
 	blockSvc := blockhttp.SetupBlockRoutes(authorizedAPI, db, projectService)
 	artifactSvc := artifacthttp.SetupArtifactRoutes(authorizedAPI, db)
@@ -560,7 +767,8 @@ func (a *assembly) buildIdentityAndCommerce() {
 	productSvc := a.productSvc
 	inventorySvc := a.inventorySvc
 
-	mailSvc := mailhttp.SetupMailRoutes(authorizedAPI, db, a.adminPages)
+	mailSvc, stopMail := mailhttp.SetupMailRoutes(a.bgCtx, authorizedAPI, db, a.adminPages)
+	a.stopPatrols = append(a.stopPatrols, stopMail)
 
 	marks.mark(portMailCipherSecret)
 
@@ -896,7 +1104,7 @@ func (a *assembly) buildIdentityAndCommerce() {
 	a.membershipSvc.SetPurchaseSource(purchaseSource)
 	marks.mark(portMembershipPurchaseSource)
 
-	a.membershipSvc.StartRecalcScheduler()
+	a.stopPatrols = append(a.stopPatrols, a.membershipSvc.StartRecalcScheduler(a.bgCtx))
 
 	commentSvc := commenthttp.SetupCommentRoutes(authorizedAPI, a.adminPages, db, a.projectService, commentEntityTypes())
 	a.commentSvc = commentSvc
@@ -1108,4 +1316,12 @@ func (a *assembly) wireRuntimeAccessFace() {
 	} else {
 		marks.mark(portProductCollectionSource)
 	}
+}
+
+// declareExempt 登记一条明确豁免后台权限目录的入口。
+func declareExempt(reg *mw.Registry, method, path string) {
+	if reg == nil {
+		return
+	}
+	reg.DeclareRoute(mw.RouteSpec{Method: method, Path: path, Perm: "", Kind: mw.RouteExempt})
 }

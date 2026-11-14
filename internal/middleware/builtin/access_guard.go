@@ -22,6 +22,8 @@ import (
 	"go_wp/internal/pipeline"
 	"go_wp/pkg/auth"
 	"go_wp/pkg/builder"
+
+	ginbinding "github.com/gin-gonic/gin/binding"
 )
 
 const AccessUnlockPath = "/access/unlock"
@@ -319,59 +321,80 @@ func writeAccessCookie(c *gin.Context, p accessPayload) error {
 	return nil
 }
 
+// accessUnlockForm 是访问密码解锁表单的形状。
+//
+// 密码页由 pkg/publish 的受控模板渲染，固定提交 path + password 两个字段；
+// 声明成 DTO 后写端点契约能对账线上控件名，不再逐字段手工读表单。
+type accessUnlockForm struct {
+	Path     string `form:"path"`
+	Password string `form:"password"`
+}
+
 func AccessUnlockHandler() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		clean, ok := publish.CleanSiteRel(strings.TrimSpace(c.PostForm("path")))
-		if !ok {
-			serveUnlockFailure(c, nil, "/", false)
-			return
-		}
-		root := publish.ActiveRoot()
-		entry, isEntry := publish.ResolveActiveEntry(root, clean)
-		if !isEntry {
-			serveUnlockFailure(c, nil, "/", false)
-			return
-		}
+	return accessUnlockHandler
+}
 
-		back := sitePathOf(entry)
-
-		dir, hasDir := activeEntryDir(entry)
-		if !hasDir {
-			serveUnlockFailure(c, nil, back, false)
-			return
-		}
-		guard, gerr := pipeline.ReadGuardMeta(dir)
-		if gerr != nil || guard == nil {
-
-			serveUnlockFailure(c, nil, back, false)
-			return
-		}
-		if guard.Type != builder.AccessPassword {
-
-			serveUnlockFailure(c, guard, back, false)
-			return
-		}
-		password := c.PostForm("password")
-		if password == "" || len(password) > builder.MaxAccessPasswordBytes {
-
-			serveUnlockFailure(c, guard, back, true)
-			return
-		}
-		if bcrypt.CompareHashAndPassword([]byte(guard.PasswordHash), []byte(password)) != nil {
-			serveUnlockFailure(c, guard, back, true)
-			return
-		}
-
-		payload := accessPayload{V: accessCookieVersion, T: time.Now().Unix(), F: guard.Fingerprint}
-		if existing, ok := decodeAccessCookie(c, guard.Fingerprint); ok {
-			payload.P = existing.P
-		}
-		if err := writeAccessCookie(c, payload.withEntry(entry)); err != nil {
-			serveUnlockFailure(c, guard, back, true)
-			return
-		}
-		c.Redirect(http.StatusFound, back)
+// accessUnlockHandler 是具名函数而不是闭包：写端点契约生成器按函数身份扫描，
+// 闭包体拿不到 DTO 字段表。
+func accessUnlockHandler(c *gin.Context) {
+	var form accessUnlockForm
+	// 解锁页是标准表单；绑定失败与「路径不合法」走同一条受控失败渲染，
+	// 不改成 JSON 400。
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		serveUnlockFailure(c, nil, "/", false)
+		return
 	}
+
+	clean, ok := publish.CleanSiteRel(strings.TrimSpace(form.Path))
+	if !ok {
+		serveUnlockFailure(c, nil, "/", false)
+		return
+	}
+	root := publish.ActiveRoot()
+	entry, isEntry := publish.ResolveActiveEntry(root, clean)
+	if !isEntry {
+		serveUnlockFailure(c, nil, "/", false)
+		return
+	}
+
+	back := sitePathOf(entry)
+
+	dir, hasDir := activeEntryDir(entry)
+	if !hasDir {
+		serveUnlockFailure(c, nil, back, false)
+		return
+	}
+	guard, gerr := pipeline.ReadGuardMeta(dir)
+	if gerr != nil || guard == nil {
+
+		serveUnlockFailure(c, nil, back, false)
+		return
+	}
+	if guard.Type != builder.AccessPassword {
+
+		serveUnlockFailure(c, guard, back, false)
+		return
+	}
+	password := form.Password
+	if password == "" || len(password) > builder.MaxAccessPasswordBytes {
+
+		serveUnlockFailure(c, guard, back, true)
+		return
+	}
+	if bcrypt.CompareHashAndPassword([]byte(guard.PasswordHash), []byte(password)) != nil {
+		serveUnlockFailure(c, guard, back, true)
+		return
+	}
+
+	payload := accessPayload{V: accessCookieVersion, T: time.Now().Unix(), F: guard.Fingerprint}
+	if existing, ok := decodeAccessCookie(c, guard.Fingerprint); ok {
+		payload.P = existing.P
+	}
+	if err := writeAccessCookie(c, payload.withEntry(entry)); err != nil {
+		serveUnlockFailure(c, guard, back, true)
+		return
+	}
+	c.Redirect(http.StatusFound, back)
 }
 
 func serveUnlockFailure(c *gin.Context, guard *pipeline.GuardMeta, back string, showError bool) {

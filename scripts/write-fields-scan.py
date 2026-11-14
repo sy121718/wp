@@ -8,13 +8,182 @@ import sys
 from functools import lru_cache
 from html.parser import HTMLParser
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
+if len(sys.argv) < 2:
+    sys.exit('字段门禁未检查：缺少写端点契约文件参数（先跑 go run ./cmd/write-contracts）')
 contracts = json.load(open(sys.argv[1], encoding='utf-8'))
-root = sys.argv[2] if len(sys.argv) > 2 else 'internal/templates'
-prefix = sys.argv[3] if len(sys.argv) > 3 else ''
-if not Path(root).is_dir():
-    sys.exit(f'字段门禁未检查：模板目录不存在：{root}')
+if not contracts:
+    # 空契约会让每个提交入口都「不在契约里」或全部静默通过；两种都不能当已对账。
+    sys.exit('字段门禁未检查：写端点契约为空')
+
+# JSON 对象提供器台账：由 scripts/write-object-keys.js 真实执行 provider 后产出，
+# 键是「METHOD PATH」，值含该端点实际核对通过的 DTO。只有台账里确实跑过、
+# 且 DTO 与当前契约一致的端点，才从「对象提供器未检查」里摘出。
+OBJECT_PROVIDERS = {}
+# 台账必须登记产出它的驱动脚本；字段门禁对照**当前**驱动文件判证据是否过期。
+DRIVER_SOURCE = 'scripts/write-object-keys.js'
+_provider_ledger = Path(sys.argv[1]).with_name('write-object-providers.json')
+if _provider_ledger.is_file():
+    OBJECT_PROVIDERS = json.loads(_provider_ledger.read_text(encoding='utf-8'))
+    # 台账只允许登记真实契约里的端点；陈旧台账（端点已退役）必须显式报错，
+    # 否则它会一直替一个不存在的端点「证明已核对」。
+    stale = sorted(set(OBJECT_PROVIDERS) - set(contracts))
+    if stale:
+        sys.exit('字段门禁未检查：对象提供器台账含已退役端点（重跑 scripts/tests/run_write_object_providers.sh）：' + ', '.join(stale))
+
+
+# STATIC_FIELD_SOURCES：模板用循环展开 name 的端点 → 该名字集合的 Go 侧静态来源。
+#
+# 只为「名字来自编译期常量表、且 Go 侧有测试钉住表 ⊆ DTO」的端点登记；
+# 登记必须与该端点的当前 DTO 字段表完全一致，否则判过期。
+STATIC_FIELD_SOURCES = {
+    # internal/module/project/inbound/http/project_page.go 的 themeFieldGroups，
+    # 由 TestThemeSettingsFieldGroupNamesInDTO 钉住每个 Name 都在 DTO 的 form tag 里。
+    'POST /admin/themes/settings/save': {
+        'go_test': 'internal/module/project/inbound/http:TestThemeSettingsFieldGroupNamesInDTO',
+        'required': True,
+        'fields': [
+            'images.lazyLoad', 'images.skeleton',
+            'colors.primary', 'colors.secondary', 'colors.accent', 'colors.success',
+            'colors.warning', 'colors.danger', 'colors.text', 'colors.heading',
+            'colors.background', 'colors.surface', 'colors.border',
+            'typography.heading.color', 'typography.heading.weight', 'typography.heading.size',
+            'typography.heading.spacing', 'typography.heading.font',
+            'typography.body.color', 'typography.body.size', 'typography.body.line', 'typography.body.font',
+            'typography.link.color', 'typography.link.hover', 'typography.link.underline',
+            'button.background', 'button.color', 'button.radius', 'button.weight',
+            'button.py', 'button.px', 'button.hoverBg', 'button.hoverColor',
+            'button.borderWidth', 'button.borderStyle', 'button.borderColor', 'button.shadow',
+            'surface.radius', 'surface.borderWidth', 'surface.borderColor', 'surface.shadow',
+            'motion.duration', 'motion.easing', 'motion.entrance',
+        ],
+    },
+}
+
+
+def provider_source_hash(rel):
+    """按台账里登记的源文件路径算当前指纹，用于判「provider 改过、台账过期」。
+
+    台账与契约文件同目录，源路径可能相对仓库根（生产）或相对契约目录（测试夹具）：
+    两处都试，取第一个存在的。都读不到时返回空，调用方按「证据过期」处理。
+    """
+    candidates = [Path(rel), Path(sys.argv[1]).resolve().parent / rel]
+    for candidate in candidates:
+        try:
+            return hashlib.sha256(candidate.read_bytes()).hexdigest()[:16]
+        except OSError:
+            continue
+    return ''
+
+
+@lru_cache(maxsize=1)
+def driver_source_hash():
+    """当前对象提供器驱动的源码指纹，用于判「驱动改过、台账过期」。
+
+    与 provider_source_hash 同样两处都试：仓库根（生产）或契约目录旁边（测试夹具）。
+    读不到时返回空，调用方按「证据过期」处理 —— 宁可重跑，不可放过。
+    """
+    # 先试契约目录旁边（测试夹具），再试仓库根（生产）：生产的契约目录下没有
+    # scripts/，夹具则把「当前驱动」放在契约目录旁，必须优先命中夹具那份。
+    candidates = [Path(sys.argv[1]).resolve().parent / DRIVER_SOURCE, Path(DRIVER_SOURCE)]
+    for candidate in candidates:
+        try:
+            return hashlib.sha256(candidate.read_bytes()).hexdigest()[:16]
+        except OSError:
+            continue
+    return ''
+
+
+def provider_ledger_valid(endpoint, spec):
+    """台账是否仍能证明该端点已核对：DTO、字段表、provider 源码指纹都必须一致。
+
+    任何一项变了（DTO 改名、字段增删、provider 逻辑改动）都说明旧证据已过期，
+    必须重跑对账，不能拿旧台账继续摘掉未知项。
+    """
+    entry = OBJECT_PROVIDERS.get(endpoint)
+    if not entry or entry.get('dto') != spec.get('dto'):
+        return False
+    # 名字集合必须一致。
+    fields = sorted(field.get('name') for field in spec.get('fields', []))
+    entry_fields = sorted(f.get('name') if isinstance(f, dict) else f for f in entry.get('fields', []))
+    if entry_fields != fields:
+        return False
+    # required 不在名字集合里，必须由指纹单独覆盖：只比名字会放过
+    # 「projectId 变必填、provider 却不产出它」这类破坏性变更。
+    if entry.get('fieldsHash') != fields_fingerprint(spec):
+        return False
+    # 场景形状指纹：只能证明台账内部自洽，证明不了它出自当前驱动（见下一条）。
+    if entry.get('caseShape') != case_shape_digest(entry):
+        return False
+    # 驱动定义指纹：对照**当前**驱动脚本文件，而不是台账里记的 cases。
+    # 只比 caseShape 等于让台账自证 —— 驱动改了场景名/预期值/嵌套断言而台账没重跑时，
+    # 台账里的 cases 与它自己的指纹照样一致，旧证据会被一直沿用。
+    if entry.get('driver') != DRIVER_SOURCE:
+        return False
+    if not entry.get('driverHash') or entry.get('driverHash') != driver_source_hash():
+        return False
+    source = entry.get('source')
+    if not source or entry.get('sourceHash') != provider_source_hash(source):
+        return False
+    return True
+
+
+def _canonical(payload):
+    """与 JS 侧一致的规范 JSON：键序稳定、无多余空白。
+
+    台账由 Node 生成，Python 必须用同一种序列化，否则同一个事实会算出两个指纹。
+    """
+    return hashlib.sha256(
+        json.dumps(payload, ensure_ascii=False, separators=(',', ':')).encode('utf-8')
+    ).hexdigest()[:16]
+
+
+def fields_fingerprint(spec):
+    """字段契约指纹：名字 + required，任一变化都让旧台账失效。"""
+    payload = sorted([[f.get('name'), bool(f.get('required'))] for f in spec.get('fields', [])],
+                     key=lambda pair: pair[0])
+    return _canonical(payload)
+
+
+def case_shape_digest(entry):
+    """场景形状指纹：场景名与它产出的键集合。
+
+    驱动脚本改动场景（改名、增删场景、改字段）后，旧台账不再引用同一份证据。
+    """
+    cases = entry.get('cases') or []
+    payload = sorted([[c.get('name', ''), sorted(c.get('keys', []))] for c in cases],
+                     key=lambda pair: json.dumps(pair, ensure_ascii=False))
+    return _canonical(payload)
+
+# 扫描根：应用模板 + 公共 UI 模板 + 工具模板资产，三处属主都要覆盖。
+# 只传一个根时保留旧行为，便于按模块定向执行。
+TEMPLATE_ROOTS = (
+    'internal/templates',
+    'pkg/view/ui/templates',
+    'pkg/builder',
+)
+# 参数形态：<contracts> [--module <相对路径前缀>] [扫描根...]
+#   · --module 是**定向过滤**：三个正式扫描根不变，只把匹配该前缀的模板纳入对账；
+#   · 其余位置参数是扫描根；都不给时用三个正式根。
+extra = sys.argv[2:]
+module_prefix = ''
+if '--module' in extra:
+    at = extra.index('--module')
+    if at + 1 >= len(extra) or not extra[at + 1]:
+        sys.exit('字段门禁未检查：--module 缺少取值')
+    module_prefix = extra[at + 1]
+    extra = extra[:at] + extra[at + 2:]
+roots = extra if extra else list(TEMPLATE_ROOTS)
+roots = [r for r in roots if r]
+missing = [r for r in roots if not Path(r).is_dir()]
+if missing:
+    sys.exit('字段门禁未检查：扫描根不存在：' + ', '.join(missing))
+if not roots:
+    sys.exit('字段门禁未检查：没有扫描根')
+
+root = roots[0]
+prefix = module_prefix
 
 violations = 0
 checked_forms = 0
@@ -223,18 +392,36 @@ class FormParser(HTMLParser):
             self.serial += 1
             self.templates.append(self.serial)
         uncertain = set()
-        for ancestor in self.elements + [element]:
+        for ancestor in self.elements:
             uncertain.update(set(ancestor['attrs']) & {'hx-inherit', 'hx-disinherit'})
-            vals = ancestor['attrs'].get('hx-vals')
-            if vals is not None and not hx_vals_fields(vals):
-                uncertain.add('hx-vals')
-            # hx-include 的字面 id 选择器可静态解析（见 included_controls）；含 Jet 表达式或
-            # 非 id 选择器时照旧报未检查，不放宽判据。
-            include = ancestor['attrs'].get('hx-include')
-            if include is not None and not include_is_literal(include):
-                uncertain.add('hx-include')
-            if ancestor is not element and ancestor['tag'] != 'form' and 'hx-encoding' in ancestor['attrs']:
-                uncertain.add('hx-encoding')
+            # 表单之外的祖先（section / div / table…）上的 hx-include / hx-vals 会经 htmx
+            # 属性继承作用于后代请求，但这里没有、也不该按 selector 去合并它们 ——
+            # 静态字面量同样只能报「未检查」，不能因为可解析就冒充已对账。
+            if ancestor['tag'] != 'form':
+                if 'hx-include' in ancestor['attrs']:
+                    uncertain.add('hx-include')
+                if 'hx-vals' in ancestor['attrs']:
+                    uncertain.add('hx-vals')
+                if 'hx-encoding' in ancestor['attrs']:
+                    uncertain.add('hx-encoding')
+            else:
+                # 外层表单（按钮覆盖提交时）的 hx-include / hx-vals 会被 included_fields
+                # 按字面 #id 合并；只有确实可静态解析时才不算未检查。
+                include = ancestor['attrs'].get('hx-include')
+                if include is not None and not include_is_literal(include):
+                    uncertain.add('hx-include')
+                vals = ancestor['attrs'].get('hx-vals')
+                if vals is not None and not hx_vals_fields(vals):
+                    uncertain.add('hx-vals')
+        # 元素自身：hx-include 的字面 id 选择器可静态解析（见 included_fields），
+        # hx-vals 的静态字面量会并入 offered；解析不了时照旧报未检查，不放宽判据。
+        uncertain.update(set(element['attrs']) & {'hx-inherit', 'hx-disinherit'})
+        vals = element['attrs'].get('hx-vals')
+        if vals is not None and not hx_vals_fields(vals):
+            uncertain.add('hx-vals')
+        include = element['attrs'].get('hx-include')
+        if include is not None and not include_is_literal(include):
+            uncertain.add('hx-include')
         if tag == 'form':
             self.form = {'attrs': attrs, 'scope': tuple(self.templates), 'parent': self.form,
                          'uncertain': uncertain}
@@ -416,60 +603,175 @@ def check_endpoint(rel, method, urls, attrs, offered):
             passed = False
             continue
         protocol = spec.get('protocol')
-        if protocol not in ('form', 'multipart', 'json') or spec.get('reason'):
+        if protocol not in ('form', 'multipart', 'json', 'query', 'nobody', 'raw') or spec.get('reason'):
             report(f'{rel}：未检查 {endpoint}：' + spec.get('reason', '契约缺少确定输入协议'))
             passed = False
             continue
         encoding = attrs.get('hx-encoding') or attrs.get('enctype') or ''
         actual = 'json' if attrs.get('data-write-builder') else ('multipart' if encoding == 'multipart/form-data' else 'form')
+        if protocol == 'nobody':
+            # 处理器完全不读 body：表单只能带 CSRF 这类框架字段，业务字段会被静默丢弃。
+            business = {f for f in offered if f != 'csrf_token'}
+            if business:
+                report(f'{rel}：{endpoint} 的处理器不读请求体，表单提交的业务字段会被静默丢弃：'
+                       + ', '.join(sorted(business)[:5]))
+                passed = False
+                continue
+            checked_forms += 1
+            continue
+        if protocol == 'raw':
+            # 原始字节协议（支付回调、采集 beacon）：由外部协议定义，不由模板提交。
+            report(f'{rel}：{endpoint} 是原始字节协议端点，不应由界面表单提交')
+            passed = False
+            continue
+        if protocol == 'query':
+            # 显式查询串端点：键在 action URL 的 query 上，body 不参与。
+            if attrs.get('data-write-builder'):
+                report(f'{rel}：{endpoint} 是查询串端点，不能用 data-write-builder 提交 JSON 体')
+                passed = False
+                continue
+            if offered - {'csrf_token'}:
+                report(f'{rel}：{endpoint} 是查询串端点，表单体字段不会生效：'
+                       + ', '.join(sorted(offered - {'csrf_token'})[:5]))
+                passed = False
+                continue
+            allowed_query = {field['name'] for field in spec.get('fields', [])}
+            for key in parse_qs(parsed.query, keep_blank_values=True):
+                if key == 'csrf_token':
+                    continue
+                if key not in allowed_query:
+                    report(f'{rel}：查询串键 "{key}" 不在 {endpoint} 的 DTO 字段表里')
+                    passed = False
+            checked_forms += 1
+            continue
         if protocol != actual:
             report(f'{rel}：{endpoint} 输入协议不匹配：模板 {actual}，真实 binder {protocol}')
             passed = False
             continue
         if protocol == 'json':
-            report(f'{rel}：未检查 {endpoint} 的 JSON 对象提供器字段；需要真实对象链路验证，不能按普通控件冒充已对账')
-            passed = False
+            if not provider_ledger_valid(endpoint, spec):
+                report(f'{rel}：未检查 {endpoint} 的 JSON 对象提供器字段；需要真实对象链路验证'
+                       f'（重跑 scripts/tests/run_write_object_providers.sh：DTO {spec.get("dto") or "?"}、'
+                       '字段表、provider 源码指纹与驱动定义指纹必须与台账一致 ——'
+                       '改了驱动场景/预期值/嵌套断言也会让旧台账失效）')
+                passed = False
+                continue
+            # 模板声明的 builder 必须与台账登记的 provider 一致：写错 builder 名会让
+            # 页面提交空对象，而台账仍替这个端点「证明已核对」。
+            declared = attrs.get('data-write-builder')
+            recorded = OBJECT_PROVIDERS[endpoint].get('provider')
+            if declared and recorded and declared != recorded:
+                report(f'{rel}：端点 {endpoint} 声明 data-write-builder="{declared}"，'
+                       f'台账核对的是 provider "{recorded}" —— 模板与对象链路不一致')
+                passed = False
+                continue
+            # 台账与声明都一致：该端点已真实核对；继续核对二元分支的另一端点。
             continue
         offered.discard('csrf_token')
-        if any('__JET_' in field for field in offered):
-            report(f'{rel}：未检查 {endpoint} 的动态字段名')
-            passed = False
-            continue
-        allowed = {field['name'] for field in spec.get('fields', [])}
-        for field in sorted(offered - allowed):
+        # 变体是同一端点的第二个输入形状（入口按请求字段分叉）。
+        variant_shapes = spec.get('variants') or []
+        shapes = [spec.get('fields', [])] + [v.get('fields', []) for v in variant_shapes]
+        allowed = {field['name'] for shape in shapes for field in shape}
+
+        # 提交入口里**写死**的字段名必须落在契约里，即使这个端点还有动态名。
+        # 否则「登记了动态来源」会顺带放过同表单里拼错的静态字段名。
+        static_offered = {f for f in offered if '__JET_' not in f}
+        for field in sorted(static_offered - allowed):
             report(f'{rel}：字段 name="{field}" 不在 {endpoint} 的 DTO 字段表里；原生 binder 不折叠点号或数组下标')
             passed = False
-        for field in spec.get('fields', []):
-            if field.get('required') and field['name'] not in offered:
-                report(f'{rel}：{spec["dto"]} 的必填字段 "{field["name"]}" 没有出现在表单里（端点 {endpoint}）')
+
+        if any('__JET_' in field for field in offered):
+            # 动态字段名只有在该端点登记了「Go 侧静态来源」时才可对账：
+            # 模板循环展开的名字来自编译期常量表，且 Go 侧有测试钉住表 ⊆ DTO。
+            # 没有登记就如实报未检查 —— 不按模板名或端点白名单放过。
+            static_src = STATIC_FIELD_SOURCES.get(endpoint)
+            if static_src is None:
+                report(f'{rel}：未检查 {endpoint} 的动态字段名')
                 passed = False
+                continue
+            allowed_dynamic = set(static_src.get('fields', []))
+            if not allowed_dynamic:
+                report(f'{rel}：{endpoint} 登记了静态字段来源但字段表为空')
+                passed = False
+                continue
+            dynamic_only = {f for f in offered if '__JET_' in f}
+            if not dynamic_only and static_src.get('required'):
+                report(f'{rel}：{endpoint} 的动态字段一个都没出现在表单里')
+                passed = False
+                continue
+            # 动态名字本身不参与逐名比对（由 Go 表的测试保证 ⊆ DTO）；
+            # 但登记的每个名字都必须仍在当前 DTO 字段表里，否则登记已过期。
+            dto_fields = {f['name'] for f in spec.get('fields', [])}
+            stale = sorted(allowed_dynamic - dto_fields)
+            if stale:
+                report(f'{rel}：{endpoint} 的动态字段来源登记已过期（DTO 已无这些字段：' +
+                       ', '.join(stale[:5]) + ('…' if len(stale) > 5 else '') + '）')
+                passed = False
+                continue
+            checked_forms += 1
+            continue
+
+        if variant_shapes:
+            # 有变体不等于「随便哪支都行」：至少要有一支的必填字段在表单里齐备。
+            # 所有分支的必填字段都缺失时，任何真实提交都必然被拒 —— 这是错误，
+            # 不能因为「字段并集包含」就放过。
+            complete = [shape for shape in shapes
+                        if all(f['name'] in offered for f in shape if f.get('required'))]
+            if not complete:
+                missing = '；'.join(
+                    (shape_dto_name(spec, i) or '分支') + ' 缺 ' + ', '.join(
+                        sorted(f['name'] for f in shape if f.get('required') and f['name'] not in offered))
+                    for i, shape in enumerate(shapes)
+                    if any(f.get('required') and f['name'] not in offered for f in shape))
+                report(f'{rel}：{endpoint} 的每个输入分支都缺必填字段，表单无法提交成功（{missing}）')
+                passed = False
+        else:
+            for field in spec.get('fields', []):
+                if field.get('required') and field['name'] not in offered:
+                    report(f'{rel}：{spec["dto"]} 的必填字段 "{field["name"]}" 没有出现在表单里（端点 {endpoint}）')
+                    passed = False
     return passed
 
 
-for dirpath, _, files in os.walk(root):
-    for name in sorted(files):
-        if not name.endswith(('.html', '.jet')):
-            continue
-        path = os.path.join(dirpath, name)
-        rel = os.path.relpath(path, root)
-        if not rel.startswith(prefix):
-            continue
-        checked_templates += 1
-        text = expand_binary_endpoints(expand_template(Path(path).resolve()))
-        parser = FormParser()
-        parser.feed(JET_TAG.sub(mask_jet, text))
-        for (method, url), attrs, offered, uncertain in parser.actions():
-            if uncertain:
-                report(f'{rel}：未检查 {method} {url} 的参数选择/继承声明：' + ', '.join(sorted(uncertain)))
+def shape_dto_name(spec, index):
+    """取第 index 个输入形状的 DTO 名（0 是主契约，其余是变体）。"""
+    if index == 0:
+        return spec.get('dto') or ''
+    variants = spec.get('variants') or []
+    if index - 1 < len(variants):
+        return variants[index - 1].get('dto') or ''
+    return ''
+
+
+for scan_root in roots:
+    root = scan_root
+    for dirpath, _, files in os.walk(root):
+        for name in sorted(files):
+            if not name.endswith(('.html', '.jet')):
                 continue
-            urls = [url]
-            if attrs.get('data-alt-endpoint'):
-                urls.append(attrs['data-alt-endpoint'])
-            if check_endpoint(rel, method, urls, attrs, offered):
-                checked_forms += 1
+            path = os.path.join(dirpath, name)
+            rel = os.path.relpath(path)
+            if prefix and prefix not in rel:
+                continue
+            # testdata 是夹具，不是产品模板：它故意提交假端点，不能当产品表单对账。
+            if rel.startswith('internal/templates/testdata/'):
+                continue
+            checked_templates += 1
+            text = expand_binary_endpoints(expand_template(Path(path).resolve()))
+            parser = FormParser()
+            parser.feed(JET_TAG.sub(mask_jet, text))
+            for (method, url), attrs, offered, uncertain in parser.actions():
+                if uncertain:
+                    report(f'{rel}：未检查 {method} {url} 的参数选择/继承声明：' + ', '.join(sorted(uncertain)))
+                    continue
+                urls = [url]
+                if attrs.get('data-alt-endpoint'):
+                    urls.append(attrs['data-alt-endpoint'])
+                if check_endpoint(rel, method, urls, attrs, offered):
+                    checked_forms += 1
 
 if checked_templates == 0:
-    report(f'字段门禁未检查：范围 {prefix or root} 没有模板')
+    report(f'字段门禁未检查：范围 {prefix or ", ".join(roots)} 没有模板')
 if violations:
     print(f'字段门禁未通过：{violations} 项错误或未检查项；已对账 {checked_forms} 个提交入口。', file=sys.stderr)
     sys.exit(1)

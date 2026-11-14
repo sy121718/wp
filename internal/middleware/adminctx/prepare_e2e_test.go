@@ -30,6 +30,9 @@ func (s *sidebarStub) ListByCodes(context.Context, []string) ([]admindto.PermBri
 	return nil, nil
 }
 func (s *sidebarStub) ExistsEnabledCode(context.Context, string) (bool, error) { return false, nil }
+func (s *sidebarStub) ListByPathMethod(context.Context, string, string) ([]admindto.PermBrief, error) {
+	return nil, nil
+}
 func (s *sidebarStub) EffectivePermissionCodes(context.Context, uint64) ([]string, error) {
 	return []string{"page:view"}, s.permissionErr
 }

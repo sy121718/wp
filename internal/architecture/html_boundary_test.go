@@ -18,7 +18,6 @@ var htmlLiteralBudget = map[string]int{
 	"internal/module/mail/enums/mail_ui_labels.go":  1,
 	"internal/module/mail/service/mail_tracking.go": 2,
 
-	"internal/module/mail/inbound/http/mail_page_handle.go": 10,
 
 
 	"internal/module/workbench/inbound/http/canvas_bridge_handle.go": 3,

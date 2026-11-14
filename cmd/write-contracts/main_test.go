@@ -118,7 +118,9 @@ func TestRealReceiverIdentityCannotBeReplacedBySameMethodName(t *testing.T) {
 
 func TestUnknownInputsRemainVisibleInsteadOfGuessing(t *testing.T) {
 	index := fixtureIndex(t)
-	for _, name := range []string{"Auto", "Query", "URI", "Unknown", "Mixed", "Callback", "Missing", "Save.func1"} {
+	// Query 走显式 ShouldBindQuery：协议是确定的 query（字段取 form tag），
+	// 不再属于「无法确认」。其余形状仍必须如实未检查。
+	for _, name := range []string{"Auto", "URI", "Unknown", "Mixed", "Callback", "Missing", "Save.func1"} {
 		t.Run(name, func(t *testing.T) {
 			r := route{Method: "POST", Path: "/x", Handler: "example/internal/http.(*Handle)." + name + "-fm"}
 			ep := buildContracts([]route{r}, index)["POST /x"]
@@ -127,6 +129,13 @@ func TestUnknownInputsRemainVisibleInsteadOfGuessing(t *testing.T) {
 			}
 		})
 	}
+	t.Run("Query", func(t *testing.T) {
+		ep := buildContracts([]route{{Method: "POST", Path: "/x",
+			Handler: "example/internal/http.(*Handle).Query-fm"}}, index)["POST /x"]
+		if ep.Protocol != "query" || ep.Reason != "" || ep.DTO != "example/internal/dto.Request" {
+			t.Fatalf("显式 ShouldBindQuery 应确定 query 协议：%+v", ep)
+		}
+	})
 }
 
 func TestEmbeddedDTOFieldsAndRequiredSemantics(t *testing.T) {
@@ -408,5 +417,356 @@ func (h *Handle) Create(c *gin.Context) {
 	}
 	if !names["amountYuan"] || names["amount"] {
 		t.Fatalf("表单字段应是 amountYuan（不是转换后请求的 amount）：%+v", create.Fields)
+	}
+}
+
+// pkg/binding 的 Form/JSON 是兼容入口（按 Content-Type 在 JSON 与表单间选择），
+// 本身不声明唯一协议 —— 必须如实报 unknown。声明协议的端点用显式入口。
+func TestCompatBindersStayUnchecked(t *testing.T) {
+	root := writeSources(t, map[string]string{
+		"dto/request.go": "package dto\n" +
+			"type SaveReq struct { ID string `form:\"id\" json:\"id\" binding:\"required\"` }\n",
+		"http/handle.go": `package examplehttp
+import (
+ req "example/internal/dto"
+ wire "go_wp/pkg/binding"
+ "github.com/gin-gonic/gin"
+)
+type Handle struct{}
+func (h *Handle) Compat(c *gin.Context) { wire.JSON[req.SaveReq](c) }
+func (h *Handle) CompatForm(c *gin.Context) { wire.Form[req.SaveReq](c) }
+func (h *Handle) Explicit(c *gin.Context) { wire.ParseJSON[req.SaveReq](c) }
+func (h *Handle) ExplicitForm(c *gin.Context) { wire.ParseForm[req.SaveReq](c) }
+`,
+	})
+	index, err := scanSources(root, "example/internal")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := buildContracts([]route{
+		{Method: "POST", Path: "/compat", Handler: "example/internal/http.(*Handle).Compat-fm"},
+		{Method: "POST", Path: "/compat-form", Handler: "example/internal/http.(*Handle).CompatForm-fm"},
+		{Method: "POST", Path: "/explicit", Handler: "example/internal/http.(*Handle).Explicit-fm"},
+		{Method: "POST", Path: "/explicit-form", Handler: "example/internal/http.(*Handle).ExplicitForm-fm"},
+	}, index)
+	for _, key := range []string{"POST /compat", "POST /compat-form"} {
+		if ep := got[key]; ep.Protocol != "unknown" || ep.Reason == "" {
+			t.Fatalf("%s 走兼容入口必须如实报未检查：%+v", key, ep)
+		}
+	}
+	for key, want := range map[string]string{"POST /explicit": "json", "POST /explicit-form": "form"} {
+		if ep := got[key]; ep.Protocol != want || ep.DTO != "example/internal/dto.SaveReq" {
+			t.Fatalf("%s 走显式入口应确定协议 %s：%+v", key, want, ep)
+		}
+	}
+}
+
+// 一条明确表单绑定分支 + 一条无法确定的委托分支，整体必须报未检查：
+// 过滤掉未知分支再报「唯一的 form」等于把欠账藏进绿灯。
+func TestDelegationWithUnknownBranchIsNotReportedAsResolved(t *testing.T) {
+	root := writeSources(t, map[string]string{
+		"dto/request.go": "package dto\ntype SaveReq struct { ID string `form:\"id\"` }\n",
+		"http/handle.go": `package examplehttp
+import (
+ req "example/internal/dto"
+ wire "github.com/gin-gonic/gin/binding"
+ "github.com/gin-gonic/gin"
+)
+type Handle struct{}
+func (h *Handle) Export(c *gin.Context) { h.save(c); h.loose(c) }
+func (h *Handle) save(c *gin.Context) { var in req.SaveReq; c.ShouldBindWith(&in, wire.FormPost) }
+func (h *Handle) loose(c *gin.Context) { var in req.SaveReq; c.ShouldBind(&in) }
+`,
+	})
+	index, err := scanSources(root, "example/internal")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ep := buildContracts([]route{
+		{Method: "POST", Path: "/export", Handler: "example/internal/http.(*Handle).Export-fm"},
+	}, index)["POST /export"]
+	if ep.Protocol != "unknown" || ep.Reason == "" {
+		t.Fatalf("含未知委托分支的端点必须报未检查：%+v", ep)
+	}
+}
+
+// 泛型骨架有输入 F 与输出 R：字段契约取 binder 真正绑定的 F，不能按「回调第一个指针形参」猜。
+func TestGenericSkeletonUsesBoundTypeParamNotFirstCallbackArg(t *testing.T) {
+	root := writeSources(t, map[string]string{
+		"dto/request.go": "package dto\n" +
+			"type UpdateForm struct { Name string `form:\"name\"` }\n" +
+			"type UpdateResp struct { Name string `json:\"name\"` }\n",
+		"http/handle.go": `package examplehttp
+import (
+ "context"
+ req "example/internal/dto"
+ wire "github.com/gin-gonic/gin/binding"
+ "github.com/gin-gonic/gin"
+)
+func runWrite[F any, R any](c *gin.Context,
+ call func(context.Context, *R) (any, error),
+ success func(*gin.Context)) {
+ var form F
+ if err := c.ShouldBindWith(&form, wire.FormPost); err != nil { return }
+ _ = form
+ success(c)
+}
+type Handle struct{}
+func (h *Handle) Update(c *gin.Context) {
+ runWrite[req.UpdateForm, req.UpdateResp](c,
+  func(ctx context.Context, r *req.UpdateResp) (any, error) { return nil, nil },
+  func(*gin.Context) {})
+}
+`,
+	})
+	index, err := scanSources(root, "example/internal")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ep := buildContracts([]route{
+		{Method: "POST", Path: "/update", Handler: "example/internal/http.(*Handle).Update-fm"},
+	}, index)["POST /update"]
+	if ep.Reason != "" || ep.Protocol != "form" {
+		t.Fatalf("双类型参数骨架应解析成表单：%+v", ep)
+	}
+	if ep.DTO != "example/internal/dto.UpdateForm" {
+		t.Fatalf("应取被绑定的输入类型 UpdateForm，实际 %q", ep.DTO)
+	}
+	if len(ep.Fields) != 1 || ep.Fields[0].Name != "name" {
+		t.Fatalf("字段表应来自输入类型：%+v", ep.Fields)
+	}
+}
+
+// 入口先按请求字段分叉（有 ids 走批量、否则单条）时，同一 METHOD+PATH 有两个输入形状：
+// 主契约是单条 DTO，变体是批量 DTO。只有两条分支都能确定解析且 DTO 不同才产出变体。
+func TestEntryForkProducesVariantContract(t *testing.T) {
+	root := writeSources(t, map[string]string{
+		"dto/request.go": "package dto\n" +
+			"type SingleReq struct { ID string `form:\"id\"` }\n" +
+			"type BulkReq struct { IDs []string `form:\"ids\"`; Status string `form:\"status\"` }\n",
+		"http/handle.go": `package examplehttp
+import (
+ req "example/internal/dto"
+ wire "github.com/gin-gonic/gin/binding"
+ "github.com/gin-gonic/gin"
+)
+func probeIDs(c *gin.Context) []string { return c.Request.PostForm["ids"] }
+type Handle struct{}
+func (h *Handle) Update(c *gin.Context) {
+	if probeIDs(c) != nil {
+		h.bulk(c)
+		return
+	}
+	var in req.SingleReq
+	if err := c.ShouldBindWith(&in, wire.FormPost); err != nil { return }
+}
+func (h *Handle) bulk(c *gin.Context) {
+	var in req.BulkReq
+	if err := c.ShouldBindWith(&in, wire.FormPost); err != nil { return }
+}
+`,
+	})
+	index, err := scanSources(root, "example/internal")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ep := buildContracts([]route{
+		{Method: "POST", Path: "/update", Handler: "example/internal/http.(*Handle).Update-fm"},
+	}, index)["POST /update"]
+	if ep.Reason != "" || ep.Protocol != "form" || ep.DTO != "example/internal/dto.SingleReq" {
+		t.Fatalf("主契约应是单条 DTO：%+v", ep)
+	}
+	if len(ep.Variants) != 1 {
+		t.Fatalf("分叉入口应产出一条变体：%+v", ep.Variants)
+	}
+	v := ep.Variants[0]
+	if v.DTO != "example/internal/dto.BulkReq" || v.Protocol != "form" {
+		t.Fatalf("变体应是批量 DTO：%+v", v)
+	}
+	names := map[string]bool{}
+	for _, f := range v.Fields {
+		names[f.Name] = true
+	}
+	if !names["ids"] || !names["status"] {
+		t.Fatalf("变体字段应来自批量 DTO：%+v", v.Fields)
+	}
+}
+
+// auditContract 用最小的 dto/http 夹具解析一条写端点契约，供一组反例共用。
+func auditContract(t *testing.T, body string) endpointSchema {
+	t.Helper()
+	root := writeSources(t, map[string]string{
+		"dto/request.go": "package dto\ntype Input struct { ID string `form:\"id\" json:\"id\"` }\ntype Output struct { Label string `form:\"label\" json:\"label\"` }\n",
+		"http/handle.go": "package examplehttp\nimport (req \"example/internal/dto\"; wire \"github.com/gin-gonic/gin/binding\"; \"github.com/gin-gonic/gin\")\ntype Handle struct{}\n" + body,
+	})
+	index, err := scanSources(root, "example/internal")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return buildContracts([]route{{Method: "POST", Path: "/save", Handler: "example/internal/http.(*Handle).Save-fm"}}, index)["POST /save"]
+}
+
+// 本地有确定的 binder，但另一条分支委托给了未知协议：整条链仍属未检查。
+func TestAuditLocalBinderMustNotHideUnknownDelegate(t *testing.T) {
+	ep := auditContract(t, `
+func (h *Handle) Save(c *gin.Context) {
+ if c.GetBool("legacy") { h.loose(c); return }
+ var in req.Input
+ _ = c.ShouldBindWith(&in, wire.FormPost)
+}
+func (h *Handle) loose(c *gin.Context) { var in req.Input; _ = c.ShouldBind(&in) }
+`)
+	if ep.Protocol != "unknown" || ep.Reason == "" {
+		t.Fatalf("本地明确 binder 不得掩盖未知委托分支：%+v", ep)
+	}
+}
+
+// 未知协议藏在下沉一层委托里，同样不能被上层的确定 binder 洗白。
+func TestAuditNestedUnknownDelegateMustSurvive(t *testing.T) {
+	ep := auditContract(t, `
+func (h *Handle) Save(c *gin.Context) {
+ if c.GetBool("legacy") { h.bridge(c); return }
+ h.known(c)
+}
+func (h *Handle) bridge(c *gin.Context) { h.loose(c) }
+func (h *Handle) loose(c *gin.Context) { var in req.Input; _ = c.ShouldBind(&in) }
+func (h *Handle) known(c *gin.Context) { var in req.Input; _ = c.ShouldBindWith(&in, wire.FormPost) }
+`)
+	if ep.Protocol != "unknown" || ep.Reason == "" {
+		t.Fatalf("多层委托不得丢弃 unknown：%+v", ep)
+	}
+}
+
+// 骨架里先有一个无关的泛型调用 warm[R]()，不能把它当成 binder 绑定的类型参数。
+func TestAuditUnrelatedGenericCallMustNotChooseDTO(t *testing.T) {
+	ep := auditContract(t, `
+func warm[T any]() {}
+func runWrite[F any, R any](c *gin.Context, prepare func(*R), save func(*F)) {
+ warm[R]()
+ var in F
+ if err := c.ShouldBindWith(&in, wire.FormPost); err != nil { return }
+ save(&in)
+}
+func (h *Handle) Save(c *gin.Context) {
+ runWrite[req.Input, req.Output](c, func(*req.Output){}, func(*req.Input){})
+}
+`)
+	if ep.Protocol != "unknown" && ep.DTO != "example/internal/dto.Input" {
+		t.Fatalf("无关泛型调用不得替代实际 binder 的类型参数：%+v", ep)
+	}
+}
+
+// 泛型骨架里两条分支各自 binder 不同协议，不能只取第一个 binder 就当已确定。
+func TestAuditGenericBranchesMustNotChooseFirstProtocol(t *testing.T) {
+	ep := auditContract(t, `
+func bindJSON[T any](c *gin.Context) { var in T; _ = c.ShouldBindJSON(&in) }
+func bindForm[T any](c *gin.Context) { var in T; _ = c.ShouldBindWith(&in, wire.FormPost) }
+func runWrite[T any](c *gin.Context) {
+ if c.GetBool("json") { bindJSON[T](c) } else { bindForm[T](c) }
+}
+func (h *Handle) Save(c *gin.Context) { runWrite[req.Input](c) }
+`)
+	if ep.Protocol != "unknown" || ep.Reason == "" {
+		t.Fatalf("泛型多协议分支不得只取第一个 binder：%+v", ep)
+	}
+}
+
+// 没有分叉的 handler 不得凭空产出变体。
+func TestPlainHandlerProducesNoVariant(t *testing.T) {
+	root := writeSources(t, map[string]string{
+		"dto/request.go": "package dto\ntype SaveReq struct { ID string `form:\"id\"` }\n",
+		"http/handle.go": `package examplehttp
+import (
+ req "example/internal/dto"
+ wire "github.com/gin-gonic/gin/binding"
+ "github.com/gin-gonic/gin"
+)
+type Handle struct{}
+func (h *Handle) Save(c *gin.Context) {
+	var in req.SaveReq
+	if err := c.ShouldBindWith(&in, wire.FormPost); err != nil { return }
+}
+`,
+	})
+	index, err := scanSources(root, "example/internal")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ep := buildContracts([]route{
+		{Method: "POST", Path: "/save", Handler: "example/internal/http.(*Handle).Save-fm"},
+	}, index)["POST /save"]
+	if len(ep.Variants) != 0 {
+		t.Fatalf("无分叉的处理器不该产出变体：%+v", ep.Variants)
+	}
+}
+
+// 显式查询串绑定必须给出确定协议与 form tag 字段表。
+func TestExplicitQueryBindingDeclaresQueryProtocol(t *testing.T) {
+	root := writeSources(t, map[string]string{
+		"dto/request.go": "package dto\n" +
+			"type ListReq struct { Page int `form:\"page\"` }\n",
+		"http/handle.go": `package examplehttp
+import (
+ req "example/internal/dto"
+ "github.com/gin-gonic/gin"
+)
+type Handle struct{}
+func (h *Handle) List(c *gin.Context) {
+	var in req.ListReq
+	if err := c.ShouldBindQuery(&in); err != nil { return }
+}
+`,
+	})
+	index, err := scanSources(root, "example/internal")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ep := buildContracts([]route{
+		{Method: "POST", Path: "/list", Handler: "example/internal/http.(*Handle).List-fm"},
+	}, index)["POST /list"]
+	if ep.Protocol != "query" || ep.DTO != "example/internal/dto.ListReq" {
+		t.Fatalf("显式查询串应确定 query 协议：%+v", ep)
+	}
+	if len(ep.Fields) != 1 || ep.Fields[0].Name != "page" {
+		t.Fatalf("query 端点字段应取 form tag：%+v", ep.Fields)
+	}
+}
+
+// 完全读不到 body 的处理器只能报 nobody；它必须是正向证明（读 body 就退回）。
+func TestNoBinderEvidenceProvesNobodyOrRaw(t *testing.T) {
+	root := writeSources(t, map[string]string{
+		"http/handle.go": `package examplehttp
+import (
+ "io"
+ "github.com/gin-gonic/gin"
+)
+type Handle struct{}
+func (h *Handle) Logout(c *gin.Context) { c.Status(200) }
+func (h *Handle) Callback(c *gin.Context) { _, _ = io.ReadAll(io.LimitReader(c.Request.Body, 1024)) }
+func (h *Handle) Manual(c *gin.Context) { _ = c.PostForm("id") }
+func (h *Handle) Delegates(c *gin.Context) { h.Logout(c) }
+`,
+	})
+	index, err := scanSources(root, "example/internal")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := buildContracts([]route{
+		{Method: "POST", Path: "/logout", Handler: "example/internal/http.(*Handle).Logout-fm"},
+		{Method: "POST", Path: "/callback", Handler: "example/internal/http.(*Handle).Callback-fm"},
+		{Method: "POST", Path: "/manual", Handler: "example/internal/http.(*Handle).Manual-fm"},
+		{Method: "POST", Path: "/delegates", Handler: "example/internal/http.(*Handle).Delegates-fm"},
+	}, index)
+	if ep := got["POST /logout"]; ep.Protocol != "nobody" {
+		t.Fatalf("不读 body 的处理器应报 nobody：%+v", ep)
+	}
+	if ep := got["POST /callback"]; ep.Protocol != "raw" {
+		t.Fatalf("读原始字节的处理器应报 raw：%+v", ep)
+	}
+	if ep := got["POST /manual"]; ep.Protocol != "unknown" || ep.Reason == "" {
+		t.Fatalf("手工读表单仍未迁移，必须保持未检查：%+v", ep)
+	}
+	if ep := got["POST /delegates"]; ep.Protocol != "nobody" {
+		t.Fatalf("委托给不读 body 的处理器应报 nobody：%+v", ep)
 	}
 }

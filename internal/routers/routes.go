@@ -34,18 +34,38 @@ func SetupRoutesWithContext(ctx context.Context, router *gin.Engine, ready func(
 // 审计/契约工具要读「这一实例真正登记的绑定」，不能读包级默认实例：
 // 默认实例只服务于没有装配索引的模块单测。
 func SetupRoutesWithRegistry(ctx context.Context, router *gin.Engine, ready func() error) *mw.Registry {
+	a := newAssembly(ctx, router)
+	runAssembly(a, ready)
+	if a == nil {
+		return nil
+	}
+	return a.registry
+}
+
+// newAssembly 建立一次装配实例：登记索引、闸门与后台停止表都归这个实例持有。
+func newAssembly(ctx context.Context, router *gin.Engine) *assembly {
 	if router == nil {
 		return nil
 	}
 	if ctx == nil {
 		ctx = context.Background()
 	}
-
 	// 每次装配建一个登记索引：它随本次的 RouteGroup / 模块装配下发，冻结后只读。
 	// 包级 mw.Snapshot()/Reset() 只服务于没有装配索引的模块单测，
 	// 因此测试里的 Reset 不会清掉正在服务实例的索引。
 	a := &assembly{router: router, marks: newWiringMarks(), bgCtx: ctx, registry: mw.NewRegistry()}
+	// 权限目录与路由声明不一致时，实例必须拒绝接业务流量，而不是只在 /readyz 上
+	// 报 not_ready 却照常服务。闸门先于所有路由注册，最终状态在装配收尾时落定。
+	a.gate = &startupGate{}
+	router.Use(a.gate.middleware())
+	return a
+}
 
+// runAssembly 执行完整装配并在收尾时落定闸门；停止函数随装配实例返回。
+func runAssembly(a *assembly, ready func() error) {
+	if a == nil {
+		return
+	}
 	// 页面渲染的请求事实来源（CSRF / 授权菜单树）由应用注入 pkg/view。
 	wireAdminViewPort()
 	// 模板引擎侧的渲染作用域（取词 / 失败展开 / 导航投影）由应用注入根包。
@@ -53,8 +73,10 @@ func SetupRoutesWithRegistry(ctx context.Context, router *gin.Engine, ready func
 
 	a.buildFoundation(ready)
 	if a.db == nil {
-
-		return a.registry
+		// 没有数据库就没有业务路由可登记，也就没有权限目录可核对：
+		// 只装配了基础链路的实例（模板/静态资源测试）直接放行。
+		a.gate.settle(true)
+		return
 	}
 
 	a.buildAPIAndCoreCRUD()
@@ -73,13 +95,27 @@ func SetupRoutesWithRegistry(ctx context.Context, router *gin.Engine, ready func
 	a.mountAdminPages()
 	a.mountPublicFace()
 
-	// 全部路由与工具登记完成后才冻结：之后任何迟到注册都会明确 panic/报错，
-	// 不会出现「启动后目录还在悄悄长」的运行时重建。
+	// 全部路由与工具登记完成后先冻结：之后任何迟到注册都会明确 panic/报错。
 	a.registry.Freeze()
 	a.tools().Freeze()
 
+	// 先核对权限目录与真实鉴权映射，**通过后**才构造不可变权限查询并注入
+	// AI/MCP 两个执行入口。顺序反过来会把「尚未验证的绑定」提前注入成可用授权闭包；
+	// 核对失败时保持 nil，执行入口的校验闭包读到 nil 一律拒绝。
 	a.runSelfCheck()
-	return a.registry
+	if len(a.permProblems) == 0 {
+		a.aiRouteBindings = mw.BuildPermIndex(a.registry.Snapshot())
+	}
+	// 全部登记与核对完成后才打开闸门；不一致时保持拒绝业务流量。
+	a.gate.settle(len(a.permProblems) == 0)
+}
+
+// handle 把装配实例投影成交给调用方的句柄。
+func (a *assembly) handle() *Assembly {
+	if a == nil {
+		return nil
+	}
+	return &Assembly{registry: a.registry, gate: a.gate, stops: a.stopPatrols}
 }
 
 func setupStaticFace(router *gin.Engine) {

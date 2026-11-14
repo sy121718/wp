@@ -112,13 +112,17 @@ class FullScriptTest(unittest.TestCase):
             scripts.mkdir()
             shutil.copy2(GATE, scripts / GATE.name)
             # 只复制当前基座；门禁不依赖已经退役的编码器。
-            relative = 'internal/templates/static/js/ui/write-base.js'
+            relative = 'pkg/view/ui/assets/js/ui/write-base.js'
             dest = root / relative
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(ROOT / relative, dest)
             fixture = root / 'internal/templates/admin/fixture.html'
             fixture.parent.mkdir(parents=True)
             fixture.write_text(body, encoding='utf-8')
+            # 门禁现在同时扫公共 UI 与工具模板属主；夹具必须镜像真实布局，
+            # 否则「扫描根缺失」这条护栏会把夹具判红（护栏本身是对的）。
+            for shared in ('pkg/view/ui/templates', 'pkg/builder'):
+                (root / shared).mkdir(parents=True)
             if mutate:
                 mutate(root)
             return subprocess.run(['bash', str(scripts / GATE.name)], text=True, capture_output=True)
@@ -143,7 +147,7 @@ class FullScriptTest(unittest.TestCase):
     def test_reverse_registry_failure_changes_exit_code(self):
         for attr in ('data-write-builder', 'data-write-session', 'data-write-close'):
             def remove_consumer(root):
-                path = root / 'internal/templates/static/js/ui/write-base.js'
+                path = root / 'pkg/view/ui/assets/js/ui/write-base.js'
                 path.write_text(path.read_text(encoding='utf-8').replace(attr, 'removed-consumer'), encoding='utf-8')
             with self.subTest(attr=attr):
                 result = self.run_on(FORM + '>', remove_consumer)
