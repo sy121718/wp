@@ -9,8 +9,6 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"github.com/gin-gonic/gin/binding"
-	ginbinding "github.com/gin-gonic/gin/binding"
 	"gorm.io/gorm"
 
 	"go_wp/config"
@@ -22,6 +20,7 @@ import (
 	adminservice "go_wp/internal/module/admin/service"
 	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
 	"go_wp/pkg/auth"
+	"go_wp/pkg/binding"
 	"go_wp/pkg/bulkids"
 	"go_wp/pkg/captcha"
 	"go_wp/pkg/datarule"
@@ -970,8 +969,8 @@ func (h *AdminPagesHandle) MenusCreate(c *gin.Context) {
 // MenusUpdate 只绑定抽屉可编辑字段，未编辑字段保持原值。
 func (h *AdminPagesHandle) MenusUpdate(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var req admindto.MenuUpdateFormReq
-	if err := c.ShouldBindWith(&req, binding.FormPost); err != nil {
+	req, err := binding.ParseForm[admindto.MenuUpdateFormReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, adminErrScene, err)
 		return
 	}
@@ -1109,12 +1108,12 @@ func (h *AdminPagesHandle) PermissionsCreate(c *gin.Context) {
 // PermissionsUpdate 原生绑定完整编辑表单，结果由 Jet 输出。
 func (h *AdminPagesHandle) PermissionsUpdate(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var req admindto.PermUpdateReq
-	if err := c.ShouldBindWith(&req, binding.FormPost); err != nil {
+	req, err := binding.ParseForm[admindto.PermUpdateReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, adminErrScene, err)
 		return
 	}
-	if _, err := h.perms.PermUpdate(c.Request.Context(), &req); err != nil {
+	if _, err := h.perms.PermUpdate(c.Request.Context(), req); err != nil {
 		pageview.FailScene(c, "admin.write", err)
 		return
 	}
@@ -1491,10 +1490,10 @@ func rejectBulkDeleteOverLimit(c *gin.Context, ids []uint64) bool {
 }
 
 func bindAdminForm[T any](c *gin.Context) (*T, bool) {
-	var req T
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+	req, err := binding.ParseForm[T](c)
+	if err != nil {
 		response.ErrorStatusAuto(c, adminErrScene, adminenums.BadRequest())
 		return nil, false
 	}
-	return &req, true
+	return req, true
 }

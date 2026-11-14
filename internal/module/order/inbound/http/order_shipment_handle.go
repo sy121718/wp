@@ -4,7 +4,6 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	ginbinding "github.com/gin-gonic/gin/binding"
 
 	orderdto "go_wp/internal/module/order/dto"
 	orderenums "go_wp/internal/module/order/enums"
@@ -91,13 +90,13 @@ func (h *Handle) ListCarriers(c *gin.Context) {
 }
 
 func (h *Handle) CreateCarrier(c *gin.Context) {
-	var req orderdto.CarrierCreateReq
 	c.Header("Cache-Control", "no-store")
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+	req, err := binding.ParseForm[orderdto.CarrierCreateReq](c)
+	if err != nil {
 		orderWriteBadInput(c, orderenums.ErrInvalidParam)
 		return
 	}
-	if _, err := h.svc.CreateCarrier(c.Request.Context(), &req); err != nil {
+	if _, err := h.svc.CreateCarrier(c.Request.Context(), req); err != nil {
 		orderWriteFail(c, err)
 		return
 	}
@@ -105,13 +104,13 @@ func (h *Handle) CreateCarrier(c *gin.Context) {
 }
 
 func (h *Handle) UpdateCarrier(c *gin.Context) {
-	var req orderdto.CarrierUpdateReq
 	c.Header("Cache-Control", "no-store")
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+	req, err := binding.ParseForm[orderdto.CarrierUpdateReq](c)
+	if err != nil {
 		orderWriteBadInput(c, orderenums.ErrInvalidParam)
 		return
 	}
-	if _, err := h.svc.UpdateCarrier(c.Request.Context(), &req); err != nil {
+	if _, err := h.svc.UpdateCarrier(c.Request.Context(), req); err != nil {
 		orderWriteFail(c, err)
 		return
 	}
@@ -132,13 +131,13 @@ func (h *Handle) GetCurrencyRate(c *gin.Context) {
 }
 
 func (h *Handle) SetCurrencyRate(c *gin.Context) {
-	var req orderdto.SetRateReq
 	c.Header("Cache-Control", "no-store")
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+	req, err := binding.ParseForm[orderdto.SetRateReq](c)
+	if err != nil {
 		orderWriteBadInput(c, orderenums.ErrInvalidParam)
 		return
 	}
-	res, err := h.svc.SetRate(c.Request.Context(), &req)
+	res, err := h.svc.SetRate(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorAuto(c, 400, "order", err)
 		return

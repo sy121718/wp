@@ -25,8 +25,6 @@ import (
 	"go_wp/pkg/response"
 	"go_wp/pkg/utils"
 	pageview "go_wp/pkg/view"
-
-	ginbinding "github.com/gin-gonic/gin/binding"
 )
 
 type pagesAdminHandle struct {
@@ -268,8 +266,8 @@ func focusProjectID(projects []projectcontract.ProjectResp, want string) (id str
 }
 
 func (h *pagesAdminHandle) CreateProject(c *gin.Context) {
-	var req pagedto.ProjectCreateFormReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+	req, err := binding.ParseForm[pagedto.ProjectCreateFormReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, pageErrScene, pageenums.Err(pageenums.ErrInvalidParam))
 		return
 	}
@@ -290,8 +288,8 @@ func (h *pagesAdminHandle) CreateProject(c *gin.Context) {
 }
 
 func (h *pagesAdminHandle) CreatePage(c *gin.Context) {
-	var req pagedto.PageCreateFormReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+	req, err := binding.ParseForm[pagedto.PageCreateFormReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, pageErrScene, pageenums.Err(pageenums.ErrInvalidParam))
 		return
 	}
@@ -326,8 +324,8 @@ func (h *pagesAdminHandle) CreatePage(c *gin.Context) {
 }
 
 func (h *pagesAdminHandle) DeletePage(c *gin.Context) {
-	var req pagedto.PageDeleteFormReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+	req, err := binding.ParseForm[pagedto.PageDeleteFormReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, pageErrScene, pageenums.Err(pageenums.ErrInvalidParam))
 		return
 	}
@@ -349,8 +347,8 @@ func (h *pagesAdminHandle) DeletePage(c *gin.Context) {
 // 原始 ids 原样交给 service（去重、上限、形状与引用复核都归 service），
 // 控制器不预过滤也不统计跳过数 —— 要么全成，要么整批拒绝。
 func (h *pagesAdminHandle) PagesBulkDelete(c *gin.Context) {
-	var form pagedto.PageBulkDeleteFormReq
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[pagedto.PageBulkDeleteFormReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, pageErrScene, pageenums.Err(pageenums.ErrInvalidParam))
 		return
 	}
@@ -604,8 +602,8 @@ func (h *Handle) ListRevisions(c *gin.Context) {
 
 func (h *pagesAdminHandle) HistoryPanel(c *gin.Context) {
 	// 工作台面板发的是 urlencoded 表单（app-panels/history.js），只读 body、不合并 query。
-	var req pagedto.PageHistoryRestoreFormReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+	req, err := binding.ParseForm[pagedto.PageHistoryRestoreFormReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, pageErrScene, err)
 		return
 	}
@@ -632,8 +630,8 @@ func (h *pagesAdminHandle) HistoryPanel(c *gin.Context) {
 
 func (h *pagesAdminHandle) HistoryRestore(c *gin.Context) {
 	ctx := c.Request.Context()
-	var req pagedto.PageHistoryRestoreFormReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+	req, err := binding.ParseForm[pagedto.PageHistoryRestoreFormReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, pageErrScene, err)
 		return
 	}

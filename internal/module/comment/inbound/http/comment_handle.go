@@ -6,7 +6,6 @@ import (
 	"go_wp/pkg/binding"
 
 	"github.com/gin-gonic/gin"
-	ginbinding "github.com/gin-gonic/gin/binding"
 
 	"go_wp/internal/middleware/builtin"
 	"go_wp/pkg/facing"
@@ -39,17 +38,17 @@ func (h *Handle) AdminList(c *gin.Context) {
 
 // Review 接收标准表单，成功后由 Jet 返回完整结果句。
 //
-// 绑定是原生显式的（FormPost，只读 body）；失败进入本端点声明的 HTML 失败片段，
+// 绑定走 binding.ParseForm（只读 body）；失败进入本端点声明的 HTML 失败片段，
 // 不写 JSON —— 路由声明的是 HTMLFragment。
 func (h *Handle) Review(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var req commentdto.ReviewReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+	req, err := binding.ParseForm[commentdto.ReviewReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, "comment", facing.New(commentenums.ErrInvalidParam))
 		return
 	}
 	req.ReviewerID = builtin.CurrentUserID(c)
-	res, err := h.svc.Review(c.Request.Context(), &req)
+	res, err := h.svc.Review(c.Request.Context(), req)
 	if err != nil {
 		pageview.FailScene(c, "comment", err)
 		return

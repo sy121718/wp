@@ -4,7 +4,6 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	ginbinding "github.com/gin-gonic/gin/binding"
 
 	"go_wp/internal/middleware/builtin"
 	admincontract "go_wp/internal/module/admin/contract"
@@ -231,8 +230,8 @@ func (h *Handle) AdminRoleList(c *gin.Context) {
 // AdminRoleSave 保存管理员角色，返回 Jet 成功或错误片段。
 func (h *Handle) AdminRoleSave(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var req admindto.AdminRoleSaveReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+	req, err := binding.ParseForm[admindto.AdminRoleSaveReq](c)
+	if err != nil {
 		view.FailStatus(c, http.StatusBadRequest, adminErrScene, err)
 		return
 	}
@@ -241,7 +240,7 @@ func (h *Handle) AdminRoleSave(c *gin.Context) {
 		view.FailStatus(c, http.StatusUnauthorized, adminErrScene, adminenums.Err(adminenums.MsgUnauthorized))
 		return
 	}
-	if _, err := h.admin.AdminRoleSave(c.Request.Context(), &req); err != nil {
+	if _, err := h.admin.AdminRoleSave(c.Request.Context(), req); err != nil {
 		view.FailScene(c, "admin.write", err)
 		return
 	}
@@ -264,8 +263,8 @@ func (h *Handle) AdminMenuList(c *gin.Context) {
 // AdminMenuSave 保存管理员直接菜单授权，返回 Jet 片段。
 func (h *Handle) AdminMenuSave(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var req admindto.AdminMenuSaveReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+	req, err := binding.ParseForm[admindto.AdminMenuSaveReq](c)
+	if err != nil {
 		view.FailStatus(c, http.StatusBadRequest, adminErrScene, err)
 		return
 	}
@@ -274,7 +273,7 @@ func (h *Handle) AdminMenuSave(c *gin.Context) {
 		view.FailStatus(c, http.StatusUnauthorized, adminErrScene, adminenums.Err(adminenums.MsgUnauthorized))
 		return
 	}
-	if _, err := h.admin.AdminMenuSave(c.Request.Context(), &req); err != nil {
+	if _, err := h.admin.AdminMenuSave(c.Request.Context(), req); err != nil {
 		view.FailScene(c, "admin.write", err)
 		return
 	}
@@ -723,8 +722,8 @@ func (h *Handle) RoleMenuList(c *gin.Context) {
 // RoleMenuSave 保存角色菜单授权，返回 Jet 成功或错误片段。
 func (h *Handle) RoleMenuSave(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var req admindto.RoleMenuSaveReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+	req, err := binding.ParseForm[admindto.RoleMenuSaveReq](c)
+	if err != nil {
 		view.FailStatus(c, http.StatusBadRequest, adminErrScene, err)
 		return
 	}
@@ -733,7 +732,7 @@ func (h *Handle) RoleMenuSave(c *gin.Context) {
 		view.FailStatus(c, http.StatusUnauthorized, adminErrScene, adminenums.Err(adminenums.MsgUnauthorized))
 		return
 	}
-	if _, err := h.role.RoleMenuSave(c.Request.Context(), &req); err != nil {
+	if _, err := h.role.RoleMenuSave(c.Request.Context(), req); err != nil {
 		view.FailScene(c, "admin.write", err)
 		return
 	}

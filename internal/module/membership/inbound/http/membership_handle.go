@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	ginbinding "github.com/gin-gonic/gin/binding"
 
 	membershipcontract "go_wp/internal/module/membership/contract"
 	membershipdto "go_wp/internal/module/membership/dto"
@@ -48,12 +47,12 @@ func runMembershipWrite[F any, R any](c *gin.Context,
 
 // bindMembershipForm 绑定会员写表单；失败已由这里写出 400。
 func bindMembershipForm[T any](c *gin.Context) *T {
-	var form T
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[T](c)
+	if err != nil {
 		membershipFormFail(c, membershipenums.Err(membershipenums.ErrInvalidParam))
 		return nil
 	}
-	return &form
+	return form
 }
 
 // membershipUint 把表单里的无符号整数字串转成数值；空串或非法值返回错误。

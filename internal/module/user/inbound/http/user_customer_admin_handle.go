@@ -8,11 +8,11 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	ginbinding "github.com/gin-gonic/gin/binding"
 
 	usercontract "go_wp/internal/module/user/contract"
 	userdto "go_wp/internal/module/user/dto"
 	userenums "go_wp/internal/module/user/enums"
+	"go_wp/pkg/binding"
 	"go_wp/pkg/response"
 	"go_wp/pkg/sitetz"
 	"go_wp/pkg/utils"
@@ -98,8 +98,8 @@ func (h *CustomerHandle) GetCustomer(c *gin.Context) {
 // SetCustomerStatus 接收标准表单：客户与目标状态都来自页面控件，结果由 Jet 返回。
 func (h *CustomerHandle) SetCustomerStatus(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var form userdto.CustomerStatusForm
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[userdto.CustomerStatusForm](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, userCustomerErrScene, userenums.Err(userenums.ErrInvalidParam))
 		return
 	}
@@ -118,8 +118,8 @@ func (h *CustomerHandle) SetCustomerStatus(c *gin.Context) {
 
 func (h *CustomerHandle) UnlockCustomer(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var form userdto.CustomerUnlockForm
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[userdto.CustomerUnlockForm](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, userCustomerErrScene, userenums.Err(userenums.ErrInvalidParam))
 		return
 	}

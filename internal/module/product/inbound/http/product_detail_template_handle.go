@@ -5,7 +5,6 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	ginbinding "github.com/gin-gonic/gin/binding"
 
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	presentationcontract "go_wp/internal/module/presentation/contract"
@@ -36,21 +35,21 @@ func (h *ProductHandle) SetDetailTemplateModePort(port presentationcontract.Deta
 }
 
 func (h *ProductHandle) ReapplyDetailTemplatePreset(c *gin.Context) {
-	var req productdto.DetailTemplateModeReapplyReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+	req, err := binding.ParseForm[productdto.DetailTemplateModeReapplyReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
 		return
 	}
-	detailTemplateFinish(c, productservice.ReapplyDetailTemplatePreset(c.Request.Context(), h.modePort, &req))
+	detailTemplateFinish(c, productservice.ReapplyDetailTemplatePreset(c.Request.Context(), h.modePort, req))
 }
 
 func (h *ProductHandle) RollbackDetailTemplateDocument(c *gin.Context) {
-	var req productdto.DetailTemplateModeRollbackReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+	req, err := binding.ParseForm[productdto.DetailTemplateModeRollbackReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
 		return
 	}
-	detailTemplateFinish(c, productservice.RollbackDetailTemplateDocument(c.Request.Context(), h.modePort, &req))
+	detailTemplateFinish(c, productservice.RollbackDetailTemplateDocument(c.Request.Context(), h.modePort, req))
 }
 
 func detailTemplateFinish(c *gin.Context, err error) {
@@ -62,8 +61,8 @@ func detailTemplateFinish(c *gin.Context, err error) {
 }
 
 func (h *ProductHandle) CreateDetailTemplate(c *gin.Context) {
-	var req productdto.DetailTemplateCreateReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+	req, err := binding.ParseForm[productdto.DetailTemplateCreateReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
 		return
 	}
@@ -71,8 +70,8 @@ func (h *ProductHandle) CreateDetailTemplate(c *gin.Context) {
 }
 
 func (h *ProductHandle) PublishDetailTemplate(c *gin.Context) {
-	var req productdto.DetailTemplatePublishReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+	req, err := binding.ParseForm[productdto.DetailTemplatePublishReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
 		return
 	}
@@ -80,8 +79,8 @@ func (h *ProductHandle) PublishDetailTemplate(c *gin.Context) {
 }
 
 func (h *ProductHandle) ApplyDetailTemplate(c *gin.Context) {
-	var req productdto.DetailTemplateApplyReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+	req, err := binding.ParseForm[productdto.DetailTemplateApplyReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
 		return
 	}
@@ -89,8 +88,8 @@ func (h *ProductHandle) ApplyDetailTemplate(c *gin.Context) {
 }
 
 func (h *ProductHandle) UpdateDetailTemplateURL(c *gin.Context) {
-	var req productdto.DetailTemplateUpdateURLReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+	req, err := binding.ParseForm[productdto.DetailTemplateUpdateURLReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
 		return
 	}
@@ -183,8 +182,8 @@ func (h *ProductPageHandle) ProductDetailTemplatePage(c *gin.Context) {
 
 func (h *ProductPageHandle) ProductDetailTemplatePreview(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var req productdto.DetailTemplatePreviewReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+	req, err := binding.ParseForm[productdto.DetailTemplatePreviewReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, productenums.Err(productenums.ErrInvalidParam))
 		return
 	}

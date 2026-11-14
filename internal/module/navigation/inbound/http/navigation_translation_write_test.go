@@ -488,9 +488,9 @@ func TestNavigationUpdateReadsBodyOnce(t *testing.T) {
 	}
 	body := text[start : start+end]
 
-	// update 端点只有一种确定协议：标准表单。JSON 输入属于独立端点，不在这里分流。
-	if !strings.Contains(body, "c.ShouldBindWith(&req, ginbinding.FormPost)") {
-		t.Fatal("update 必须经 c.ShouldBindWith(&req, ginbinding.FormPost) 绑定")
+	// update 端点只有一种确定协议：标准表单，统一走 binding.ParseForm。JSON 输入属于独立端点，不在这里分流。
+	if !strings.Contains(body, "binding.ParseForm[navigationdto.UpdateReq](c)") {
+		t.Fatal("update 必须经 binding.ParseForm[navigationdto.UpdateReq](c) 绑定")
 	}
 	for _, banned := range []string{"navigationWriteBody", "json.Unmarshal", "ShouldBindJSON", "BindBody", "application/json"} {
 		if strings.Contains(body, banned) {

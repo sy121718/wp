@@ -6,11 +6,11 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	ginbinding "github.com/gin-gonic/gin/binding"
 	"gorm.io/gorm"
 
 	admindto "go_wp/internal/module/admin/dto"
 	adminenums "go_wp/internal/module/admin/enums"
+	"go_wp/pkg/binding"
 	"go_wp/pkg/bulkids"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/view"
@@ -23,8 +23,8 @@ func adminI18nHandle() *adminI18nEntryHandle { return adminI18nHandleInst }
 // I18nEntryWrite 绑定页面表单，调用词库端口并交 Jet 输出操作结果。
 func (h *adminI18nEntryHandle) I18nEntryWrite(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var req admindto.I18nWriteReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+	req, err := binding.ParseForm[admindto.I18nWriteReq](c)
+	if err != nil {
 		view.FailStatus(c, http.StatusBadRequest, adminErrScene, err)
 		return
 	}
@@ -34,11 +34,11 @@ func (h *adminI18nEntryHandle) I18nEntryWrite(c *gin.Context) {
 	}
 	switch req.Action {
 	case "create", "update":
-		h.i18nWriteUpsert(c, req)
+		h.i18nWriteUpsert(c, *req)
 	case "delete":
-		h.i18nWriteDelete(c, req)
+		h.i18nWriteDelete(c, *req)
 	case "bulkDelete":
-		h.i18nWriteBulkDelete(c, req)
+		h.i18nWriteBulkDelete(c, *req)
 	}
 }
 

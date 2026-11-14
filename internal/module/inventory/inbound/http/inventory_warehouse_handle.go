@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	ginbinding "github.com/gin-gonic/gin/binding"
 
 	inventorydto "go_wp/internal/module/inventory/dto"
 	inventoryenums "go_wp/internal/module/inventory/enums"
@@ -43,8 +42,8 @@ func (h *inventoryPageHandle) InventoryWarehousesPage(c *gin.Context) {
 }
 
 func (h *inventoryPageHandle) InventoryWarehouseCreate(c *gin.Context) {
-	var form inventorydto.WarehouseFormReq
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[inventorydto.WarehouseFormReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, inventoryErrScene, err)
 		return
 	}
@@ -57,8 +56,8 @@ func (h *inventoryPageHandle) InventoryWarehouseCreate(c *gin.Context) {
 }
 
 func (h *inventoryPageHandle) InventoryWarehouseUpdate(c *gin.Context) {
-	var form inventorydto.WarehouseFormReq
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[inventorydto.WarehouseFormReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, inventoryErrScene, err)
 		return
 	}
@@ -71,8 +70,8 @@ func (h *inventoryPageHandle) InventoryWarehouseUpdate(c *gin.Context) {
 }
 
 func (h *inventoryPageHandle) InventoryWarehouseDefault(c *gin.Context) {
-	var form inventorydto.WarehouseDefaultFormReq
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[inventorydto.WarehouseDefaultFormReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, inventoryErrScene, err)
 		return
 	}
@@ -87,8 +86,8 @@ func (h *inventoryPageHandle) InventoryWarehouseDefault(c *gin.Context) {
 }
 
 func (h *inventoryPageHandle) InventoryWarehouseDelete(c *gin.Context) {
-	var form inventorydto.WarehouseDeleteFormReq
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[inventorydto.WarehouseDeleteFormReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, inventoryErrScene, err)
 		return
 	}
@@ -102,8 +101,8 @@ func (h *inventoryPageHandle) InventoryWarehouseDelete(c *gin.Context) {
 }
 
 func (h *inventoryPageHandle) InventoryWarehousesBulkDelete(c *gin.Context) {
-	var form inventorydto.WarehouseBulkFormReq
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[inventorydto.WarehouseBulkFormReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, inventoryErrScene, err)
 		return
 	}

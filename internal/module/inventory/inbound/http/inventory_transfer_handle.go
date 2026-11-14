@@ -5,7 +5,6 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	ginbinding "github.com/gin-gonic/gin/binding"
 
 	"go_wp/internal/middleware/builtin"
 	inventorydto "go_wp/internal/module/inventory/dto"
@@ -221,15 +220,15 @@ func runTransferWrite[F, R any](c *gin.Context,
 	call func(context.Context, *F) (R, error),
 	success func(*gin.Context)) {
 	c.Header("Cache-Control", "no-store")
-	var req F
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+	req, err := binding.ParseForm[F](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, inventoryErrScene, err)
 		return
 	}
 	if prepare != nil {
-		prepare(c, &req)
+		prepare(c, req)
 	}
-	if _, err := call(c.Request.Context(), &req); err != nil {
+	if _, err := call(c.Request.Context(), req); err != nil {
 		pageview.FailScene(c, inventoryErrScene, err)
 		return
 	}

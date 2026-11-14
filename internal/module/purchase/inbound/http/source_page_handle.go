@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	ginbinding "github.com/gin-gonic/gin/binding"
 	"net/http"
 
 	projectcontract "go_wp/internal/module/project/contract"
@@ -199,8 +198,8 @@ func (h *sourcePageHandle) fillSourceRows(c *gin.Context, f *sourcePageFilter) {
 }
 
 func (h *sourcePageHandle) SourceCreate(c *gin.Context) {
-	var form purchasedto.SourceFormReq
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[purchasedto.SourceFormReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, purchaseErrScene, purchaseenums.Err(purchaseenums.ErrInvalidParam))
 		return
 	}
@@ -217,8 +216,8 @@ func (h *sourcePageHandle) SourceCreate(c *gin.Context) {
 }
 
 func (h *sourcePageHandle) SourceUpdate(c *gin.Context) {
-	var form purchasedto.SourceFormReq
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[purchasedto.SourceFormReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, purchaseErrScene, purchaseenums.Err(purchaseenums.ErrInvalidParam))
 		return
 	}
@@ -236,8 +235,8 @@ func (h *sourcePageHandle) SourceUpdate(c *gin.Context) {
 }
 
 func (h *sourcePageHandle) SourceDelete(c *gin.Context) {
-	var form purchasedto.SourceDeleteFormReq
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[purchasedto.SourceDeleteFormReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, purchaseErrScene, purchaseenums.Err(purchaseenums.ErrInvalidParam))
 		return
 	}
@@ -251,8 +250,8 @@ func (h *sourcePageHandle) SourceDelete(c *gin.Context) {
 }
 
 func (h *sourcePageHandle) SourcesBulkDelete(c *gin.Context) {
-	var form purchasedto.SourceBulkFormReq
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[purchasedto.SourceBulkFormReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, purchaseErrScene, purchaseenums.Err(purchaseenums.ErrInvalidParam))
 		return
 	}

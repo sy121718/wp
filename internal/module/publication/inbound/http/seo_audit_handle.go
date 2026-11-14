@@ -6,10 +6,10 @@ import (
 
 	pubdto "go_wp/internal/module/publication/dto"
 	pubservice "go_wp/internal/module/publication/service"
+	"go_wp/pkg/binding"
 	pageview "go_wp/pkg/view"
 
 	"github.com/gin-gonic/gin"
-	ginbinding "github.com/gin-gonic/gin/binding"
 )
 
 type SeoAuditHandle struct {
@@ -22,12 +22,12 @@ func NewSeoAuditHandle(run func(context.Context, string) (pubservice.AuditResult
 
 // bindSeoAuditReq 绑定 SEO 审计表单；失败已由这里写出 400。
 func bindSeoAuditReq(c *gin.Context) (*pubdto.SeoAuditReq, bool) {
-	var req pubdto.SeoAuditReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+	req, err := binding.ParseForm[pubdto.SeoAuditReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, "publication", err)
 		return nil, false
 	}
-	return &req, true
+	return req, true
 }
 
 // SeoAudit 接收标准表单，结果由 Jet 片段渲染成结论区。

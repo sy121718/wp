@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	ginbinding "github.com/gin-gonic/gin/binding"
 
 	"go_wp/internal/middleware/builtin"
 	aicontract "go_wp/internal/module/ai/contract"
@@ -65,8 +64,8 @@ func (h *SessionPageHandle) FabAskStream(c *gin.Context) {
 		return
 	}
 
-	var form aidto.FabAskFormReq
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[aidto.FabAskFormReq](c)
+	if err != nil {
 		writeFabStreamError(c, response.MsgText(c, facing.Msg{Key: aienums.MsgFabEmptyInput}))
 		return
 	}
@@ -192,13 +191,13 @@ func (h *Handle) GetProvider(c *gin.Context) {
 
 func (h *Handle) SaveProvider(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var req aidto.SaveProviderReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+	req, err := binding.ParseForm[aidto.SaveProviderReq](c)
+	if err != nil {
 		aiWriteBadInput(c)
 		return
 	}
 	req.UpdateBy = userID(c)
-	provider, err := h.svc.SaveProvider(c.Request.Context(), &req)
+	provider, err := h.svc.SaveProvider(c.Request.Context(), req)
 	if err != nil {
 		aiWriteFail(c, err)
 		return
@@ -213,8 +212,12 @@ func (h *Handle) SaveProvider(c *gin.Context) {
 
 func (h *Handle) DeleteProvider(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var req aidto.ProviderDeleteReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil || req.ID <= 0 {
+	req, err := binding.ParseForm[aidto.ProviderDeleteReq](c)
+	if err != nil {
+		aiWriteBadInput(c)
+		return
+	}
+	if req.ID <= 0 {
 		aiWriteBadInput(c)
 		return
 	}
@@ -227,13 +230,13 @@ func (h *Handle) DeleteProvider(c *gin.Context) {
 
 func (h *Handle) SetProviderStatus(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var req aidto.SetStatusReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+	req, err := binding.ParseForm[aidto.SetStatusReq](c)
+	if err != nil {
 		aiWriteBadInput(c)
 		return
 	}
 	req.UpdateBy = userID(c)
-	provider, err := h.svc.SetProviderStatus(c.Request.Context(), &req)
+	provider, err := h.svc.SetProviderStatus(c.Request.Context(), req)
 	if err != nil {
 		aiWriteFail(c, err)
 		return
@@ -273,13 +276,13 @@ func (h *Handle) SaveModels(c *gin.Context) {
 
 func (h *Handle) RestoreDefaultModels(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var req aidto.ProviderActionReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+	req, err := binding.ParseForm[aidto.ProviderActionReq](c)
+	if err != nil {
 		aiWriteBadInput(c)
 		return
 	}
 	req.UpdateBy = userID(c)
-	provider, err := h.svc.RestoreDefaultModels(c.Request.Context(), &req)
+	provider, err := h.svc.RestoreDefaultModels(c.Request.Context(), req)
 	if err != nil {
 		aiWriteFail(c, err)
 		return
@@ -289,13 +292,13 @@ func (h *Handle) RestoreDefaultModels(c *gin.Context) {
 
 func (h *Handle) FetchAvailableModels(c *gin.Context) {
 	// 供应商卡片是标准表单（hx-post），不是 JSON 对象。
-	var req aidto.ProviderActionReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+	req, err := binding.ParseForm[aidto.ProviderActionReq](c)
+	if err != nil {
 		response.ParamError(c)
 		return
 	}
 	req.UpdateBy = userID(c)
-	result, err := h.svc.FetchAvailableModels(c.Request.Context(), &req)
+	result, err := h.svc.FetchAvailableModels(c.Request.Context(), req)
 	if err != nil {
 		aiErrExit(c, err)
 		return
@@ -309,13 +312,13 @@ func (h *Handle) FetchAvailableModels(c *gin.Context) {
 // 服务端不再自己决定「弹窗怎么显示」—— 前端按 provider / candidates / existing 重绘。
 func (h *Handle) ModelCandidates(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var req aidto.ProviderActionReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+	req, err := binding.ParseForm[aidto.ProviderActionReq](c)
+	if err != nil {
 		aiWriteBadInput(c)
 		return
 	}
 	req.UpdateBy = userID(c)
-	result, err := h.svc.FetchModelCandidates(c.Request.Context(), &req)
+	result, err := h.svc.FetchModelCandidates(c.Request.Context(), req)
 	if err != nil {
 		aiWriteFail(c, err)
 		return
@@ -336,8 +339,8 @@ func (h *Handle) ModelCandidates(c *gin.Context) {
 // 去重 / 上限 / 乐观锁 / 「一个都没加」都归 service；这里只做绑定、调一次、出口。
 func (h *Handle) AppendModels(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var req aidto.AppendModelsReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+	req, err := binding.ParseForm[aidto.AppendModelsReq](c)
+	if err != nil {
 		aiWriteBadInput(c)
 		return
 	}
@@ -745,13 +748,13 @@ func (h *SessionHandle) Append(c *gin.Context) {
 // 这里只绑定、调一次、出口。
 func (h *SessionHandle) Send(c *gin.Context) {
 	// 会话续写由页面表单提交（标准表单编码，图片以 JSON 字符串字段随表单走）。
-	var req aidto.SendMessageReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+	req, err := binding.ParseForm[aidto.SendMessageReq](c)
+	if err != nil {
 		response.ParamError(c)
 		return
 	}
 	req.UserID = userID(c)
-	result, err := h.svc.SendMessage(c.Request.Context(), req)
+	result, err := h.svc.SendMessage(c.Request.Context(), *req)
 	if err != nil {
 		aiErrExit(c, err)
 		return
@@ -903,8 +906,8 @@ func (h *TokenHandle) Create(c *gin.Context) {
 		return
 	}
 	c.Header("Cache-Control", "no-store")
-	var body tokenCreateBody
-	if err := c.ShouldBindWith(&body, ginbinding.FormPost); err != nil {
+	body, err := binding.ParseForm[tokenCreateBody](c)
+	if err != nil {
 		aiWriteBadInput(c)
 		return
 	}
@@ -937,8 +940,12 @@ func (h *TokenHandle) Revoke(c *gin.Context) {
 		return
 	}
 	c.Header("Cache-Control", "no-store")
-	var body tokenRevokeBody
-	if err := c.ShouldBindWith(&body, ginbinding.FormPost); err != nil || body.ID <= 0 {
+	body, err := binding.ParseForm[tokenRevokeBody](c)
+	if err != nil {
+		aiWriteBadInput(c)
+		return
+	}
+	if body.ID <= 0 {
 		// id 是必填入口参数：缺了是参数错误（400），不能落进「找不到这个 id」那条路。
 		// 传一个不存在的 id 仍然走 404 —— 两种情况的语义不同，前端要能分辨。
 		aiWriteBadInput(c)
@@ -965,8 +972,8 @@ func (h *TokenHandle) SetMcpEnabled(c *gin.Context) {
 		return
 	}
 	c.Header("Cache-Control", "no-store")
-	var body mcpToggleBody
-	if err := c.ShouldBindWith(&body, ginbinding.FormPost); err != nil {
+	body, err := binding.ParseForm[mcpToggleBody](c)
+	if err != nil {
 		aiWriteBadInput(c)
 		return
 	}

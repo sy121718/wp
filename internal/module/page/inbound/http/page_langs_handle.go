@@ -9,9 +9,8 @@ import (
 	pagedto "go_wp/internal/module/page/dto"
 	pageenums "go_wp/internal/module/page/enums"
 	pageservice "go_wp/internal/module/page/service"
+	"go_wp/pkg/binding"
 	"go_wp/pkg/logger"
-
-	ginbinding "github.com/gin-gonic/gin/binding"
 	pageview "go_wp/pkg/view"
 	"net/http"
 )
@@ -25,8 +24,8 @@ func (h *pagesAdminHandle) PageLangRestore(c *gin.Context) {
 }
 
 func (h *pagesAdminHandle) PageLangRepublish(c *gin.Context) {
-	var req pagedto.PageLangFormReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+	req, err := binding.ParseForm[pagedto.PageLangFormReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, pageErrScene, pageenums.Err(pageenums.ErrInvalidParam))
 		return
 	}
@@ -57,14 +56,13 @@ func (h *pagesAdminHandle) republishLang(ctx context.Context, pageID, lang strin
 }
 
 func (h *pagesAdminHandle) applyPageLangChange(c *gin.Context, restore bool) {
-	var req pagedto.PageLangFormReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+	req, err := binding.ParseForm[pagedto.PageLangFormReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, pageErrScene, pageenums.Err(pageenums.ErrInvalidParam))
 		return
 	}
 	pageID := strings.TrimSpace(req.PageID)
 	lang := strings.TrimSpace(req.Lang)
-	var err error
 	if restore {
 		err = h.pages.RestorePageLang(c.Request.Context(), pageID, lang)
 	} else {

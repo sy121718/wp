@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	ginbinding "github.com/gin-gonic/gin/binding"
 	"go_wp/internal/middleware/builtin"
 	blockcontract "go_wp/internal/module/block/contract"
 	navigationcontract "go_wp/internal/module/navigation/contract"
@@ -17,6 +16,7 @@ import (
 	navigationenums "go_wp/internal/module/navigation/enums"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/pkg/backpath"
+	"go_wp/pkg/binding"
 	"go_wp/pkg/facing"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
@@ -324,15 +324,15 @@ func navEditEchoOf(form *navigationdto.PanelForm) navEditEcho {
 
 // bindNavEditForm 绑定导航编辑抽屉的表单；失败已按本域出口写出响应。
 //
-// 绑定是原生显式的（ShouldBindWith FormPost，只读 body），不是同义绑定包装；
+// 绑定走 binding.ParseForm（只读 body），不是同义绑定包装；
 // 「缺少 id / 版本戳」的既有回显与提示仍由调用方决定。
 func (h *navigationPageHandle) bindNavEditForm(c *gin.Context) (*navigationdto.PanelForm, bool) {
-	var form navigationdto.PanelForm
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[navigationdto.PanelForm](c)
+	if err != nil {
 		c.String(http.StatusBadRequest, "%s", response.MsgText(c, navInvalidParamMsg))
 		return nil, false
 	}
-	return &form, true
+	return form, true
 }
 
 // navEditMissingID 处理「表单没有 id」：HTMX 请求重渲抽屉，普通请求给提示。
@@ -440,8 +440,8 @@ func (h *navigationPageHandle) PanelSet(c *gin.Context) {
 
 func (h *navigationPageHandle) PanelCreate(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var form navigationdto.PanelForm
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[navigationdto.PanelForm](c)
+	if err != nil {
 		c.String(http.StatusBadRequest, "%s", response.MsgText(c, navInvalidParamMsg))
 		return
 	}

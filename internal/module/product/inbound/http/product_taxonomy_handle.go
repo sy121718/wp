@@ -5,7 +5,6 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	ginbinding "github.com/gin-gonic/gin/binding"
 
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
@@ -116,22 +115,22 @@ func (h *ProductHandle) DeleteCategory(c *gin.Context) {
 
 func (h *ProductHandle) BulkDeleteCategories(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var form productdto.BulkDeleteReq
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[productdto.BulkDeleteReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
 		return
 	}
-	h.bulkDeleteResult(c, h.svc.BulkDeleteProductCategories, &form)
+	h.bulkDeleteResult(c, h.svc.BulkDeleteProductCategories, form)
 }
 
 func (h *ProductHandle) BulkDeleteBrands(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var form productdto.BulkDeleteReq
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[productdto.BulkDeleteReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
 		return
 	}
-	h.bulkDeleteResult(c, h.svc.BulkDeleteProductBrands, &form)
+	h.bulkDeleteResult(c, h.svc.BulkDeleteProductBrands, form)
 }
 
 // bulkDeleteResult 是批量删除的公共出口：调用方已经完成请求绑定。

@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	ginbinding "github.com/gin-gonic/gin/binding"
 	blockenums "go_wp/internal/module/block/enums"
 	contentcontract "go_wp/internal/module/content/contract"
 	contentdto "go_wp/internal/module/content/dto"
@@ -26,6 +25,7 @@ import (
 	presentationenums "go_wp/internal/module/presentation/enums"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/internal/siteurl"
+	"go_wp/pkg/binding"
 	"go_wp/pkg/builder/core"
 	"go_wp/pkg/builder/richdoc"
 	bulkids "go_wp/pkg/bulkids"
@@ -214,8 +214,8 @@ type articleCreatedView struct {
 
 func (h *articlePageHandle) ArticleCreate(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var form contentdto.ArticleFormReq
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[contentdto.ArticleFormReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, articleErrScene, contentenums.Err(contentenums.ErrInvalidParam))
 		return
 	}
@@ -242,8 +242,8 @@ func (h *articlePageHandle) ArticleCreate(c *gin.Context) {
 
 func (h *articlePageHandle) ArticleUpdate(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var form contentdto.ArticleFormReq
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[contentdto.ArticleFormReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, articleErrScene, contentenums.Err(contentenums.ErrInvalidParam))
 		return
 	}
@@ -266,8 +266,8 @@ func (h *articlePageHandle) ArticleUpdate(c *gin.Context) {
 }
 
 func (h *articlePageHandle) ArticleDelete(c *gin.Context) {
-	var req contentdto.ArticleDeleteReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+	req, err := binding.ParseForm[contentdto.ArticleDeleteReq](c)
+	if err != nil {
 		articleListJump(c, false, articleMissingIDMsg)
 		return
 	}
@@ -283,8 +283,8 @@ func (h *articlePageHandle) ArticleDelete(c *gin.Context) {
 }
 
 func (h *articlePageHandle) ArticlesBulkDelete(c *gin.Context) {
-	var req contentdto.ArticleBulkDeleteReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+	req, err := binding.ParseForm[contentdto.ArticleBulkDeleteReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, articleErrScene, contentenums.Err(contentenums.ErrInvalidParam))
 		return
 	}
@@ -317,8 +317,8 @@ func articleBulkDeleteResult(deleted, skipped int) articleMsg {
 }
 
 func (h *articlePageHandle) ArticleScorePanel(c *gin.Context) {
-	var form contentdto.ArticleFormReq
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[contentdto.ArticleFormReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, articleErrScene, contentenums.Err(contentenums.ErrInvalidParam))
 		return
 	}
@@ -473,8 +473,8 @@ func (h *articlePageHandle) ArticleImportPreview(c *gin.Context) {
 }
 
 func (h *articlePageHandle) ArticleImportCreate(c *gin.Context) {
-	var form contentdto.ArticleImportReq
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[contentdto.ArticleImportReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, articleErrScene, contentenums.Err(contentenums.ErrInvalidParam))
 		return
 	}
@@ -541,8 +541,12 @@ type articleImportedView struct {
 // bindArticleImportID 绑定导入预览的 id：预览按钮是 POST（带左列表单），
 // 但同一片段也可能被 GET 直接打开，所以回落到查询串。
 func bindArticleImportID(c *gin.Context) string {
-	var req contentdto.ArticleImportReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+	req, err := binding.ParseForm[contentdto.ArticleImportReq](c)
+	if err != nil {
+		// 预览片段也可能被 GET 直接打开：无表单编码时才回落到查询串。
+		if errors.Is(err, binding.ErrFormContentType) {
+			return strings.TrimSpace(c.Query("id"))
+		}
 		return ""
 	}
 	if req.ID != "" {
@@ -1009,8 +1013,8 @@ func (h *articleTranslationHandle) ArticleTranslations(c *gin.Context) {
 
 // translationsQuery 读译文的取数参数（筛选 / 分页）；POST 时先看表单里的预置值。
 func translationsQuery(c *gin.Context) *contentdto.ArticleTranslationsSaveReq {
-	req := &contentdto.ArticleTranslationsSaveReq{}
-	if err := c.ShouldBindWith(req, ginbinding.FormPost); err != nil || c.Request.Method != http.MethodPost {
+	req, err := binding.ParseForm[contentdto.ArticleTranslationsSaveReq](c)
+	if err != nil || c.Request.Method != http.MethodPost {
 		return &contentdto.ArticleTranslationsSaveReq{
 			Lang:    strings.TrimSpace(c.Query("lang")),
 			Project: strings.TrimSpace(c.Query("project")),
@@ -1023,15 +1027,15 @@ func translationsQuery(c *gin.Context) *contentdto.ArticleTranslationsSaveReq {
 
 func (h *articleTranslationHandle) SaveArticleTranslations(c *gin.Context) {
 	ctx := c.Request.Context()
-	var req contentdto.ArticleTranslationsSaveReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+	req, err := binding.ParseForm[contentdto.ArticleTranslationsSaveReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, articleErrScene, contentenums.Err(contentenums.ErrInvalidParam))
 		return
 	}
 	req.Normalize()
 	lang, projectID, keyword := req.Lang, req.Project, req.Keyword
 	page, _ := strconv.Atoi(req.Page)
-	data := h.build(c, &req)
+	data := h.build(c, req)
 
 	if page != data.Page || req.Limit != strconv.Itoa(data.Limit) {
 		data.Errors = []articleMsg{articleTranslationMsg(contentenums.TranslationsErrPageChanged, "列表页码已变化，请刷新后重试")}
@@ -1587,8 +1591,8 @@ var articlePublishFallbacks = map[string]string{
 }
 
 func (h *articlePageHandle) ArticlePublish(c *gin.Context) {
-	var form contentdto.ArticlePublishReq
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[contentdto.ArticlePublishReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, articleErrScene, contentenums.Err(contentenums.ErrInvalidParam))
 		return
 	}
@@ -1621,8 +1625,8 @@ func (h *articlePageHandle) ArticlePublish(c *gin.Context) {
 }
 
 func (h *articlePageHandle) ArticleRebuild(c *gin.Context) {
-	var form contentdto.ArticleDeleteReq
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[contentdto.ArticleDeleteReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, articleErrScene, contentenums.Err(contentenums.ErrInvalidParam))
 		return
 	}
@@ -1639,8 +1643,8 @@ func (h *articlePageHandle) ArticleRebuild(c *gin.Context) {
 }
 
 func (h *articlePageHandle) ArticleUpdateURL(c *gin.Context) {
-	var form contentdto.ArticleURLReq
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[contentdto.ArticleURLReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, articleErrScene, contentenums.Err(contentenums.ErrInvalidParam))
 		return
 	}

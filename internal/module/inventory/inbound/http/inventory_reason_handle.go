@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	ginbinding "github.com/gin-gonic/gin/binding"
 
 	inventorydto "go_wp/internal/module/inventory/dto"
 	inventoryenums "go_wp/internal/module/inventory/enums"
@@ -43,8 +42,8 @@ func (h *inventoryPageHandle) InventoryReasonsPage(c *gin.Context) {
 }
 
 func (h *inventoryPageHandle) InventoryReasonCreate(c *gin.Context) {
-	var form inventorydto.ReasonFormReq
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[inventorydto.ReasonFormReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, inventoryErrScene, err)
 		return
 	}
@@ -57,8 +56,8 @@ func (h *inventoryPageHandle) InventoryReasonCreate(c *gin.Context) {
 }
 
 func (h *inventoryPageHandle) InventoryReasonUpdate(c *gin.Context) {
-	var form inventorydto.ReasonFormReq
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[inventorydto.ReasonFormReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, inventoryErrScene, err)
 		return
 	}
@@ -71,8 +70,8 @@ func (h *inventoryPageHandle) InventoryReasonUpdate(c *gin.Context) {
 }
 
 func (h *inventoryPageHandle) InventoryReasonsBulkStatus(c *gin.Context) {
-	var form inventorydto.ReasonBulkFormReq
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[inventorydto.ReasonBulkFormReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, inventoryErrScene, err)
 		return
 	}

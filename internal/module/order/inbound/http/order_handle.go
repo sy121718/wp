@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	ginbinding "github.com/gin-gonic/gin/binding"
 
 	"go_wp/internal/middleware/builtin"
 	ordercontract "go_wp/internal/module/order/contract"
@@ -99,8 +98,12 @@ func (h *Handle) ChangeStatus(c *gin.Context) {
 		h.orderStatusBulk(c)
 		return
 	}
-	var form orderdto.OrderStatusForm
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil || form.OrderID == 0 {
+	form, err := binding.ParseForm[orderdto.OrderStatusForm](c)
+	if err != nil {
+		orderWriteBadInput(c, orderenums.ErrInvalidParam)
+		return
+	}
+	if form.OrderID == 0 {
 		orderWriteBadInput(c, orderenums.ErrInvalidParam)
 		return
 	}
@@ -124,8 +127,12 @@ func (h *Handle) CancelOrder(c *gin.Context) {
 		h.orderCancelBulk(c)
 		return
 	}
-	var form orderdto.OrderCancelForm
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil || form.OrderID == 0 {
+	form, err := binding.ParseForm[orderdto.OrderCancelForm](c)
+	if err != nil {
+		orderWriteBadInput(c, orderenums.ErrInvalidParam)
+		return
+	}
+	if form.OrderID == 0 {
 		orderWriteBadInput(c, orderenums.ErrInvalidParam)
 		return
 	}
@@ -141,8 +148,12 @@ func (h *Handle) CancelOrder(c *gin.Context) {
 
 func (h *Handle) RefundOrder(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var form orderdto.OrderRefundForm
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil || form.OrderID == 0 {
+	form, err := binding.ParseForm[orderdto.OrderRefundForm](c)
+	if err != nil {
+		orderWriteBadInput(c, orderenums.ErrInvalidParam)
+		return
+	}
+	if form.OrderID == 0 {
 		orderWriteBadInput(c, orderenums.ErrInvalidParam)
 		return
 	}
@@ -223,15 +234,15 @@ func (h *Handle) GetCoupon(c *gin.Context) {
 
 func (h *Handle) CreateCoupon(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var req orderdto.CouponSaveReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+	req, err := binding.ParseForm[orderdto.CouponSaveReq](c)
+	if err != nil {
 		orderWriteBadInput(c, orderenums.ErrInvalidParam)
 		return
 	}
 	req.StartsAt = couponTimeInputValue(req.StartsAt)
 	req.EndsAt = couponTimeInputValue(req.EndsAt)
-	applyCouponOperator(c, &req)
-	if _, err := h.svc.CreateCoupon(c.Request.Context(), &req); err != nil {
+	applyCouponOperator(c, req)
+	if _, err := h.svc.CreateCoupon(c.Request.Context(), req); err != nil {
 		orderWriteFail(c, err)
 		return
 	}
@@ -244,15 +255,19 @@ func (h *Handle) UpdateCoupon(c *gin.Context) {
 		h.couponToggleBulk(c)
 		return
 	}
-	var req orderdto.CouponSaveReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil || req.ID == 0 {
+	req, err := binding.ParseForm[orderdto.CouponSaveReq](c)
+	if err != nil {
+		orderWriteBadInput(c, orderenums.ErrInvalidParam)
+		return
+	}
+	if req.ID == 0 {
 		orderWriteBadInput(c, orderenums.ErrInvalidParam)
 		return
 	}
 	req.StartsAt = couponTimeInputValue(req.StartsAt)
 	req.EndsAt = couponTimeInputValue(req.EndsAt)
-	applyCouponOperator(c, &req)
-	if _, err := h.svc.UpdateCoupon(c.Request.Context(), &req); err != nil {
+	applyCouponOperator(c, req)
+	if _, err := h.svc.UpdateCoupon(c.Request.Context(), req); err != nil {
 		orderWriteFail(c, err)
 		return
 	}
@@ -265,8 +280,12 @@ func (h *Handle) DeleteCoupon(c *gin.Context) {
 		h.couponDeleteBulk(c)
 		return
 	}
-	var form orderdto.CouponDeleteForm
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil || form.ID == 0 {
+	form, err := binding.ParseForm[orderdto.CouponDeleteForm](c)
+	if err != nil {
+		orderWriteBadInput(c, orderenums.ErrInvalidParam)
+		return
+	}
+	if form.ID == 0 {
 		orderWriteBadInput(c, orderenums.ErrInvalidParam)
 		return
 	}
@@ -374,8 +393,12 @@ func (h *Handle) ApproveReturn(c *gin.Context) {
 		h.returnBulkApprove(c)
 		return
 	}
-	var form orderdto.ReturnReviewForm
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil || form.ReturnID == 0 {
+	form, err := binding.ParseForm[orderdto.ReturnReviewForm](c)
+	if err != nil {
+		orderWriteBadInput(c, orderenums.ErrInvalidParam)
+		return
+	}
+	if form.ReturnID == 0 {
 		orderWriteBadInput(c, orderenums.ErrInvalidParam)
 		return
 	}
@@ -400,8 +423,12 @@ func (h *Handle) RejectReturn(c *gin.Context) {
 		h.returnBulkReject(c)
 		return
 	}
-	var form orderdto.ReturnReviewForm
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil || form.ReturnID == 0 {
+	form, err := binding.ParseForm[orderdto.ReturnReviewForm](c)
+	if err != nil {
+		orderWriteBadInput(c, orderenums.ErrInvalidParam)
+		return
+	}
+	if form.ReturnID == 0 {
 		orderWriteBadInput(c, orderenums.ErrInvalidParam)
 		return
 	}
@@ -416,8 +443,12 @@ func (h *Handle) RejectReturn(c *gin.Context) {
 
 func (h *Handle) ReceiveReturn(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var form orderdto.ReturnReceiveForm
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil || form.ReturnID == 0 {
+	form, err := binding.ParseForm[orderdto.ReturnReceiveForm](c)
+	if err != nil {
+		orderWriteBadInput(c, orderenums.ErrInvalidParam)
+		return
+	}
+	if form.ReturnID == 0 {
 		orderWriteBadInput(c, orderenums.ErrInvalidParam)
 		return
 	}
@@ -440,8 +471,12 @@ func (h *Handle) ReceiveReturn(c *gin.Context) {
 
 func (h *Handle) UpdateOrderNote(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var form orderdto.OrderNoteForm
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil || form.OrderID == 0 {
+	form, err := binding.ParseForm[orderdto.OrderNoteForm](c)
+	if err != nil {
+		orderWriteBadInput(c, orderenums.ErrInvalidParam)
+		return
+	}
+	if form.OrderID == 0 {
 		orderWriteBadInput(c, orderenums.ErrInvalidParam)
 		return
 	}

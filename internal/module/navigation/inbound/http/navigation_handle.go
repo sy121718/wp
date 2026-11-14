@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	ginbinding "github.com/gin-gonic/gin/binding"
 
 	navigationcontract "go_wp/internal/module/navigation/contract"
 	navigationdto "go_wp/internal/module/navigation/dto"
@@ -34,12 +33,12 @@ func (h *Handle) SetTranslationWriteService(s navigationcontract.TranslationWrit
 func (h *Handle) Create(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
 	// 普通界面提交是标准表单；「从来源批量加入」是另一个端点（CreateFromSource）。
-	var req navigationdto.CreateReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+	req, err := binding.ParseForm[navigationdto.CreateReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, navigationErrScene, navigationenums.Err(navigationenums.ErrInvalidParam))
 		return
 	}
-	if _, err := h.svc.Create(c.Request.Context(), &req); err != nil {
+	if _, err := h.svc.Create(c.Request.Context(), req); err != nil {
 		pageview.FailStatus(c, navigationErrorStatus(err), navigationErrScene, err)
 		return
 	}
@@ -50,12 +49,12 @@ func (h *Handle) Create(c *gin.Context) {
 // 换位走 /api/navigation/move，译文批量写走 /api/navigation/translations。
 func (h *Handle) Update(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var req navigationdto.UpdateReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+	req, err := binding.ParseForm[navigationdto.UpdateReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, navigationErrScene, navigationenums.Err(navigationenums.ErrInvalidParam))
 		return
 	}
-	if _, err := h.svc.Update(c.Request.Context(), &req); err != nil {
+	if _, err := h.svc.Update(c.Request.Context(), req); err != nil {
 		pageview.FailStatus(c, navigationErrorStatus(err), navigationErrScene, err)
 		return
 	}
@@ -65,12 +64,12 @@ func (h *Handle) Update(c *gin.Context) {
 // Move 是上移 / 下移：标准表单（id / dir / projectId）。
 func (h *Handle) Move(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var req navigationdto.SwapMoveReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+	req, err := binding.ParseForm[navigationdto.SwapMoveReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, navigationErrScene, navigationenums.Err(navigationenums.ErrInvalidParam))
 		return
 	}
-	if _, err := h.svc.SwapMove(c.Request.Context(), &req); err != nil {
+	if _, err := h.svc.SwapMove(c.Request.Context(), req); err != nil {
 		pageview.FailStatus(c, navigationErrorStatus(err), navigationErrScene, err)
 		return
 	}
@@ -157,13 +156,13 @@ func (h *Handle) List(c *gin.Context) {
 func (h *Handle) Delete(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
 	// 一个端点一种形状：单条用 id，批量是独立端点 DeleteBulk。
-	// 单条分支用显式 binder：字段与 DeleteReq 的 form tag 一一对应，形状由 binding 判。
-	var formReq navigationdto.DeleteReq
-	if err := c.ShouldBindWith(&formReq, ginbinding.FormPost); err != nil {
+	// 单条分支用显式表单入口：字段与 DeleteReq 的 form tag 一一对应，形状由 binding 判。
+	formReq, err := binding.ParseForm[navigationdto.DeleteReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, navigationErrScene, navigationenums.Err(navigationenums.ErrInvalidParam))
 		return
 	}
-	if err := h.svc.Delete(c.Request.Context(), &formReq); err != nil {
+	if err := h.svc.Delete(c.Request.Context(), formReq); err != nil {
 		pageview.FailStatus(c, navigationErrorStatus(err), navigationErrScene, err)
 		return
 	}

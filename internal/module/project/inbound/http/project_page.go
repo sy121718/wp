@@ -13,7 +13,6 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	ginbinding "github.com/gin-gonic/gin/binding"
 	"golang.org/x/crypto/bcrypt"
 
 	blockcontract "go_wp/internal/module/block/contract"
@@ -24,6 +23,7 @@ import (
 	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
 	"go_wp/internal/siteurl"
 	"go_wp/pkg/backpath"
+	"go_wp/pkg/binding"
 	"go_wp/pkg/builder"
 	"go_wp/pkg/facing"
 	"go_wp/pkg/i18n"
@@ -448,8 +448,8 @@ func siteURLPatterns(values map[string]string) (map[string]string, error) {
 }
 
 func (h *siteSettingsAdminHandle) SaveSiteSettings(c *gin.Context) {
-	var form projectdto.SiteSettingsForm
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[projectdto.SiteSettingsForm](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, "project", err)
 		return
 	}
@@ -740,12 +740,12 @@ func parseLocaleRows(form *projectdto.LocalesForm) []localeRow {
 }
 
 func (h *siteSettingsAdminHandle) LocaleRowsFragment(c *gin.Context) {
-	var form projectdto.LocalesForm
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[projectdto.LocalesForm](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, "project", err)
 		return
 	}
-	rows := parseLocaleRows(&form)
+	rows := parseLocaleRows(form)
 	switch strings.TrimSpace(form.Action) {
 	case "add":
 		lang := strings.TrimSpace(form.NewLang)
@@ -771,8 +771,8 @@ func (h *siteSettingsAdminHandle) LocaleRowsFragment(c *gin.Context) {
 }
 
 func (h *siteSettingsAdminHandle) SaveSiteLocales(c *gin.Context) {
-	var form projectdto.LocalesForm
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[projectdto.LocalesForm](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, "project", err)
 		return
 	}
@@ -788,7 +788,7 @@ func (h *siteSettingsAdminHandle) SaveSiteLocales(c *gin.Context) {
 	if err != nil {
 		logger.Scene("settings").With("project", projectID).Error(err, "读取语言清单失败，按已变更处理")
 	}
-	rows := parseLocaleRows(&form)
+	rows := parseLocaleRows(form)
 	req := &projectdto.LocalesSaveReq{ProjectID: projectID, Locales: make([]projectdto.LocaleItem, 0, len(rows))}
 	for _, r := range rows {
 		enabled := r.Enabled
@@ -983,8 +983,8 @@ func (h *themeAdminHandle) ThemeManage(c *gin.Context) {
 }
 
 func (h *themeAdminHandle) CreateTheme(c *gin.Context) {
-	var form projectdto.ThemeCreateReq
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[projectdto.ThemeCreateReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, "project", err)
 		return
 	}
@@ -1017,8 +1017,13 @@ func (h *themeAdminHandle) CreateTheme(c *gin.Context) {
 }
 
 func (h *themeAdminHandle) ActivateTheme(c *gin.Context) {
-	var form projectdto.ThemeActivateReq
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil || form.ID == "" {
+	form, err := binding.ParseForm[projectdto.ThemeActivateReq](c)
+	if err != nil {
+		projectJump(c, false, projectMsgOf(projectenums.ErrThemeIDRequired, "缺少主题 id"),
+			themesBack(c), themesBackMsg)
+		return
+	}
+	if form.ID == "" {
 		projectJump(c, false, projectMsgOf(projectenums.ErrThemeIDRequired, "缺少主题 id"),
 			themesBack(c), themesBackMsg)
 		return
@@ -1118,8 +1123,13 @@ func themeSnapshots(settings json.RawMessage) (themeJSON, structureJSON json.Raw
 }
 
 func (h *themeAdminHandle) DeleteTheme(c *gin.Context) {
-	var form projectdto.ThemeActivateReq
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil || form.ID == "" {
+	form, err := binding.ParseForm[projectdto.ThemeActivateReq](c)
+	if err != nil {
+		projectJump(c, false, projectMsgOf(projectenums.ErrThemeIDRequired, "缺少主题 id"),
+			themesBack(c), themesBackMsg)
+		return
+	}
+	if form.ID == "" {
 		projectJump(c, false, projectMsgOf(projectenums.ErrThemeIDRequired, "缺少主题 id"),
 			themesBack(c), themesBackMsg)
 		return
@@ -1682,9 +1692,9 @@ func (h *themeAdminHandle) loadThemeSettings(c *gin.Context, themeID string) *th
 
 func (h *themeAdminHandle) SaveThemeSettings(c *gin.Context) {
 	// 主表单绑定成显式 DTO：点号键逐字映射（gin 的 form tag 按字面匹配，不折嵌套路径）。
-	// 普通 urlencoded 表单用 Gin 原生 FormPost，失败不写响应，仍由本域页面出口给 400。
-	var form projectdto.ThemeSettingsFormReq
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	// 普通 urlencoded 表单走 binding.ParseForm（只读 body），失败不写响应，仍由本域页面出口给 400。
+	form, err := binding.ParseForm[projectdto.ThemeSettingsFormReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, "project", err)
 		return
 	}
@@ -1770,7 +1780,7 @@ func (h *themeAdminHandle) SaveThemeSettings(c *gin.Context) {
 		},
 	}
 
-	slotTemplates, slotErr := themeSlotTemplateFormValues(&form, data.SlotTemplates)
+	slotTemplates, slotErr := themeSlotTemplateFormValues(form, data.SlotTemplates)
 	if slotErr != nil {
 		themeSettingsFailPage(c, data, http.StatusBadRequest,
 			projectErrMsg(c, "theme", projectenums.MsgThemeSettingsInvalid, slotErr), nil, nil)
@@ -1781,7 +1791,7 @@ func (h *themeAdminHandle) SaveThemeSettings(c *gin.Context) {
 		ThemeSettings: *ts,
 		HeaderBlockID: strings.TrimSpace(form.HeaderBlockID),
 		FooterBlockID: strings.TrimSpace(form.FooterBlockID),
-		Slots:         themeSlotsFromForm(&form),
+		Slots:         themeSlotsFromForm(form),
 
 		// 结构模板键的「哨兵 + 空串 = 主动解绑」语义保留在原归并函数里，只把读取值换成 DTO 字段。
 		HeaderTemplateID: structureTemplateFormValue(form.StructureTemplateFields, form.HeaderTemplateID, data.HeaderTemplateID),

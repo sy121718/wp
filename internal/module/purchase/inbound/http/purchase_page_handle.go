@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	ginbinding "github.com/gin-gonic/gin/binding"
 	"github.com/google/uuid"
 	"net/http"
 
@@ -189,8 +188,8 @@ func (h *purchasePageHandle) fillPurchaseOrders(c *gin.Context, f *purchaseOrder
 }
 
 func (h *purchasePageHandle) PurchaseCreate(c *gin.Context) {
-	var form purchasedto.PurchaseCreateFormReq
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[purchasedto.PurchaseCreateFormReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, purchaseErrScene, purchaseenums.Err(purchaseenums.ErrInvalidParam))
 		return
 	}
@@ -203,8 +202,8 @@ func (h *purchasePageHandle) PurchaseCreate(c *gin.Context) {
 }
 
 func (h *purchasePageHandle) PurchaseUpdate(c *gin.Context) {
-	var form purchasedto.PurchaseCreateFormReq
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[purchasedto.PurchaseCreateFormReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, purchaseErrScene, purchaseenums.Err(purchaseenums.ErrInvalidParam))
 		return
 	}
@@ -227,8 +226,8 @@ func (h *purchasePageHandle) PurchaseUpdate(c *gin.Context) {
 }
 
 func (h *purchasePageHandle) PurchaseReceipt(c *gin.Context) {
-	var form purchasedto.PurchaseReceiptFormReq
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[purchasedto.PurchaseReceiptFormReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, purchaseErrScene, purchaseenums.Err(purchaseenums.ErrInvalidParam))
 		return
 	}
@@ -240,8 +239,8 @@ func (h *purchasePageHandle) PurchaseReceipt(c *gin.Context) {
 }
 
 func (h *purchasePageHandle) PurchaseProduction(c *gin.Context) {
-	var form purchasedto.ProductionFormReq
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[purchasedto.ProductionFormReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, purchaseErrScene, purchaseenums.Err(purchaseenums.ErrInvalidParam))
 		return
 	}
@@ -253,8 +252,8 @@ func (h *purchasePageHandle) PurchaseProduction(c *gin.Context) {
 }
 
 func (h *purchasePageHandle) PurchaseFinish(c *gin.Context) {
-	var form purchasedto.PurchaseStatusFormReq
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[purchasedto.PurchaseStatusFormReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, purchaseErrScene, purchaseenums.Err(purchaseenums.ErrInvalidParam))
 		return
 	}
@@ -266,8 +265,8 @@ func (h *purchasePageHandle) PurchaseFinish(c *gin.Context) {
 }
 
 func (h *purchasePageHandle) PurchaseCancel(c *gin.Context) {
-	var form purchasedto.PurchaseStatusFormReq
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[purchasedto.PurchaseStatusFormReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, purchaseErrScene, purchaseenums.Err(purchaseenums.ErrInvalidParam))
 		return
 	}
@@ -279,8 +278,8 @@ func (h *purchasePageHandle) PurchaseCancel(c *gin.Context) {
 }
 
 func (h *purchasePageHandle) PurchasePlace(c *gin.Context) {
-	var form purchasedto.PurchaseStatusFormReq
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[purchasedto.PurchaseStatusFormReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, purchaseErrScene, purchaseenums.Err(purchaseenums.ErrInvalidParam))
 		return
 	}
@@ -292,8 +291,8 @@ func (h *purchasePageHandle) PurchasePlace(c *gin.Context) {
 }
 
 func (h *purchasePageHandle) PurchaseException(c *gin.Context) {
-	var form purchasedto.PurchaseStatusFormReq
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[purchasedto.PurchaseStatusFormReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, purchaseErrScene, purchaseenums.Err(purchaseenums.ErrInvalidParam))
 		return
 	}
@@ -305,8 +304,8 @@ func (h *purchasePageHandle) PurchaseException(c *gin.Context) {
 }
 
 func (h *purchasePageHandle) PurchaseResume(c *gin.Context) {
-	var form purchasedto.PurchaseStatusFormReq
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[purchasedto.PurchaseStatusFormReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, purchaseErrScene, purchaseenums.Err(purchaseenums.ErrInvalidParam))
 		return
 	}

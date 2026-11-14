@@ -12,7 +12,6 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	ginbinding "github.com/gin-gonic/gin/binding"
 
 	mailcontract "go_wp/internal/module/mail/contract"
 	maildto "go_wp/internal/module/mail/dto"
@@ -136,8 +135,8 @@ func triggerOptions(selected string) []OptionResp {
 
 func (h *mailPageHandle) MailAutomationStatus(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var form maildto.MailAutomationStatusForm
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[maildto.MailAutomationStatusForm](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, mailErrScene, mailenums.Err(mailenums.ErrInvalidParam))
 		return
 	}
@@ -153,8 +152,8 @@ func (h *mailPageHandle) MailAutomationStatus(c *gin.Context) {
 
 func (h *mailPageHandle) MailAutomationDelete(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var form maildto.MailIDForm
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[maildto.MailIDForm](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, mailErrScene, mailenums.Err(mailenums.ErrInvalidParam))
 		return
 	}
@@ -167,8 +166,8 @@ func (h *mailPageHandle) MailAutomationDelete(c *gin.Context) {
 
 func (h *mailPageHandle) MailAutomationsBulkDelete(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var form maildto.MailIDsForm
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[maildto.MailIDsForm](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, mailErrScene, mailenums.Err(mailenums.ErrInvalidParam))
 		return
 	}
@@ -204,8 +203,8 @@ func (h *mailPageHandle) MailAutomationRunDetail(c *gin.Context) {
 
 func (h *mailPageHandle) MailAutomationTick(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var form maildto.MailAutomationTickForm
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	_, err := binding.ParseForm[maildto.MailAutomationTickForm](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, mailErrScene, mailenums.Err(mailenums.ErrInvalidParam))
 		return
 	}
@@ -370,8 +369,8 @@ func mailCampaignsErrData(c *gin.Context, err error) *CampaignsPageResp {
 
 func (h *mailPageHandle) MailCampaignSave(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var form maildto.MailCampaignSaveForm
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[maildto.MailCampaignSaveForm](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, mailErrScene, mailenums.Err(mailenums.ErrInvalidParam))
 		return
 	}
@@ -392,8 +391,8 @@ func (h *mailPageHandle) MailCampaignSave(c *gin.Context) {
 
 func (h *mailPageHandle) MailCampaignStart(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var form maildto.MailCampaignStartForm
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[maildto.MailCampaignStartForm](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, mailErrScene, mailenums.Err(mailenums.ErrInvalidParam))
 		return
 	}
@@ -408,8 +407,8 @@ func (h *mailPageHandle) MailCampaignStart(c *gin.Context) {
 
 func (h *mailPageHandle) MailCampaignDelete(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var form maildto.MailIDForm
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[maildto.MailIDForm](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, mailErrScene, mailenums.Err(mailenums.ErrInvalidParam))
 		return
 	}
@@ -471,8 +470,8 @@ func (h *mailPageHandle) MailCampaignReportJSON(c *gin.Context) {
 
 func (h *mailPageHandle) MailCampaignsBulkDelete(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var form maildto.MailIDsForm
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[maildto.MailIDsForm](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, mailErrScene, mailenums.Err(mailenums.ErrInvalidParam))
 		return
 	}
@@ -590,8 +589,8 @@ func mailContactsErrData(c *gin.Context, err error) *ContactsPageResp {
 
 func (h *mailPageHandle) MailContactImport(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var form maildto.MailContactImportForm
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[maildto.MailContactImportForm](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, mailErrScene, mailenums.Err(mailenums.ErrInvalidParam))
 		return
 	}
@@ -611,8 +610,8 @@ func (h *mailPageHandle) MailContactImport(c *gin.Context) {
 
 func (h *mailPageHandle) MailContactStatus(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var form maildto.MailContactStatusForm
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[maildto.MailContactStatusForm](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, mailErrScene, mailenums.Err(mailenums.ErrInvalidParam))
 		return
 	}
@@ -630,8 +629,8 @@ func (h *mailPageHandle) MailContactStatus(c *gin.Context) {
 
 func (h *mailPageHandle) MailContactsBulkStatus(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var form maildto.MailContactBulkStatusForm
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[maildto.MailContactBulkStatusForm](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, mailErrScene, mailenums.Err(mailenums.ErrInvalidParam))
 		return
 	}
@@ -722,8 +721,8 @@ func mailPageErrData(c *gin.Context, err error) *AccountsPageResp {
 
 func (h *mailPageHandle) MailAccountSave(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var form maildto.MailAccountSaveForm
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[maildto.MailAccountSaveForm](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, mailErrScene, mailenums.Err(mailenums.ErrInvalidParam))
 		return
 	}
@@ -742,7 +741,6 @@ func (h *mailPageHandle) MailAccountSave(c *gin.Context) {
 		Encryption:  form.Encryption,
 		RatePerHour: int(mailIDOfText(form.RatePerHour)),
 	}
-	var err error
 	if req.ID > 0 {
 		_, err = h.mail.UpdateAccount(c.Request.Context(), req)
 	} else {
@@ -757,8 +755,8 @@ func (h *mailPageHandle) MailAccountSave(c *gin.Context) {
 
 func (h *mailPageHandle) MailAccountDelete(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var form maildto.MailIDForm
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[maildto.MailIDForm](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, mailErrScene, mailenums.Err(mailenums.ErrInvalidParam))
 		return
 	}
@@ -771,8 +769,8 @@ func (h *mailPageHandle) MailAccountDelete(c *gin.Context) {
 
 func (h *mailPageHandle) MailAccountDefault(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var form maildto.MailIDForm
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[maildto.MailIDForm](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, mailErrScene, mailenums.Err(mailenums.ErrInvalidParam))
 		return
 	}
@@ -785,8 +783,8 @@ func (h *mailPageHandle) MailAccountDefault(c *gin.Context) {
 
 func (h *mailPageHandle) MailAccountTest(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var form maildto.MailAccountTestForm
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[maildto.MailAccountTestForm](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, mailErrScene, mailenums.Err(mailenums.ErrInvalidParam))
 		return
 	}
@@ -813,8 +811,8 @@ func (h *mailPageHandle) MailAccountTest(c *gin.Context) {
 
 func (h *mailPageHandle) MailTemplateSave(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var form maildto.MailTemplateSaveForm
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[maildto.MailTemplateSaveForm](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, mailErrScene, mailenums.Err(mailenums.ErrInvalidParam))
 		return
 	}
@@ -836,8 +834,8 @@ func (h *mailPageHandle) MailTemplateSave(c *gin.Context) {
 
 func (h *mailPageHandle) MailTemplateDelete(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var form maildto.MailTemplateDeleteForm
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[maildto.MailTemplateDeleteForm](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, mailErrScene, mailenums.Err(mailenums.ErrInvalidParam))
 		return
 	}
@@ -868,8 +866,8 @@ func (h *mailPageHandle) MailMarketingRedirect(c *gin.Context) {
 
 func (h *mailPageHandle) MailAccountsBulkDelete(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var form maildto.MailIDsForm
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[maildto.MailIDsForm](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, mailErrScene, mailenums.Err(mailenums.ErrInvalidParam))
 		return
 	}
@@ -886,8 +884,8 @@ func (h *mailPageHandle) MailAccountsBulkDelete(c *gin.Context) {
 
 func (h *mailPageHandle) MailTemplatesBulkDelete(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var form maildto.MailIDsForm
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[maildto.MailIDsForm](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, mailErrScene, mailenums.Err(mailenums.ErrInvalidParam))
 		return
 	}

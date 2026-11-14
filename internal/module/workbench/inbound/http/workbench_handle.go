@@ -3,8 +3,6 @@ package workbenchhttp
 import (
 	"context"
 
-	ginbinding "github.com/gin-gonic/gin/binding"
-
 	"go_wp/internal/middleware/builtin"
 	json "go_wp/pkg/jsonx"
 	"net/http"
@@ -16,6 +14,7 @@ import (
 	workbenchdto "go_wp/internal/module/workbench/dto"
 	workbenchenums "go_wp/internal/module/workbench/enums"
 	workbenchservice "go_wp/internal/module/workbench/service"
+	"go_wp/pkg/binding"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
 	seoscore "go_wp/pkg/seo"
@@ -40,8 +39,8 @@ func (h *Handle) InspectorNavigationCreate(c *gin.Context) {
 		return
 	}
 	// 检查器发起的是 urlencoded 表单（editor-app/host.js），只读 body、不合并 query。
-	var req workbenchdto.NavigationCreateReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+	req, err := binding.ParseForm[workbenchdto.NavigationCreateReq](c)
+	if err != nil {
 		response.ParamError(c)
 		return
 	}
@@ -67,8 +66,8 @@ func (h *Handle) InspectorNavigationCreate(c *gin.Context) {
 }
 
 func (h *Handle) SEOScore(c *gin.Context) {
-	var req workbenchdto.SEOScoreReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+	req, err := binding.ParseForm[workbenchdto.SEOScoreReq](c)
+	if err != nil {
 		response.ParamError(c)
 		return
 	}

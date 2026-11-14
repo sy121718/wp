@@ -5,10 +5,10 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	ginbinding "github.com/gin-gonic/gin/binding"
 
 	orderdto "go_wp/internal/module/order/dto"
 	orderenums "go_wp/internal/module/order/enums"
+	"go_wp/pkg/binding"
 	pageview "go_wp/pkg/view"
 )
 
@@ -29,13 +29,13 @@ func couponTimeInputValue(raw string) string {
 // couponDeleteBulk 是勾选多张优惠码的批量删除：表单原样交给 service 一次调用，
 // 整批同一事务；失败只回一句公共文案，逐条原因走 BlockedItems 的数据出口。
 func (h *Handle) couponDeleteBulk(c *gin.Context) {
-	var form orderdto.CouponBulkDeleteReq
 	c.Header("Cache-Control", "no-store")
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[orderdto.CouponBulkDeleteReq](c)
+	if err != nil {
 		orderWriteBadInput(c, orderenums.ErrInvalidParam)
 		return
 	}
-	if _, err := h.svc.DeleteCoupons(c.Request.Context(), &form); err != nil {
+	if _, err := h.svc.DeleteCoupons(c.Request.Context(), form); err != nil {
 		orderWriteFailure(c, err, "批量删除优惠码失败")
 		return
 	}
@@ -46,13 +46,13 @@ func (h *Handle) couponDeleteBulk(c *gin.Context) {
 // couponToggleBulk 是勾选多张优惠码的批量启停：一次调用只改 status，
 // 不整行覆盖名称、门槛、时间窗等其它字段。
 func (h *Handle) couponToggleBulk(c *gin.Context) {
-	var form orderdto.CouponBulkStatusForm
 	c.Header("Cache-Control", "no-store")
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[orderdto.CouponBulkStatusForm](c)
+	if err != nil {
 		orderWriteBadInput(c, orderenums.ErrInvalidParam)
 		return
 	}
-	req, ok := couponToggleReq(c, &form)
+	req, ok := couponToggleReq(c, form)
 	if !ok {
 		orderWriteBadInput(c, orderenums.ErrInvalidParam)
 		return

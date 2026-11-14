@@ -72,12 +72,12 @@ func (h *Handle) List(c *gin.Context) {
 // Toggle 接收标准表单，成功后由 Jet 返回统一成功片段。
 func (h *Handle) Toggle(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var req plugindto.ToggleReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+	req, err := binding.ParseForm[plugindto.ToggleReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, "plugin", err)
 		return
 	}
-	if err := h.svc.Toggle(c.Request.Context(), &req); err != nil {
+	if err := h.svc.Toggle(c.Request.Context(), req); err != nil {
 		pageview.FailScene(c, "plugin", err)
 		return
 	}
@@ -87,12 +87,12 @@ func (h *Handle) Toggle(c *gin.Context) {
 // Uninstall 接收标准表单；删除文件失败按服务端错误渲染，不暴露内部原文。
 func (h *Handle) Uninstall(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var req plugindto.UninstallReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+	req, err := binding.ParseForm[plugindto.UninstallReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, "plugin", err)
 		return
 	}
-	if err := h.svc.Uninstall(c.Request.Context(), &req); err != nil {
+	if err := h.svc.Uninstall(c.Request.Context(), req); err != nil {
 		pageview.FailScene(c, "plugin", err)
 		return
 	}

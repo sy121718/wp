@@ -3,18 +3,18 @@ package inventoryhttp
 import (
 	"context"
 	"go_wp/internal/middleware/builtin"
+	"go_wp/pkg/binding"
 	pageview "go_wp/pkg/view"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	ginbinding "github.com/gin-gonic/gin/binding"
 
 	inventorydto "go_wp/internal/module/inventory/dto"
 )
 
 func (h *inventoryPageHandle) InventoryStockChange(c *gin.Context) {
-	var form inventorydto.StockChangeFormReq
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[inventorydto.StockChangeFormReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, inventoryErrScene, err)
 		return
 	}
@@ -29,8 +29,8 @@ func (h *inventoryPageHandle) InventoryStockChange(c *gin.Context) {
 }
 
 func (h *inventoryPageHandle) InventoryExternalSKUUpdate(c *gin.Context) {
-	var form inventorydto.ExternalSKUFormReq
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[inventorydto.ExternalSKUFormReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, inventoryErrScene, err)
 		return
 	}
@@ -43,8 +43,8 @@ func (h *inventoryPageHandle) InventoryExternalSKUUpdate(c *gin.Context) {
 }
 
 func (h *inventoryPageHandle) InventoryStockTrackingUpdate(c *gin.Context) {
-	var form inventorydto.StockTrackingFormReq
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[inventorydto.StockTrackingFormReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, inventoryErrScene, err)
 		return
 	}

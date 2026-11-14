@@ -4,10 +4,10 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	ginbinding "github.com/gin-gonic/gin/binding"
 
 	userdto "go_wp/internal/module/user/dto"
 	userenums "go_wp/internal/module/user/enums"
+	"go_wp/pkg/binding"
 	pageview "go_wp/pkg/view"
 )
 
@@ -28,8 +28,8 @@ func customerUnlockMessage(res *userdto.CustomerUnlockResp) string {
 
 func (h *CustomerHandle) BulkCustomerStatus(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var form userdto.CustomerBulkForm
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[userdto.CustomerBulkForm](c)
+	if err != nil {
 		customerBulkFail(c, userenums.Err(userenums.ErrInvalidParam))
 		return
 	}
@@ -54,8 +54,8 @@ func (h *CustomerHandle) BulkCustomerStatus(c *gin.Context) {
 
 func (h *CustomerHandle) BulkCustomerUnlock(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var form userdto.CustomerBulkForm
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[userdto.CustomerBulkForm](c)
+	if err != nil {
 		customerBulkFail(c, userenums.Err(userenums.ErrInvalidParam))
 		return
 	}

@@ -8,7 +8,6 @@ import (
 	pageview "go_wp/pkg/view"
 
 	"github.com/gin-gonic/gin"
-	ginbinding "github.com/gin-gonic/gin/binding"
 
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	contenttemplatedto "go_wp/internal/module/contenttemplate/dto"
@@ -41,12 +40,12 @@ func (h *Handle) Create(c *gin.Context) {
 // Activate 接收标准表单，成功后由 Jet 返回统一成功片段。
 func (h *Handle) Activate(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var req contenttemplatedto.ActivateReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+	req, err := binding.ParseForm[contenttemplatedto.ActivateReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, "contenttemplate", err)
 		return
 	}
-	if _, err := h.svc.Activate(c.Request.Context(), &req); err != nil {
+	if _, err := h.svc.Activate(c.Request.Context(), req); err != nil {
 		pageview.FailScene(c, "contenttemplate", err)
 		return
 	}
@@ -71,8 +70,8 @@ func (h *Handle) Update(c *gin.Context) {
 // 同一次 BulkDelete 事务完成整批删除，成功走统一成功出口，失败走共享失败出口。
 func (h *Handle) Delete(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var form contenttemplatedto.DeleteForm
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[contenttemplatedto.DeleteForm](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, contentTemplateErrScene, contenttemplateenums.Err(contenttemplateenums.ErrInvalidParam))
 		return
 	}

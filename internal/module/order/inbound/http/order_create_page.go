@@ -10,7 +10,6 @@ import (
 	"go_wp/internal/middleware/builtin"
 
 	"github.com/gin-gonic/gin"
-	ginbinding "github.com/gin-gonic/gin/binding"
 
 	ordercontract "go_wp/internal/module/order/contract"
 	orderdto "go_wp/internal/module/order/dto"
@@ -20,6 +19,7 @@ import (
 	projectcontract "go_wp/internal/module/project/contract"
 	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
 	"go_wp/pkg/backpath"
+	"go_wp/pkg/binding"
 	"go_wp/pkg/facing"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/response"
@@ -112,15 +112,15 @@ func orderCreatedBackURL(projectID string, res *orderdto.CreateOrderResp) string
 
 func (h *orderCreatePageHandle) OrderCreateSubmit(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	// 代客建单是普通表单写：Gin 原生 FormPost 只读 body，失败交本域 HTML 出口；
+	// 代客建单是普通表单写：显式表单入口只读 body，失败交本域 HTML 出口；
 	// 扁平地址前缀与明细行的装配由 DTO 的 Normalize 显式完成。
-	var form orderdto.AdminOrderCreateFormReq
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[orderdto.AdminOrderCreateFormReq](c)
+	if err != nil {
 		orderWriteBadInput(c, orderenums.ErrInvalidParam)
 		return
 	}
 	form.Normalize()
-	req, fieldErrs := orderCreateReqFromForm(c, &form)
+	req, fieldErrs := orderCreateReqFromForm(c, form)
 	if len(fieldErrs) > 0 {
 		orderWriteFail(c, createFormFieldError(fieldErrs))
 		return

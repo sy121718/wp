@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	ginbinding "github.com/gin-gonic/gin/binding"
 
 	contentcontract "go_wp/internal/module/content/contract"
 	contentdto "go_wp/internal/module/content/dto"
@@ -93,12 +92,12 @@ func articleLinkSuggestions(ctx context.Context, h *articlePageHandle, projectID
 
 // bindArticleLinkRequest 绑定内链建议表单；失败按「没有建议」的既有口径兜底。
 func bindArticleLinkRequest(c *gin.Context) (*contentdto.ArticleLinkReq, bool) {
-	var form contentdto.ArticleLinkReq
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[contentdto.ArticleLinkReq](c)
+	if err != nil {
 		return nil, false
 	}
 	form.Normalize()
-	return &form, true
+	return form, true
 }
 
 func (h *articlePageHandle) linkSuggestProjectID(ctx context.Context, formProjectID string) (string, bool) {

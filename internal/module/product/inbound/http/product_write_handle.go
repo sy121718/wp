@@ -6,7 +6,6 @@ import (
 	"net/url"
 
 	"github.com/gin-gonic/gin"
-	ginbinding "github.com/gin-gonic/gin/binding"
 
 	"go_wp/pkg/binding"
 	pageview "go_wp/pkg/view"
@@ -19,12 +18,12 @@ func runProductWrite[T any](c *gin.Context,
 	call func(context.Context, *T) (any, error),
 	success func(*gin.Context)) {
 	c.Header("Cache-Control", "no-store")
-	var req T
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+	req, err := binding.ParseForm[T](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
 		return
 	}
-	if _, err := call(c.Request.Context(), &req); err != nil {
+	if _, err := call(c.Request.Context(), req); err != nil {
 		pageview.FailScene(c, productErrScene, err)
 		return
 	}
@@ -36,12 +35,12 @@ func runProductWriteErr[T any](c *gin.Context,
 	call func(context.Context, *T) error,
 	success func(*gin.Context)) {
 	c.Header("Cache-Control", "no-store")
-	var req T
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+	req, err := binding.ParseForm[T](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
 		return
 	}
-	if err := call(c.Request.Context(), &req); err != nil {
+	if err := call(c.Request.Context(), req); err != nil {
 		pageview.FailScene(c, productErrScene, err)
 		return
 	}
@@ -86,9 +85,11 @@ func bindProductFormInto[T any](c *gin.Context, req *T) error {
 			return err
 		}
 	}
-	if err := c.ShouldBindWith(req, ginbinding.FormPost); err != nil {
+	bound, err := binding.ParseForm[T](c)
+	if err != nil {
 		return err
 	}
+	*req = *bound
 	return validateProductForm(req)
 }
 

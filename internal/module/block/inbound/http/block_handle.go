@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	ginbinding "github.com/gin-gonic/gin/binding"
 
 	blockcontract "go_wp/internal/module/block/contract"
 	blockdto "go_wp/internal/module/block/dto"
@@ -67,8 +66,8 @@ func (h *Handle) Detail(c *gin.Context) {
 // Create 接收标准表单：普通字段由页面控件提交，成功后由 Jet 返回包含下一步链接的片段。
 func (h *Handle) Create(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var form blockdto.CreateForm
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[blockdto.CreateForm](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, blockErrScene, blockenums.Err(blockenums.ErrBlockParamRequired))
 		return
 	}
@@ -119,8 +118,8 @@ func (h *Handle) Update(c *gin.Context) {
 
 func (h *Handle) Delete(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var form blockdto.DeleteForm
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[blockdto.DeleteForm](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, blockErrScene, blockenums.Err(blockenums.ErrBlockParamRequired))
 		return
 	}
@@ -133,8 +132,8 @@ func (h *Handle) Delete(c *gin.Context) {
 
 func (h *Handle) BulkDelete(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var form blockdto.BulkDeleteForm
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[blockdto.BulkDeleteForm](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, blockErrScene, blockenums.Err(blockenums.ErrBlockParamRequired))
 		return
 	}

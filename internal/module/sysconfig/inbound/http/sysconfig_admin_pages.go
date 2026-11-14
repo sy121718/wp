@@ -8,11 +8,11 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	ginbinding "github.com/gin-gonic/gin/binding"
 
 	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
 	sysconfigdto "go_wp/internal/module/sysconfig/dto"
 	sysconfigenums "go_wp/internal/module/sysconfig/enums"
+	"go_wp/pkg/binding"
 	"go_wp/pkg/facing"
 	"go_wp/pkg/response"
 	pageview "go_wp/pkg/view"
@@ -95,8 +95,8 @@ func (h *AdminHandle) SystemPage(c *gin.Context) {
 // APISystemSave 接收标准表单，成功后由 Jet 返回统一成功片段。
 func (h *AdminHandle) APISystemSave(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var req sysconfigdto.SystemSaveReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+	req, err := binding.ParseForm[sysconfigdto.SystemSaveReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, "sysconfig", err)
 		return
 	}

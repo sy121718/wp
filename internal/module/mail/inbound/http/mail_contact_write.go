@@ -7,11 +7,11 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	ginbinding "github.com/gin-gonic/gin/binding"
 
 	"go_wp/internal/middleware/builtin"
 	maildto "go_wp/internal/module/mail/dto"
 	mailenums "go_wp/internal/module/mail/enums"
+	"go_wp/pkg/binding"
 	bulkids "go_wp/pkg/bulkids"
 	pageview "go_wp/pkg/view"
 )
@@ -36,8 +36,8 @@ func mailContactUintOfText(text string) (uint64, error) {
 
 func (h *Handle) ContactSave(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var form maildto.MailContactSaveForm
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[maildto.MailContactSaveForm](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, mailErrScene, mailenums.Err(mailenums.ErrInvalidParam))
 		return
 	}
@@ -70,8 +70,8 @@ func (h *Handle) ContactSave(c *gin.Context) {
 
 func (h *Handle) ContactDelete(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var form maildto.MailContactDeleteForm
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[maildto.MailContactDeleteForm](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, mailErrScene, mailenums.Err(mailenums.ErrInvalidParam))
 		return
 	}
@@ -130,8 +130,8 @@ func (h *Handle) ContactDelete(c *gin.Context) {
 
 func (h *Handle) ContactTag(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var form maildto.MailContactTagForm
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[maildto.MailContactTagForm](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, mailErrScene, mailenums.Err(mailenums.ErrInvalidParam))
 		return
 	}

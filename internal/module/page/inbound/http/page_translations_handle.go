@@ -27,8 +27,6 @@ import (
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
 	pageview "go_wp/pkg/view"
-
-	ginbinding "github.com/gin-gonic/gin/binding"
 )
 
 type contentTranslationPort interface {
@@ -951,8 +949,8 @@ func (h *pagesAdminHandle) TranslationMissesPage(c *gin.Context) {
 }
 
 func (h *pagesAdminHandle) TranslationMissCancel(c *gin.Context) {
-	var req pagedto.PageLangFormReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+	req, err := binding.ParseForm[pagedto.PageLangFormReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, pageErrScene, pageenums.Err(pageenums.ErrInvalidParam))
 		return
 	}
