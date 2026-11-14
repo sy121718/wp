@@ -1251,7 +1251,7 @@ func genericSkeletonBinding(name string, index sourceIndex) bodyBinding {
 				}
 			}
 			if protocol.Protocol != "" && protocol.Protocol != "unknown" {
-				resolved = bodyBinding{Protocol: protocol.Protocol, DTO: formDTO}
+				resolved = bodyBinding{Protocol: protocol.Protocol, Encodings: protocol.Encodings, DTO: formDTO}
 				return false
 			}
 		}
@@ -1565,6 +1565,9 @@ func chainedBinderProtocol(src *funcSource, index sourceIndex, depth int) bodyBi
 		return bodyBinding{}
 	}
 	protocols := map[string]bool{}
+	// 编码是协议的一部分：ParseForm 同时接受 urlencoded 与 multipart。
+	// 只把 "form" 沿链传出去会让契约丢掉 encodings，模板侧按单一编码对账。
+	encodings := map[string][]string{}
 	if protocol := skeletonJSONProtocol(src); protocol != "" {
 		protocols[protocol] = true
 	}
@@ -1598,11 +1601,17 @@ func chainedBinderProtocol(src *funcSource, index sourceIndex, depth int) bodyBi
 		if binding, okBinding := index.Bindings[target.name]; okBinding &&
 			binding.Protocol != "" && binding.Protocol != "unknown" {
 			protocols[binding.Protocol] = true
+			if len(binding.Encodings) > 0 {
+				encodings[binding.Protocol] = binding.Encodings
+			}
 			return true
 		}
 		if protocol := chainedBinderProtocol(target, index, depth-1); protocol.Protocol != "" &&
 			protocol.Protocol != "unknown" {
 			protocols[protocol.Protocol] = true
+			if len(protocol.Encodings) > 0 {
+				encodings[protocol.Protocol] = protocol.Encodings
+			}
 		}
 		return true
 	})
@@ -1611,7 +1620,7 @@ func chainedBinderProtocol(src *funcSource, index sourceIndex, depth int) bodyBi
 		return bodyBinding{}
 	case 1:
 		for protocol := range protocols {
-			return bodyBinding{Protocol: protocol}
+			return bodyBinding{Protocol: protocol, Encodings: encodings[protocol]}
 		}
 	}
 	names := make([]string, 0, len(protocols))
@@ -1626,14 +1635,39 @@ func chainedBinderProtocol(src *funcSource, index sourceIndex, depth int) bodyBi
 //
 // 骨架体里可能先出现无关的泛型调用（warm[R]()），把它当 binder 会把输出类型
 // 认成输入 DTO。只有被调方自身能解析出确定的输入协议时才算。
+// isPkgBindingGeneric 识别 pkg/binding 的泛型入口（binding.ParseForm[T] 等）。
+func isPkgBindingGeneric(fun ast.Expr, src *funcSource) bool {
+	sel, ok := fun.(*ast.SelectorExpr)
+	if !ok {
+		return false
+	}
+	ident, ok := sel.X.(*ast.Ident)
+	if !ok || src.imports[ident.Name] != "go_wp/pkg/binding" {
+		return false
+	}
+	switch sel.Sel.Name {
+	case "ParseForm", "ParseJSON", "Query", "Form", "JSON":
+		return true
+	}
+	return false
+}
+
 func isBinderGenericCall(call *ast.CallExpr, src *funcSource, index sourceIndex) bool {
 	var name string
 	switch fun := call.Fun.(type) {
 	case *ast.IndexExpr:
+		// pkg/binding 的泛型入口（binding.ParseForm[T]）本身就是 binder：
+		// 泛型骨架体里用它绑定，被绑定的类型参数就是它的类型实参。
+		if isPkgBindingGeneric(fun.X, src) {
+			return true
+		}
 		if ident, okIdent := fun.X.(*ast.Ident); okIdent {
 			name = ident.Name
 		}
 	case *ast.IndexListExpr:
+		if isPkgBindingGeneric(fun.X, src) {
+			return true
+		}
 		if ident, okIdent := fun.X.(*ast.Ident); okIdent {
 			name = ident.Name
 		}
@@ -1792,7 +1826,7 @@ func directGenericBinder(name string, index sourceIndex) bodyBinding {
 		if typeArg != nil {
 			if ident, okIdent := typeArg.(*ast.Ident); !okIdent || !target.generics[ident.Name] {
 				if dto := typeName(typeArg, src.pkg, src.imports); dto != "" {
-					out = bodyBinding{Protocol: protocol.Protocol, DTO: dto}
+					out = bodyBinding{Protocol: protocol.Protocol, Encodings: protocol.Encodings, DTO: dto}
 					return false
 				}
 			}
@@ -1812,7 +1846,7 @@ func directGenericBinder(name string, index sourceIndex) bodyBinding {
 				continue
 			}
 			if dto := typeName(star.X, src.pkg, src.imports); dto != "" {
-				out = bodyBinding{Protocol: protocol.Protocol, DTO: dto}
+				out = bodyBinding{Protocol: protocol.Protocol, Encodings: protocol.Encodings, DTO: dto}
 				return false
 			}
 		}
@@ -1831,7 +1865,7 @@ func directGenericBinder(name string, index sourceIndex) bodyBinding {
 				if dto == "" || dto == "github.com/gin-gonic/gin.Context" {
 					continue
 				}
-				out = bodyBinding{Protocol: protocol.Protocol, DTO: dto}
+				out = bodyBinding{Protocol: protocol.Protocol, Encodings: protocol.Encodings, DTO: dto}
 				return false
 			}
 		}
