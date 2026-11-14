@@ -6,7 +6,7 @@
 -- 更新方式：bash scripts/schema-snapshot.sh
 -- 漂移检测：bash scripts/schema-snapshot.sh --check（CI 里跑）
 -- 迁移台账版本：597-block-bulk-delete-grant-copy
--- 生成时间：2026-10-29T18:02:06+08:00
+-- 生成时间：2026-11-15T01:13:19+08:00
 
 --
 -- PostgreSQL database dump
@@ -144,6 +144,41 @@ $$;
 SET default_tablespace = '';
 
 SET default_table_access_method = heap;
+
+--
+-- Name: admin_side_effect_tasks; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.admin_side_effect_tasks (
+    id bigint NOT NULL,
+    kind text NOT NULL,
+    payload text NOT NULL,
+    create_time timestamp with time zone DEFAULT now() NOT NULL,
+    claimed_time timestamp with time zone,
+    processed_time timestamp with time zone,
+    attempts integer DEFAULT 0 NOT NULL,
+    last_error text DEFAULT ''::text NOT NULL
+);
+
+
+--
+-- Name: admin_side_effect_tasks_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.admin_side_effect_tasks_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: admin_side_effect_tasks_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.admin_side_effect_tasks_id_seq OWNED BY public.admin_side_effect_tasks.id;
+
 
 --
 -- Name: ai_access_token; Type: TABLE; Schema: public; Owner: -
@@ -425,24 +460,6 @@ ALTER SEQUENCE public.ai_tool_idempotency_id_seq OWNED BY public.ai_tool_idempot
 
 
 --
--- Name: analytics_daily_stats; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.analytics_daily_stats (
-    project_id uuid NOT NULL,
-    day date NOT NULL,
-    scope text NOT NULL,
-    path text DEFAULT ''::text NOT NULL,
-    views bigint DEFAULT 0 NOT NULL,
-    visitors bigint DEFAULT 0 NOT NULL,
-    rolled_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT analytics_daily_stats_scope_check CHECK ((scope = ANY (ARRAY['all'::text, 'path'::text])))
-);
-
-ALTER TABLE ONLY public.analytics_daily_stats FORCE ROW LEVEL SECURITY;
-
-
---
 -- Name: blocks; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -497,12 +514,28 @@ CREATE TABLE public.blueprints (
 
 
 --
+-- Name: build_job_seq; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.build_job_seq (
+    project_id uuid NOT NULL,
+    kind character varying(32) NOT NULL,
+    next_version bigint DEFAULT 1 NOT NULL,
+    create_time timestamp with time zone DEFAULT now() NOT NULL,
+    update_time timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_build_job_seq_kind CHECK (((kind)::text = ANY ((ARRAY['header'::character varying, 'header_mobile'::character varying, 'footer'::character varying, 'footer_mobile'::character varying])::text[])))
+);
+
+ALTER TABLE ONLY public.build_job_seq FORCE ROW LEVEL SECURITY;
+
+
+--
 -- Name: build_jobs; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.build_jobs (
     source_type text NOT NULL,
-    source_id uuid NOT NULL,
+    source_id text NOT NULL,
     draft_version bigint NOT NULL,
     build_input_hash text NOT NULL,
     status text DEFAULT 'pending'::text NOT NULL,
@@ -518,8 +551,11 @@ CREATE TABLE public.build_jobs (
     lease_token uuid,
     lease_expires_time timestamp with time zone,
     attempt integer DEFAULT 0 NOT NULL,
+    input_version bigint,
+    context_key text,
     CONSTRAINT build_jobs_intent_check CHECK ((intent = ANY (ARRAY['manual'::text, 'dependency'::text]))),
-    CONSTRAINT build_jobs_source_type_check CHECK ((source_type = ANY (ARRAY['page'::text, 'presentation'::text]))),
+    CONSTRAINT build_jobs_menu_stale_shape_check CHECK (((source_type <> 'menu_stale'::text) OR ((input_version IS NOT NULL) AND (context_key IS NOT NULL) AND (project_id IS NOT NULL) AND ("left"(source_id, 37) = ((project_id)::text || ':'::text)) AND (substr(source_id, 38) = ANY (ARRAY['header'::text, 'header_mobile'::text, 'footer'::text, 'footer_mobile'::text])) AND (context_key = ("left"(source_id, 37) || substr(source_id, 38)))))),
+    CONSTRAINT build_jobs_source_type_check CHECK ((source_type = ANY (ARRAY['page'::text, 'presentation'::text, 'menu_stale'::text]))),
     CONSTRAINT build_jobs_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'running'::text, 'superseded'::text, 'failed'::text, 'succeeded'::text])))
 );
 
@@ -558,7 +594,7 @@ CREATE TABLE public.comments (
     update_time timestamp with time zone DEFAULT now() NOT NULL,
     deleted_at timestamp with time zone,
     CONSTRAINT ck_comments_body_len CHECK (((char_length(body) >= 1) AND (char_length(body) <= 2000))),
-    CONSTRAINT ck_comments_status CHECK (((status)::text = ANY (ARRAY[('pending'::character varying)::text, ('approved'::character varying)::text, ('rejected'::character varying)::text, ('spam'::character varying)::text])))
+    CONSTRAINT ck_comments_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'approved'::character varying, 'rejected'::character varying, 'spam'::character varying])::text[])))
 );
 
 ALTER TABLE ONLY public.comments FORCE ROW LEVEL SECURITY;
@@ -724,7 +760,7 @@ CREATE TABLE public.coupons (
     update_by bigint DEFAULT 0 NOT NULL,
     create_time timestamp with time zone DEFAULT now() NOT NULL,
     update_time timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT ck_coupons_discount_type CHECK (((discount_type)::text = ANY (ARRAY[('percent'::character varying)::text, ('fixed'::character varying)::text]))),
+    CONSTRAINT ck_coupons_discount_type CHECK (((discount_type)::text = ANY ((ARRAY['percent'::character varying, 'fixed'::character varying])::text[]))),
     CONSTRAINT ck_coupons_discount_value CHECK (((((discount_type)::text = 'percent'::text) AND ((discount_value >= 1) AND (discount_value <= 100))) OR (((discount_type)::text = 'fixed'::text) AND (discount_value > 0)))),
     CONSTRAINT ck_coupons_limits CHECK (((max_uses >= 0) AND (per_user_limit >= 0) AND (used_count >= 0))),
     CONSTRAINT ck_coupons_min_subtotal CHECK ((min_subtotal >= 0)),
@@ -1010,80 +1046,6 @@ ALTER TABLE ONLY public.inventory_stock_movements FORCE ROW LEVEL SECURITY;
 
 
 --
--- Name: inventory_stock_movements_2026_08; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.inventory_stock_movements_2026_08 (
-    id uuid DEFAULT gen_random_uuid() CONSTRAINT inventory_stock_movements_id_not_null1 NOT NULL,
-    project_id uuid CONSTRAINT inventory_stock_movements_project_id_not_null1 NOT NULL,
-    warehouse_id uuid CONSTRAINT inventory_stock_movements_warehouse_id_not_null1 NOT NULL,
-    product_id uuid,
-    variant_id uuid,
-    sku_code text DEFAULT ''::text CONSTRAINT inventory_stock_movements_sku_code_not_null1 NOT NULL,
-    direction text CONSTRAINT inventory_stock_movements_direction_not_null1 NOT NULL,
-    quantity integer CONSTRAINT inventory_stock_movements_quantity_not_null1 NOT NULL,
-    delta integer CONSTRAINT inventory_stock_movements_delta_not_null1 NOT NULL,
-    quantity_before integer CONSTRAINT inventory_stock_movements_quantity_before_not_null1 NOT NULL,
-    quantity_after integer CONSTRAINT inventory_stock_movements_quantity_after_not_null1 NOT NULL,
-    reason_id bigint,
-    reason_code text CONSTRAINT inventory_stock_movements_reason_code_not_null1 NOT NULL,
-    parent_variant_id uuid,
-    source_type text DEFAULT ''::text CONSTRAINT inventory_stock_movements_source_type_not_null1 NOT NULL,
-    source_ref text DEFAULT ''::text CONSTRAINT inventory_stock_movements_source_ref_not_null1 NOT NULL,
-    remark text DEFAULT ''::text CONSTRAINT inventory_stock_movements_remark_not_null1 NOT NULL,
-    operator_id text DEFAULT ''::text CONSTRAINT inventory_stock_movements_operator_id_not_null1 NOT NULL,
-    batch_id uuid CONSTRAINT inventory_stock_movements_batch_id_not_null1 NOT NULL,
-    create_time timestamp with time zone DEFAULT now() CONSTRAINT inventory_stock_movements_created_at_not_null1 NOT NULL,
-    unit_cost numeric(12,2),
-    stock_id uuid,
-    stock_name text DEFAULT ''::text CONSTRAINT inventory_stock_movements_stock_name_not_null NOT NULL,
-    stock_image_url text DEFAULT ''::text CONSTRAINT inventory_stock_movements_stock_image_url_not_null NOT NULL,
-    CONSTRAINT inventory_stock_movements_after_check CHECK ((quantity_after >= 0)),
-    CONSTRAINT inventory_stock_movements_direction_check CHECK ((direction = ANY (ARRAY['in'::text, 'out'::text, 'adjust'::text]))),
-    CONSTRAINT inventory_stock_movements_quantity_check CHECK ((quantity > 0))
-);
-
-ALTER TABLE ONLY public.inventory_stock_movements_2026_08 FORCE ROW LEVEL SECURITY;
-
-
---
--- Name: inventory_stock_movements_2026_09; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.inventory_stock_movements_2026_09 (
-    id uuid DEFAULT gen_random_uuid() CONSTRAINT inventory_stock_movements_id_not_null1 NOT NULL,
-    project_id uuid CONSTRAINT inventory_stock_movements_project_id_not_null1 NOT NULL,
-    warehouse_id uuid CONSTRAINT inventory_stock_movements_warehouse_id_not_null1 NOT NULL,
-    product_id uuid,
-    variant_id uuid,
-    sku_code text DEFAULT ''::text CONSTRAINT inventory_stock_movements_sku_code_not_null1 NOT NULL,
-    direction text CONSTRAINT inventory_stock_movements_direction_not_null1 NOT NULL,
-    quantity integer CONSTRAINT inventory_stock_movements_quantity_not_null1 NOT NULL,
-    delta integer CONSTRAINT inventory_stock_movements_delta_not_null1 NOT NULL,
-    quantity_before integer CONSTRAINT inventory_stock_movements_quantity_before_not_null1 NOT NULL,
-    quantity_after integer CONSTRAINT inventory_stock_movements_quantity_after_not_null1 NOT NULL,
-    reason_id bigint,
-    reason_code text CONSTRAINT inventory_stock_movements_reason_code_not_null1 NOT NULL,
-    parent_variant_id uuid,
-    source_type text DEFAULT ''::text CONSTRAINT inventory_stock_movements_source_type_not_null1 NOT NULL,
-    source_ref text DEFAULT ''::text CONSTRAINT inventory_stock_movements_source_ref_not_null1 NOT NULL,
-    remark text DEFAULT ''::text CONSTRAINT inventory_stock_movements_remark_not_null1 NOT NULL,
-    operator_id text DEFAULT ''::text CONSTRAINT inventory_stock_movements_operator_id_not_null1 NOT NULL,
-    batch_id uuid CONSTRAINT inventory_stock_movements_batch_id_not_null1 NOT NULL,
-    create_time timestamp with time zone DEFAULT now() CONSTRAINT inventory_stock_movements_created_at_not_null1 NOT NULL,
-    unit_cost numeric(12,2),
-    stock_id uuid,
-    stock_name text DEFAULT ''::text CONSTRAINT inventory_stock_movements_stock_name_not_null NOT NULL,
-    stock_image_url text DEFAULT ''::text CONSTRAINT inventory_stock_movements_stock_image_url_not_null NOT NULL,
-    CONSTRAINT inventory_stock_movements_after_check CHECK ((quantity_after >= 0)),
-    CONSTRAINT inventory_stock_movements_direction_check CHECK ((direction = ANY (ARRAY['in'::text, 'out'::text, 'adjust'::text]))),
-    CONSTRAINT inventory_stock_movements_quantity_check CHECK ((quantity > 0))
-);
-
-ALTER TABLE ONLY public.inventory_stock_movements_2026_09 FORCE ROW LEVEL SECURITY;
-
-
---
 -- Name: inventory_stock_movements_2026_10; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1229,6 +1191,43 @@ CREATE TABLE public.inventory_stock_movements_2027_01 (
 );
 
 ALTER TABLE ONLY public.inventory_stock_movements_2027_01 FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: inventory_stock_movements_2027_02; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.inventory_stock_movements_2027_02 (
+    id uuid DEFAULT gen_random_uuid() CONSTRAINT inventory_stock_movements_id_not_null1 NOT NULL,
+    project_id uuid CONSTRAINT inventory_stock_movements_project_id_not_null1 NOT NULL,
+    warehouse_id uuid CONSTRAINT inventory_stock_movements_warehouse_id_not_null1 NOT NULL,
+    product_id uuid,
+    variant_id uuid,
+    sku_code text DEFAULT ''::text CONSTRAINT inventory_stock_movements_sku_code_not_null1 NOT NULL,
+    direction text CONSTRAINT inventory_stock_movements_direction_not_null1 NOT NULL,
+    quantity integer CONSTRAINT inventory_stock_movements_quantity_not_null1 NOT NULL,
+    delta integer CONSTRAINT inventory_stock_movements_delta_not_null1 NOT NULL,
+    quantity_before integer CONSTRAINT inventory_stock_movements_quantity_before_not_null1 NOT NULL,
+    quantity_after integer CONSTRAINT inventory_stock_movements_quantity_after_not_null1 NOT NULL,
+    reason_id bigint,
+    reason_code text CONSTRAINT inventory_stock_movements_reason_code_not_null1 NOT NULL,
+    parent_variant_id uuid,
+    source_type text DEFAULT ''::text CONSTRAINT inventory_stock_movements_source_type_not_null1 NOT NULL,
+    source_ref text DEFAULT ''::text CONSTRAINT inventory_stock_movements_source_ref_not_null1 NOT NULL,
+    remark text DEFAULT ''::text CONSTRAINT inventory_stock_movements_remark_not_null1 NOT NULL,
+    operator_id text DEFAULT ''::text CONSTRAINT inventory_stock_movements_operator_id_not_null1 NOT NULL,
+    batch_id uuid CONSTRAINT inventory_stock_movements_batch_id_not_null1 NOT NULL,
+    create_time timestamp with time zone DEFAULT now() CONSTRAINT inventory_stock_movements_created_at_not_null1 NOT NULL,
+    unit_cost numeric(12,2),
+    stock_id uuid,
+    stock_name text DEFAULT ''::text CONSTRAINT inventory_stock_movements_stock_name_not_null NOT NULL,
+    stock_image_url text DEFAULT ''::text CONSTRAINT inventory_stock_movements_stock_image_url_not_null NOT NULL,
+    CONSTRAINT inventory_stock_movements_after_check CHECK ((quantity_after >= 0)),
+    CONSTRAINT inventory_stock_movements_direction_check CHECK ((direction = ANY (ARRAY['in'::text, 'out'::text, 'adjust'::text]))),
+    CONSTRAINT inventory_stock_movements_quantity_check CHECK ((quantity > 0))
+);
+
+ALTER TABLE ONLY public.inventory_stock_movements_2027_02 FORCE ROW LEVEL SECURITY;
 
 
 --
@@ -1861,56 +1860,6 @@ ALTER TABLE ONLY public.master_data_changes FORCE ROW LEVEL SECURITY;
 
 
 --
--- Name: master_data_changes_2026_08; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.master_data_changes_2026_08 (
-    id uuid DEFAULT gen_random_uuid() CONSTRAINT master_data_changes_id_not_null1 NOT NULL,
-    project_id uuid CONSTRAINT master_data_changes_project_id_not_null1 NOT NULL,
-    entity_type text CONSTRAINT master_data_changes_entity_type_not_null1 NOT NULL,
-    entity_id uuid CONSTRAINT master_data_changes_entity_id_not_null1 NOT NULL,
-    entity_label text DEFAULT ''::text CONSTRAINT master_data_changes_entity_label_not_null1 NOT NULL,
-    action text CONSTRAINT master_data_changes_action_not_null1 NOT NULL,
-    field text CONSTRAINT master_data_changes_field_not_null1 NOT NULL,
-    old_value text DEFAULT ''::text CONSTRAINT master_data_changes_old_value_not_null1 NOT NULL,
-    new_value text DEFAULT ''::text CONSTRAINT master_data_changes_new_value_not_null1 NOT NULL,
-    origin text DEFAULT ''::text CONSTRAINT master_data_changes_origin_not_null1 NOT NULL,
-    operator_id text DEFAULT ''::text CONSTRAINT master_data_changes_operator_id_not_null1 NOT NULL,
-    create_time timestamp with time zone DEFAULT now() CONSTRAINT master_data_changes_created_at_not_null1 NOT NULL,
-    CONSTRAINT master_data_changes_action_check CHECK ((action = ANY (ARRAY['create'::text, 'update'::text, 'delete'::text]))),
-    CONSTRAINT master_data_changes_entity_type_check CHECK ((entity_type = ANY (ARRAY['product'::text, 'product_variant'::text, 'inventory_source'::text]))),
-    CONSTRAINT master_data_changes_field_check CHECK ((field <> ''::text))
-);
-
-ALTER TABLE ONLY public.master_data_changes_2026_08 FORCE ROW LEVEL SECURITY;
-
-
---
--- Name: master_data_changes_2026_09; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.master_data_changes_2026_09 (
-    id uuid DEFAULT gen_random_uuid() CONSTRAINT master_data_changes_id_not_null1 NOT NULL,
-    project_id uuid CONSTRAINT master_data_changes_project_id_not_null1 NOT NULL,
-    entity_type text CONSTRAINT master_data_changes_entity_type_not_null1 NOT NULL,
-    entity_id uuid CONSTRAINT master_data_changes_entity_id_not_null1 NOT NULL,
-    entity_label text DEFAULT ''::text CONSTRAINT master_data_changes_entity_label_not_null1 NOT NULL,
-    action text CONSTRAINT master_data_changes_action_not_null1 NOT NULL,
-    field text CONSTRAINT master_data_changes_field_not_null1 NOT NULL,
-    old_value text DEFAULT ''::text CONSTRAINT master_data_changes_old_value_not_null1 NOT NULL,
-    new_value text DEFAULT ''::text CONSTRAINT master_data_changes_new_value_not_null1 NOT NULL,
-    origin text DEFAULT ''::text CONSTRAINT master_data_changes_origin_not_null1 NOT NULL,
-    operator_id text DEFAULT ''::text CONSTRAINT master_data_changes_operator_id_not_null1 NOT NULL,
-    create_time timestamp with time zone DEFAULT now() CONSTRAINT master_data_changes_created_at_not_null1 NOT NULL,
-    CONSTRAINT master_data_changes_action_check CHECK ((action = ANY (ARRAY['create'::text, 'update'::text, 'delete'::text]))),
-    CONSTRAINT master_data_changes_entity_type_check CHECK ((entity_type = ANY (ARRAY['product'::text, 'product_variant'::text, 'inventory_source'::text]))),
-    CONSTRAINT master_data_changes_field_check CHECK ((field <> ''::text))
-);
-
-ALTER TABLE ONLY public.master_data_changes_2026_09 FORCE ROW LEVEL SECURITY;
-
-
---
 -- Name: master_data_changes_2026_10; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2011,6 +1960,31 @@ ALTER TABLE ONLY public.master_data_changes_2027_01 FORCE ROW LEVEL SECURITY;
 
 
 --
+-- Name: master_data_changes_2027_02; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.master_data_changes_2027_02 (
+    id uuid DEFAULT gen_random_uuid() CONSTRAINT master_data_changes_id_not_null1 NOT NULL,
+    project_id uuid CONSTRAINT master_data_changes_project_id_not_null1 NOT NULL,
+    entity_type text CONSTRAINT master_data_changes_entity_type_not_null1 NOT NULL,
+    entity_id uuid CONSTRAINT master_data_changes_entity_id_not_null1 NOT NULL,
+    entity_label text DEFAULT ''::text CONSTRAINT master_data_changes_entity_label_not_null1 NOT NULL,
+    action text CONSTRAINT master_data_changes_action_not_null1 NOT NULL,
+    field text CONSTRAINT master_data_changes_field_not_null1 NOT NULL,
+    old_value text DEFAULT ''::text CONSTRAINT master_data_changes_old_value_not_null1 NOT NULL,
+    new_value text DEFAULT ''::text CONSTRAINT master_data_changes_new_value_not_null1 NOT NULL,
+    origin text DEFAULT ''::text CONSTRAINT master_data_changes_origin_not_null1 NOT NULL,
+    operator_id text DEFAULT ''::text CONSTRAINT master_data_changes_operator_id_not_null1 NOT NULL,
+    create_time timestamp with time zone DEFAULT now() CONSTRAINT master_data_changes_created_at_not_null1 NOT NULL,
+    CONSTRAINT master_data_changes_action_check CHECK ((action = ANY (ARRAY['create'::text, 'update'::text, 'delete'::text]))),
+    CONSTRAINT master_data_changes_entity_type_check CHECK ((entity_type = ANY (ARRAY['product'::text, 'product_variant'::text, 'inventory_source'::text]))),
+    CONSTRAINT master_data_changes_field_check CHECK ((field <> ''::text))
+);
+
+ALTER TABLE ONLY public.master_data_changes_2027_02 FORCE ROW LEVEL SECURITY;
+
+
+--
 -- Name: master_data_changes_default; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2048,7 +2022,7 @@ CREATE TABLE public.membership_assignments (
     assigned_at timestamp with time zone DEFAULT now() NOT NULL,
     create_time timestamp with time zone DEFAULT now() NOT NULL,
     update_time timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT ck_membership_assignments_source CHECK (((source)::text = ANY (ARRAY[('auto'::character varying)::text, ('manual'::character varying)::text])))
+    CONSTRAINT ck_membership_assignments_source CHECK (((source)::text = ANY ((ARRAY['auto'::character varying, 'manual'::character varying])::text[])))
 );
 
 ALTER TABLE ONLY public.membership_assignments FORCE ROW LEVEL SECURITY;
@@ -2308,7 +2282,7 @@ CREATE TABLE public.order_returns (
     create_time timestamp with time zone DEFAULT now() NOT NULL,
     update_time timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT ck_order_returns_amount CHECK ((refund_amount >= 0)),
-    CONSTRAINT ck_order_returns_status CHECK (((status)::text = ANY (ARRAY[('requested'::character varying)::text, ('approved'::character varying)::text, ('received'::character varying)::text, ('completed'::character varying)::text, ('rejected'::character varying)::text, ('cancelled'::character varying)::text])))
+    CONSTRAINT ck_order_returns_status CHECK (((status)::text = ANY ((ARRAY['requested'::character varying, 'approved'::character varying, 'received'::character varying, 'completed'::character varying, 'rejected'::character varying, 'cancelled'::character varying])::text[])))
 );
 
 ALTER TABLE ONLY public.order_returns FORCE ROW LEVEL SECURITY;
@@ -2486,7 +2460,7 @@ CREATE TABLE public.orders (
     fx_base_code text DEFAULT ''::text NOT NULL,
     fulfillment_status text DEFAULT 'pending'::text NOT NULL,
     CONSTRAINT ck_orders_fulfillment_status CHECK ((fulfillment_status = ANY (ARRAY['pending'::text, 'paid'::text, 'shipped'::text, 'partial'::text, 'received'::text, 'exception'::text, 'cancelled'::text, 'reship'::text, 'returned'::text, 'return_done'::text, 'refunded'::text, 'failed'::text]))),
-    CONSTRAINT orders_status_check CHECK (((status)::text = ANY (ARRAY[('pending'::character varying)::text, ('paid'::character varying)::text, ('shipped'::character varying)::text, ('completed'::character varying)::text, ('cancelled'::character varying)::text, ('refunded'::character varying)::text])))
+    CONSTRAINT orders_status_check CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'paid'::character varying, 'shipped'::character varying, 'completed'::character varying, 'cancelled'::character varying, 'refunded'::character varying])::text[])))
 );
 
 ALTER TABLE ONLY public.orders FORCE ROW LEVEL SECURITY;
@@ -2602,7 +2576,8 @@ CREATE TABLE public.page_publications (
     artifact_id uuid,
     artifact_hash text DEFAULT ''::text NOT NULL,
     published_at timestamp with time zone NOT NULL,
-    update_time timestamp with time zone CONSTRAINT page_publications_updated_at_not_null NOT NULL
+    update_time timestamp with time zone CONSTRAINT page_publications_updated_at_not_null NOT NULL,
+    receipt_id bigint
 );
 
 
@@ -2700,62 +2675,6 @@ CREATE SEQUENCE public.page_views_id_seq1
 --
 
 ALTER SEQUENCE public.page_views_id_seq1 OWNED BY public.page_views.id;
-
-
---
--- Name: page_views_2026_08; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.page_views_2026_08 (
-    id bigint DEFAULT nextval('public.page_views_id_seq1'::regclass) CONSTRAINT page_views_id_not_null1 NOT NULL,
-    project_id uuid CONSTRAINT page_views_project_id_not_null1 NOT NULL,
-    path text CONSTRAINT page_views_path_not_null1 NOT NULL,
-    lang text DEFAULT ''::text CONSTRAINT page_views_lang_not_null1 NOT NULL,
-    session_id text DEFAULT ''::text CONSTRAINT page_views_session_id_not_null1 NOT NULL,
-    visitor_hash text DEFAULT ''::text CONSTRAINT page_views_visitor_hash_not_null1 NOT NULL,
-    referrer_host text DEFAULT ''::text CONSTRAINT page_views_referrer_host_not_null1 NOT NULL,
-    ua_class text DEFAULT ''::text CONSTRAINT page_views_ua_class_not_null1 NOT NULL,
-    ip_hash text DEFAULT ''::text CONSTRAINT page_views_ip_hash_not_null1 NOT NULL,
-    viewed_at timestamp with time zone DEFAULT now() CONSTRAINT page_views_viewed_at_not_null1 NOT NULL,
-    CONSTRAINT chk_page_views_hash_len CHECK ((char_length(visitor_hash) <= 64)),
-    CONSTRAINT chk_page_views_ip_len CHECK ((char_length(ip_hash) <= 64)),
-    CONSTRAINT chk_page_views_lang_len CHECK ((char_length(lang) <= 35)),
-    CONSTRAINT chk_page_views_path_len CHECK (((char_length(path) > 0) AND (char_length(path) <= 512))),
-    CONSTRAINT chk_page_views_path_root CHECK (("left"(path, 1) = '/'::text)),
-    CONSTRAINT chk_page_views_ref_len CHECK ((char_length(referrer_host) <= 255)),
-    CONSTRAINT chk_page_views_sess_len CHECK ((char_length(session_id) <= 64)),
-    CONSTRAINT chk_page_views_ua_class CHECK ((ua_class = ANY (ARRAY[''::text, 'desktop'::text, 'tablet'::text, 'mobile'::text, 'bot'::text])))
-);
-
-ALTER TABLE ONLY public.page_views_2026_08 FORCE ROW LEVEL SECURITY;
-
-
---
--- Name: page_views_2026_09; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.page_views_2026_09 (
-    id bigint DEFAULT nextval('public.page_views_id_seq1'::regclass) CONSTRAINT page_views_id_not_null1 NOT NULL,
-    project_id uuid CONSTRAINT page_views_project_id_not_null1 NOT NULL,
-    path text CONSTRAINT page_views_path_not_null1 NOT NULL,
-    lang text DEFAULT ''::text CONSTRAINT page_views_lang_not_null1 NOT NULL,
-    session_id text DEFAULT ''::text CONSTRAINT page_views_session_id_not_null1 NOT NULL,
-    visitor_hash text DEFAULT ''::text CONSTRAINT page_views_visitor_hash_not_null1 NOT NULL,
-    referrer_host text DEFAULT ''::text CONSTRAINT page_views_referrer_host_not_null1 NOT NULL,
-    ua_class text DEFAULT ''::text CONSTRAINT page_views_ua_class_not_null1 NOT NULL,
-    ip_hash text DEFAULT ''::text CONSTRAINT page_views_ip_hash_not_null1 NOT NULL,
-    viewed_at timestamp with time zone DEFAULT now() CONSTRAINT page_views_viewed_at_not_null1 NOT NULL,
-    CONSTRAINT chk_page_views_hash_len CHECK ((char_length(visitor_hash) <= 64)),
-    CONSTRAINT chk_page_views_ip_len CHECK ((char_length(ip_hash) <= 64)),
-    CONSTRAINT chk_page_views_lang_len CHECK ((char_length(lang) <= 35)),
-    CONSTRAINT chk_page_views_path_len CHECK (((char_length(path) > 0) AND (char_length(path) <= 512))),
-    CONSTRAINT chk_page_views_path_root CHECK (("left"(path, 1) = '/'::text)),
-    CONSTRAINT chk_page_views_ref_len CHECK ((char_length(referrer_host) <= 255)),
-    CONSTRAINT chk_page_views_sess_len CHECK ((char_length(session_id) <= 64)),
-    CONSTRAINT chk_page_views_ua_class CHECK ((ua_class = ANY (ARRAY[''::text, 'desktop'::text, 'tablet'::text, 'mobile'::text, 'bot'::text])))
-);
-
-ALTER TABLE ONLY public.page_views_2026_09 FORCE ROW LEVEL SECURITY;
 
 
 --
@@ -2871,6 +2790,34 @@ ALTER TABLE ONLY public.page_views_2027_01 FORCE ROW LEVEL SECURITY;
 
 
 --
+-- Name: page_views_2027_02; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.page_views_2027_02 (
+    id bigint DEFAULT nextval('public.page_views_id_seq1'::regclass) CONSTRAINT page_views_id_not_null1 NOT NULL,
+    project_id uuid CONSTRAINT page_views_project_id_not_null1 NOT NULL,
+    path text CONSTRAINT page_views_path_not_null1 NOT NULL,
+    lang text DEFAULT ''::text CONSTRAINT page_views_lang_not_null1 NOT NULL,
+    session_id text DEFAULT ''::text CONSTRAINT page_views_session_id_not_null1 NOT NULL,
+    visitor_hash text DEFAULT ''::text CONSTRAINT page_views_visitor_hash_not_null1 NOT NULL,
+    referrer_host text DEFAULT ''::text CONSTRAINT page_views_referrer_host_not_null1 NOT NULL,
+    ua_class text DEFAULT ''::text CONSTRAINT page_views_ua_class_not_null1 NOT NULL,
+    ip_hash text DEFAULT ''::text CONSTRAINT page_views_ip_hash_not_null1 NOT NULL,
+    viewed_at timestamp with time zone DEFAULT now() CONSTRAINT page_views_viewed_at_not_null1 NOT NULL,
+    CONSTRAINT chk_page_views_hash_len CHECK ((char_length(visitor_hash) <= 64)),
+    CONSTRAINT chk_page_views_ip_len CHECK ((char_length(ip_hash) <= 64)),
+    CONSTRAINT chk_page_views_lang_len CHECK ((char_length(lang) <= 35)),
+    CONSTRAINT chk_page_views_path_len CHECK (((char_length(path) > 0) AND (char_length(path) <= 512))),
+    CONSTRAINT chk_page_views_path_root CHECK (("left"(path, 1) = '/'::text)),
+    CONSTRAINT chk_page_views_ref_len CHECK ((char_length(referrer_host) <= 255)),
+    CONSTRAINT chk_page_views_sess_len CHECK ((char_length(session_id) <= 64)),
+    CONSTRAINT chk_page_views_ua_class CHECK ((ua_class = ANY (ARRAY[''::text, 'desktop'::text, 'tablet'::text, 'mobile'::text, 'bot'::text])))
+);
+
+ALTER TABLE ONLY public.page_views_2027_02 FORCE ROW LEVEL SECURITY;
+
+
+--
 -- Name: page_views_daily; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2942,38 +2889,11 @@ CREATE TABLE public.pages (
     rebuild_failed_at timestamp with time zone,
     rebuild_failed_stage character varying(16),
     excluded_langs text[] DEFAULT '{}'::text[] NOT NULL,
+    input_version bigint DEFAULT 0 NOT NULL,
     CONSTRAINT pages_content_contract_check CHECK ((((kind = ANY (ARRAY['home'::text, 'archive'::text, 'search'::text, 'notFound'::text])) AND (content_target_type = 'none'::text) AND (content_target_id IS NULL)) OR ((kind = 'page'::text) AND (content_target_type = 'page'::text) AND (content_target_id IS NOT NULL)) OR ((kind = 'article'::text) AND (content_target_type = 'article'::text) AND (content_target_id IS NOT NULL)) OR ((kind = 'tag'::text) AND (content_target_type = 'tag'::text) AND (content_target_id IS NOT NULL))))
 );
 
 ALTER TABLE ONLY public.pages FORCE ROW LEVEL SECURITY;
-
-
---
--- Name: plugin_migration_ledger; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.plugin_migration_ledger (
-    id bigint NOT NULL,
-    plugin_id character varying(64) NOT NULL,
-    version character varying(255) NOT NULL,
-    checksum character varying(64) NOT NULL,
-    create_time timestamp with time zone DEFAULT now() NOT NULL,
-    update_time timestamp with time zone DEFAULT now() NOT NULL
-);
-
-
---
--- Name: plugin_migration_ledger_id_seq; Type: SEQUENCE; Schema: public; Owner: -
---
-
-ALTER TABLE public.plugin_migration_ledger ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
-    SEQUENCE NAME public.plugin_migration_ledger_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1
-);
 
 
 --
@@ -3058,6 +2978,7 @@ CREATE TABLE public.presentation_instances (
     instance_role text DEFAULT 'detail'::text NOT NULL,
     override_document jsonb,
     render_mode text DEFAULT 'template'::text NOT NULL,
+    input_version bigint DEFAULT 0 NOT NULL,
     CONSTRAINT ck_presentation_instances_render_mode CHECK ((render_mode = ANY (ARRAY['template'::text, 'document'::text])))
 );
 
@@ -3075,7 +2996,8 @@ CREATE TABLE public.presentation_publications (
     artifact_id uuid,
     artifact_hash text DEFAULT ''::text NOT NULL,
     published_at timestamp with time zone NOT NULL,
-    update_time timestamp with time zone CONSTRAINT presentation_publications_updated_at_not_null NOT NULL
+    update_time timestamp with time zone CONSTRAINT presentation_publications_updated_at_not_null NOT NULL,
+    receipt_id bigint
 );
 
 
@@ -3417,8 +3339,8 @@ CREATE TABLE public.publication_receipts (
     create_time timestamp with time zone DEFAULT now() CONSTRAINT publication_receipts_created_at_not_null NOT NULL,
     completed_at timestamp with time zone,
     id bigint CONSTRAINT publication_receipts_id_new_not_null NOT NULL,
-    CONSTRAINT publication_receipts_receipt_state_check CHECK ((receipt_state = ANY (ARRAY['pending'::text, 'committed'::text, 'rolled_back'::text]))),
-    CONSTRAINT publication_receipts_source_type_check CHECK ((source_type = ANY (ARRAY['page'::text, 'presentation'::text])))
+    CONSTRAINT publication_receipts_receipt_state_check CHECK ((receipt_state = ANY (ARRAY['pending'::text, 'committed'::text, 'rolled_back'::text, 'superseded'::text]))),
+    CONSTRAINT publication_receipts_source_type_check CHECK ((source_type = ANY (ARRAY['page'::text, 'presentation'::text, 'project'::text])))
 );
 
 
@@ -3510,7 +3432,7 @@ CREATE TABLE public.sys_area (
     sort_order integer DEFAULT 0 NOT NULL,
     create_time timestamp with time zone DEFAULT now() NOT NULL,
     update_time timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT ck_sys_area_kind CHECK (((kind)::text = ANY (ARRAY[('continent'::character varying)::text, ('country'::character varying)::text, ('division'::character varying)::text]))),
+    CONSTRAINT ck_sys_area_kind CHECK (((kind)::text = ANY ((ARRAY['continent'::character varying, 'country'::character varying, 'division'::character varying])::text[]))),
     CONSTRAINT ck_sys_area_level CHECK (((level >= 1) AND (level <= 5)))
 );
 
@@ -3693,7 +3615,7 @@ CREATE TABLE public.sys_dict (
     update_time timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT ck_sys_dict_currency CHECK ((((type)::text <> 'currency'::text) OR (minor_unit IS NOT NULL))),
     CONSTRAINT ck_sys_dict_language CHECK ((((type)::text <> 'language'::text) OR (url_code IS NOT NULL))),
-    CONSTRAINT ck_sys_dict_type CHECK (((type)::text = ANY (ARRAY[('language'::character varying)::text, ('currency'::character varying)::text])))
+    CONSTRAINT ck_sys_dict_type CHECK (((type)::text = ANY ((ARRAY['language'::character varying, 'currency'::character varying])::text[])))
 );
 
 
@@ -4300,20 +4222,6 @@ ALTER SEQUENCE public.webhook_endpoints_id_seq OWNED BY public.webhook_endpoints
 
 
 --
--- Name: inventory_stock_movements_2026_08; Type: TABLE ATTACH; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.inventory_stock_movements ATTACH PARTITION public.inventory_stock_movements_2026_08 FOR VALUES FROM ('2026-08-01 00:00:00+08') TO ('2026-09-01 00:00:00+08');
-
-
---
--- Name: inventory_stock_movements_2026_09; Type: TABLE ATTACH; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.inventory_stock_movements ATTACH PARTITION public.inventory_stock_movements_2026_09 FOR VALUES FROM ('2026-09-01 00:00:00+08') TO ('2026-10-01 00:00:00+08');
-
-
---
 -- Name: inventory_stock_movements_2026_10; Type: TABLE ATTACH; Schema: public; Owner: -
 --
 
@@ -4342,24 +4250,17 @@ ALTER TABLE ONLY public.inventory_stock_movements ATTACH PARTITION public.invent
 
 
 --
+-- Name: inventory_stock_movements_2027_02; Type: TABLE ATTACH; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.inventory_stock_movements ATTACH PARTITION public.inventory_stock_movements_2027_02 FOR VALUES FROM ('2027-02-01 00:00:00+08') TO ('2027-03-01 00:00:00+08');
+
+
+--
 -- Name: inventory_stock_movements_default; Type: TABLE ATTACH; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.inventory_stock_movements ATTACH PARTITION public.inventory_stock_movements_default DEFAULT;
-
-
---
--- Name: master_data_changes_2026_08; Type: TABLE ATTACH; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.master_data_changes ATTACH PARTITION public.master_data_changes_2026_08 FOR VALUES FROM ('2026-08-01 00:00:00+08') TO ('2026-09-01 00:00:00+08');
-
-
---
--- Name: master_data_changes_2026_09; Type: TABLE ATTACH; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.master_data_changes ATTACH PARTITION public.master_data_changes_2026_09 FOR VALUES FROM ('2026-09-01 00:00:00+08') TO ('2026-10-01 00:00:00+08');
 
 
 --
@@ -4391,24 +4292,17 @@ ALTER TABLE ONLY public.master_data_changes ATTACH PARTITION public.master_data_
 
 
 --
+-- Name: master_data_changes_2027_02; Type: TABLE ATTACH; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.master_data_changes ATTACH PARTITION public.master_data_changes_2027_02 FOR VALUES FROM ('2027-02-01 00:00:00+08') TO ('2027-03-01 00:00:00+08');
+
+
+--
 -- Name: master_data_changes_default; Type: TABLE ATTACH; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.master_data_changes ATTACH PARTITION public.master_data_changes_default DEFAULT;
-
-
---
--- Name: page_views_2026_08; Type: TABLE ATTACH; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.page_views ATTACH PARTITION public.page_views_2026_08 FOR VALUES FROM ('2026-08-01 00:00:00+08') TO ('2026-09-01 00:00:00+08');
-
-
---
--- Name: page_views_2026_09; Type: TABLE ATTACH; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.page_views ATTACH PARTITION public.page_views_2026_09 FOR VALUES FROM ('2026-09-01 00:00:00+08') TO ('2026-10-01 00:00:00+08');
 
 
 --
@@ -4440,10 +4334,24 @@ ALTER TABLE ONLY public.page_views ATTACH PARTITION public.page_views_2027_01 FO
 
 
 --
+-- Name: page_views_2027_02; Type: TABLE ATTACH; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.page_views ATTACH PARTITION public.page_views_2027_02 FOR VALUES FROM ('2027-02-01 00:00:00+08') TO ('2027-03-01 00:00:00+08');
+
+
+--
 -- Name: page_views_default; Type: TABLE ATTACH; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.page_views ATTACH PARTITION public.page_views_default DEFAULT;
+
+
+--
+-- Name: admin_side_effect_tasks id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.admin_side_effect_tasks ALTER COLUMN id SET DEFAULT nextval('public.admin_side_effect_tasks_id_seq'::regclass);
 
 
 --
@@ -4811,6 +4719,14 @@ ALTER TABLE ONLY public.webhook_endpoints ALTER COLUMN id SET DEFAULT nextval('p
 
 
 --
+-- Name: admin_side_effect_tasks admin_side_effect_tasks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.admin_side_effect_tasks
+    ADD CONSTRAINT admin_side_effect_tasks_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: ai_access_token ai_access_token_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4867,14 +4783,6 @@ ALTER TABLE ONLY public.ai_tool_idempotency
 
 
 --
--- Name: analytics_daily_stats analytics_daily_stats_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.analytics_daily_stats
-    ADD CONSTRAINT analytics_daily_stats_pkey PRIMARY KEY (project_id, day, scope, path);
-
-
---
 -- Name: blocks blocks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4904,6 +4812,14 @@ ALTER TABLE ONLY public.blueprint_versions
 
 ALTER TABLE ONLY public.blueprints
     ADD CONSTRAINT blueprints_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: build_job_seq build_job_seq_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.build_job_seq
+    ADD CONSTRAINT build_job_seq_pkey PRIMARY KEY (project_id, kind);
 
 
 --
@@ -5083,22 +4999,6 @@ ALTER TABLE ONLY public.inventory_stock_movements
 
 
 --
--- Name: inventory_stock_movements_2026_08 inventory_stock_movements_2026_08_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.inventory_stock_movements_2026_08
-    ADD CONSTRAINT inventory_stock_movements_2026_08_pkey PRIMARY KEY (id, create_time);
-
-
---
--- Name: inventory_stock_movements_2026_09 inventory_stock_movements_2026_09_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.inventory_stock_movements_2026_09
-    ADD CONSTRAINT inventory_stock_movements_2026_09_pkey PRIMARY KEY (id, create_time);
-
-
---
 -- Name: inventory_stock_movements_2026_10 inventory_stock_movements_2026_10_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5128,6 +5028,14 @@ ALTER TABLE ONLY public.inventory_stock_movements_2026_12
 
 ALTER TABLE ONLY public.inventory_stock_movements_2027_01
     ADD CONSTRAINT inventory_stock_movements_2027_01_pkey PRIMARY KEY (id, create_time);
+
+
+--
+-- Name: inventory_stock_movements_2027_02 inventory_stock_movements_2027_02_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.inventory_stock_movements_2027_02
+    ADD CONSTRAINT inventory_stock_movements_2027_02_pkey PRIMARY KEY (id, create_time);
 
 
 --
@@ -5267,22 +5175,6 @@ ALTER TABLE ONLY public.master_data_changes
 
 
 --
--- Name: master_data_changes_2026_08 master_data_changes_2026_08_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.master_data_changes_2026_08
-    ADD CONSTRAINT master_data_changes_2026_08_pkey PRIMARY KEY (id, create_time);
-
-
---
--- Name: master_data_changes_2026_09 master_data_changes_2026_09_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.master_data_changes_2026_09
-    ADD CONSTRAINT master_data_changes_2026_09_pkey PRIMARY KEY (id, create_time);
-
-
---
 -- Name: master_data_changes_2026_10 master_data_changes_2026_10_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5312,6 +5204,14 @@ ALTER TABLE ONLY public.master_data_changes_2026_12
 
 ALTER TABLE ONLY public.master_data_changes_2027_01
     ADD CONSTRAINT master_data_changes_2027_01_pkey PRIMARY KEY (id, create_time);
+
+
+--
+-- Name: master_data_changes_2027_02 master_data_changes_2027_02_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.master_data_changes_2027_02
+    ADD CONSTRAINT master_data_changes_2027_02_pkey PRIMARY KEY (id, create_time);
 
 
 --
@@ -5515,22 +5415,6 @@ ALTER TABLE ONLY public.page_views
 
 
 --
--- Name: page_views_2026_08 page_views_2026_08_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.page_views_2026_08
-    ADD CONSTRAINT page_views_2026_08_pkey PRIMARY KEY (id, viewed_at);
-
-
---
--- Name: page_views_2026_09 page_views_2026_09_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.page_views_2026_09
-    ADD CONSTRAINT page_views_2026_09_pkey PRIMARY KEY (id, viewed_at);
-
-
---
 -- Name: page_views_2026_10 page_views_2026_10_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5563,6 +5447,14 @@ ALTER TABLE ONLY public.page_views_2027_01
 
 
 --
+-- Name: page_views_2027_02 page_views_2027_02_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.page_views_2027_02
+    ADD CONSTRAINT page_views_2027_02_pkey PRIMARY KEY (id, viewed_at);
+
+
+--
 -- Name: page_views_daily page_views_daily_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5592,14 +5484,6 @@ ALTER TABLE ONLY public.pages
 
 ALTER TABLE ONLY public.pages
     ADD CONSTRAINT pages_pkey PRIMARY KEY (id);
-
-
---
--- Name: plugin_migration_ledger plugin_migration_ledger_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.plugin_migration_ledger
-    ADD CONSTRAINT plugin_migration_ledger_pkey PRIMARY KEY (id);
 
 
 --
@@ -6035,14 +5919,6 @@ ALTER TABLE ONLY public.sys_media_variant
 
 
 --
--- Name: plugin_migration_ledger uq_plugin_migration_ledger_plugin_version; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.plugin_migration_ledger
-    ADD CONSTRAINT uq_plugin_migration_ledger_plugin_version UNIQUE (plugin_id, version);
-
-
---
 -- Name: user_preferences user_preferences_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6080,6 +5956,13 @@ ALTER TABLE ONLY public.webhook_deliveries
 
 ALTER TABLE ONLY public.webhook_endpoints
     ADD CONSTRAINT webhook_endpoints_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: idx_admin_side_effect_tasks_pending; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_admin_side_effect_tasks_pending ON public.admin_side_effect_tasks USING btree (id) WHERE (processed_time IS NULL);
 
 
 --
@@ -6185,20 +6068,6 @@ CREATE INDEX idx_ai_tool_call_log_tool_status ON public.ai_tool_call_log USING b
 --
 
 CREATE INDEX idx_ai_tool_call_log_user ON public.ai_tool_call_log USING btree (user_id, id DESC);
-
-
---
--- Name: idx_analytics_daily_path_rank; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_analytics_daily_path_rank ON public.analytics_daily_stats USING btree (project_id, scope, day, path);
-
-
---
--- Name: idx_analytics_daily_range; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_analytics_daily_range ON public.analytics_daily_stats USING btree (project_id, scope, day);
 
 
 --
@@ -6618,7 +6487,7 @@ CREATE INDEX idx_mail_automation_node_logs_run ON public.mail_automation_node_lo
 -- Name: idx_mail_automation_runs_active; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX idx_mail_automation_runs_active ON public.mail_automation_runs USING btree (automation_id, contact_id) WHERE ((status)::text = ANY (ARRAY[('running'::character varying)::text, ('waiting'::character varying)::text]));
+CREATE UNIQUE INDEX idx_mail_automation_runs_active ON public.mail_automation_runs USING btree (automation_id, contact_id) WHERE ((status)::text = ANY ((ARRAY['running'::character varying, 'waiting'::character varying])::text[]));
 
 
 --
@@ -7046,6 +6915,20 @@ CREATE INDEX idx_page_views_project_time ON ONLY public.page_views USING btree (
 --
 
 CREATE INDEX idx_pages_blockref ON public.pages USING gin (jsonb_path_query_array(draft_document, '$.**."blockId"'::jsonpath)) WHERE (deleted_at IS NULL);
+
+
+--
+-- Name: idx_pages_structure_footer; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_pages_structure_footer ON public.pages USING btree (((((draft_document -> 'settings'::text) -> 'structure'::text) ->> 'footerBlockId'::text))) WHERE (deleted_at IS NULL);
+
+
+--
+-- Name: idx_pages_structure_header; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_pages_structure_header ON public.pages USING btree (((((draft_document -> 'settings'::text) -> 'structure'::text) ->> 'headerBlockId'::text))) WHERE (deleted_at IS NULL);
 
 
 --
@@ -7504,90 +7387,6 @@ CREATE INDEX idx_webhook_endpoints_status ON public.webhook_endpoints USING btre
 
 
 --
--- Name: inventory_stock_movements_2026_08_batch_id_created_at_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX inventory_stock_movements_2026_08_batch_id_created_at_idx ON public.inventory_stock_movements_2026_08 USING btree (batch_id, create_time DESC);
-
-
---
--- Name: inventory_stock_movements_2026_08_project_id_created_at_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX inventory_stock_movements_2026_08_project_id_created_at_idx ON public.inventory_stock_movements_2026_08 USING btree (project_id, create_time DESC);
-
-
---
--- Name: inventory_stock_movements_2026_08_reason_code_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX inventory_stock_movements_2026_08_reason_code_idx ON public.inventory_stock_movements_2026_08 USING btree (reason_code);
-
-
---
--- Name: inventory_stock_movements_2026_08_stock_id_create_time_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX inventory_stock_movements_2026_08_stock_id_create_time_idx ON public.inventory_stock_movements_2026_08 USING btree (stock_id, create_time DESC);
-
-
---
--- Name: inventory_stock_movements_2026_08_variant_id_created_at_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX inventory_stock_movements_2026_08_variant_id_created_at_idx ON public.inventory_stock_movements_2026_08 USING btree (variant_id, create_time DESC);
-
-
---
--- Name: inventory_stock_movements_2026_08_warehouse_id_created_at_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX inventory_stock_movements_2026_08_warehouse_id_created_at_idx ON public.inventory_stock_movements_2026_08 USING btree (warehouse_id, create_time DESC);
-
-
---
--- Name: inventory_stock_movements_2026_09_batch_id_created_at_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX inventory_stock_movements_2026_09_batch_id_created_at_idx ON public.inventory_stock_movements_2026_09 USING btree (batch_id, create_time DESC);
-
-
---
--- Name: inventory_stock_movements_2026_09_project_id_created_at_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX inventory_stock_movements_2026_09_project_id_created_at_idx ON public.inventory_stock_movements_2026_09 USING btree (project_id, create_time DESC);
-
-
---
--- Name: inventory_stock_movements_2026_09_reason_code_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX inventory_stock_movements_2026_09_reason_code_idx ON public.inventory_stock_movements_2026_09 USING btree (reason_code);
-
-
---
--- Name: inventory_stock_movements_2026_09_stock_id_create_time_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX inventory_stock_movements_2026_09_stock_id_create_time_idx ON public.inventory_stock_movements_2026_09 USING btree (stock_id, create_time DESC);
-
-
---
--- Name: inventory_stock_movements_2026_09_variant_id_created_at_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX inventory_stock_movements_2026_09_variant_id_created_at_idx ON public.inventory_stock_movements_2026_09 USING btree (variant_id, create_time DESC);
-
-
---
--- Name: inventory_stock_movements_2026_09_warehouse_id_created_at_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX inventory_stock_movements_2026_09_warehouse_id_created_at_idx ON public.inventory_stock_movements_2026_09 USING btree (warehouse_id, create_time DESC);
-
-
---
 -- Name: inventory_stock_movements_2026_10_batch_id_created_at_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -7756,6 +7555,48 @@ CREATE INDEX inventory_stock_movements_2027_01_warehouse_id_created_at_idx ON pu
 
 
 --
+-- Name: inventory_stock_movements_2027_02_batch_id_created_at_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX inventory_stock_movements_2027_02_batch_id_created_at_idx ON public.inventory_stock_movements_2027_02 USING btree (batch_id, create_time DESC);
+
+
+--
+-- Name: inventory_stock_movements_2027_02_project_id_created_at_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX inventory_stock_movements_2027_02_project_id_created_at_idx ON public.inventory_stock_movements_2027_02 USING btree (project_id, create_time DESC);
+
+
+--
+-- Name: inventory_stock_movements_2027_02_reason_code_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX inventory_stock_movements_2027_02_reason_code_idx ON public.inventory_stock_movements_2027_02 USING btree (reason_code);
+
+
+--
+-- Name: inventory_stock_movements_2027_02_stock_id_create_time_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX inventory_stock_movements_2027_02_stock_id_create_time_idx ON public.inventory_stock_movements_2027_02 USING btree (stock_id, create_time DESC);
+
+
+--
+-- Name: inventory_stock_movements_2027_02_variant_id_created_at_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX inventory_stock_movements_2027_02_variant_id_created_at_idx ON public.inventory_stock_movements_2027_02 USING btree (variant_id, create_time DESC);
+
+
+--
+-- Name: inventory_stock_movements_2027_02_warehouse_id_created_at_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX inventory_stock_movements_2027_02_warehouse_id_created_at_idx ON public.inventory_stock_movements_2027_02 USING btree (warehouse_id, create_time DESC);
+
+
+--
 -- Name: inventory_stock_movements_default_batch_id_created_at_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -7795,62 +7636,6 @@ CREATE INDEX inventory_stock_movements_default_variant_id_created_at_idx ON publ
 --
 
 CREATE INDEX inventory_stock_movements_default_warehouse_id_created_at_idx ON public.inventory_stock_movements_default USING btree (warehouse_id, create_time DESC);
-
-
---
--- Name: master_data_changes_2026_08_entity_label_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX master_data_changes_2026_08_entity_label_idx ON public.master_data_changes_2026_08 USING gin (entity_label ext_shared.gin_trgm_ops);
-
-
---
--- Name: master_data_changes_2026_08_project_id_created_at_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX master_data_changes_2026_08_project_id_created_at_idx ON public.master_data_changes_2026_08 USING btree (project_id, create_time DESC);
-
-
---
--- Name: master_data_changes_2026_08_project_id_entity_type_entity_i_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX master_data_changes_2026_08_project_id_entity_type_entity_i_idx ON public.master_data_changes_2026_08 USING btree (project_id, entity_type, entity_id, create_time DESC);
-
-
---
--- Name: master_data_changes_2026_08_project_id_entity_type_field_cr_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX master_data_changes_2026_08_project_id_entity_type_field_cr_idx ON public.master_data_changes_2026_08 USING btree (project_id, entity_type, field, create_time DESC);
-
-
---
--- Name: master_data_changes_2026_09_entity_label_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX master_data_changes_2026_09_entity_label_idx ON public.master_data_changes_2026_09 USING gin (entity_label ext_shared.gin_trgm_ops);
-
-
---
--- Name: master_data_changes_2026_09_project_id_created_at_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX master_data_changes_2026_09_project_id_created_at_idx ON public.master_data_changes_2026_09 USING btree (project_id, create_time DESC);
-
-
---
--- Name: master_data_changes_2026_09_project_id_entity_type_entity_i_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX master_data_changes_2026_09_project_id_entity_type_entity_i_idx ON public.master_data_changes_2026_09 USING btree (project_id, entity_type, entity_id, create_time DESC);
-
-
---
--- Name: master_data_changes_2026_09_project_id_entity_type_field_cr_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX master_data_changes_2026_09_project_id_entity_type_field_cr_idx ON public.master_data_changes_2026_09 USING btree (project_id, entity_type, field, create_time DESC);
 
 
 --
@@ -7966,6 +7751,34 @@ CREATE INDEX master_data_changes_2027_01_project_id_entity_type_field_cr_idx ON 
 
 
 --
+-- Name: master_data_changes_2027_02_entity_label_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX master_data_changes_2027_02_entity_label_idx ON public.master_data_changes_2027_02 USING gin (entity_label ext_shared.gin_trgm_ops);
+
+
+--
+-- Name: master_data_changes_2027_02_project_id_created_at_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX master_data_changes_2027_02_project_id_created_at_idx ON public.master_data_changes_2027_02 USING btree (project_id, create_time DESC);
+
+
+--
+-- Name: master_data_changes_2027_02_project_id_entity_type_entity_i_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX master_data_changes_2027_02_project_id_entity_type_entity_i_idx ON public.master_data_changes_2027_02 USING btree (project_id, entity_type, entity_id, create_time DESC);
+
+
+--
+-- Name: master_data_changes_2027_02_project_id_entity_type_field_cr_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX master_data_changes_2027_02_project_id_entity_type_field_cr_idx ON public.master_data_changes_2027_02 USING btree (project_id, entity_type, field, create_time DESC);
+
+
+--
 -- Name: master_data_changes_default_entity_label_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -7991,34 +7804,6 @@ CREATE INDEX master_data_changes_default_project_id_entity_type_entity_i_idx ON 
 --
 
 CREATE INDEX master_data_changes_default_project_id_entity_type_field_cr_idx ON public.master_data_changes_default USING btree (project_id, entity_type, field, create_time DESC);
-
-
---
--- Name: page_views_2026_08_project_id_path_viewed_at_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX page_views_2026_08_project_id_path_viewed_at_idx ON public.page_views_2026_08 USING btree (project_id, path, viewed_at DESC);
-
-
---
--- Name: page_views_2026_08_project_id_viewed_at_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX page_views_2026_08_project_id_viewed_at_idx ON public.page_views_2026_08 USING btree (project_id, viewed_at DESC);
-
-
---
--- Name: page_views_2026_09_project_id_path_viewed_at_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX page_views_2026_09_project_id_path_viewed_at_idx ON public.page_views_2026_09 USING btree (project_id, path, viewed_at DESC);
-
-
---
--- Name: page_views_2026_09_project_id_viewed_at_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX page_views_2026_09_project_id_viewed_at_idx ON public.page_views_2026_09 USING btree (project_id, viewed_at DESC);
 
 
 --
@@ -8075,6 +7860,20 @@ CREATE INDEX page_views_2027_01_project_id_path_viewed_at_idx ON public.page_vie
 --
 
 CREATE INDEX page_views_2027_01_project_id_viewed_at_idx ON public.page_views_2027_01 USING btree (project_id, viewed_at DESC);
+
+
+--
+-- Name: page_views_2027_02_project_id_path_viewed_at_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX page_views_2027_02_project_id_path_viewed_at_idx ON public.page_views_2027_02 USING btree (project_id, path, viewed_at DESC);
+
+
+--
+-- Name: page_views_2027_02_project_id_viewed_at_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX page_views_2027_02_project_id_viewed_at_idx ON public.page_views_2027_02 USING btree (project_id, viewed_at DESC);
 
 
 --
@@ -8138,6 +7937,13 @@ CREATE UNIQUE INDEX uq_blocks_project_name ON public.blocks USING btree (project
 --
 
 CREATE UNIQUE INDEX uq_blocks_project_name_lower ON public.blocks USING btree (project_id, lower(name));
+
+
+--
+-- Name: uq_build_jobs_context_version; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_build_jobs_context_version ON public.build_jobs USING btree (context_key, input_version) WHERE (source_type = 'menu_stale'::text);
 
 
 --
@@ -8456,104 +8262,6 @@ CREATE UNIQUE INDEX uq_themes_project_name ON public.themes USING btree (project
 
 
 --
--- Name: inventory_stock_movements_2026_08_batch_id_created_at_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
-ALTER INDEX public.idx_inventory_movements_batch ATTACH PARTITION public.inventory_stock_movements_2026_08_batch_id_created_at_idx;
-
-
---
--- Name: inventory_stock_movements_2026_08_pkey; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
-ALTER INDEX public.inventory_stock_movements_pkey1 ATTACH PARTITION public.inventory_stock_movements_2026_08_pkey;
-
-
---
--- Name: inventory_stock_movements_2026_08_project_id_created_at_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
-ALTER INDEX public.idx_inventory_movements_project_time ATTACH PARTITION public.inventory_stock_movements_2026_08_project_id_created_at_idx;
-
-
---
--- Name: inventory_stock_movements_2026_08_reason_code_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
-ALTER INDEX public.idx_inventory_movements_reason ATTACH PARTITION public.inventory_stock_movements_2026_08_reason_code_idx;
-
-
---
--- Name: inventory_stock_movements_2026_08_stock_id_create_time_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
-ALTER INDEX public.idx_inventory_movements_stock_time ATTACH PARTITION public.inventory_stock_movements_2026_08_stock_id_create_time_idx;
-
-
---
--- Name: inventory_stock_movements_2026_08_variant_id_created_at_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
-ALTER INDEX public.idx_inventory_movements_variant_time ATTACH PARTITION public.inventory_stock_movements_2026_08_variant_id_created_at_idx;
-
-
---
--- Name: inventory_stock_movements_2026_08_warehouse_id_created_at_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
-ALTER INDEX public.idx_inventory_movements_wh_time ATTACH PARTITION public.inventory_stock_movements_2026_08_warehouse_id_created_at_idx;
-
-
---
--- Name: inventory_stock_movements_2026_09_batch_id_created_at_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
-ALTER INDEX public.idx_inventory_movements_batch ATTACH PARTITION public.inventory_stock_movements_2026_09_batch_id_created_at_idx;
-
-
---
--- Name: inventory_stock_movements_2026_09_pkey; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
-ALTER INDEX public.inventory_stock_movements_pkey1 ATTACH PARTITION public.inventory_stock_movements_2026_09_pkey;
-
-
---
--- Name: inventory_stock_movements_2026_09_project_id_created_at_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
-ALTER INDEX public.idx_inventory_movements_project_time ATTACH PARTITION public.inventory_stock_movements_2026_09_project_id_created_at_idx;
-
-
---
--- Name: inventory_stock_movements_2026_09_reason_code_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
-ALTER INDEX public.idx_inventory_movements_reason ATTACH PARTITION public.inventory_stock_movements_2026_09_reason_code_idx;
-
-
---
--- Name: inventory_stock_movements_2026_09_stock_id_create_time_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
-ALTER INDEX public.idx_inventory_movements_stock_time ATTACH PARTITION public.inventory_stock_movements_2026_09_stock_id_create_time_idx;
-
-
---
--- Name: inventory_stock_movements_2026_09_variant_id_created_at_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
-ALTER INDEX public.idx_inventory_movements_variant_time ATTACH PARTITION public.inventory_stock_movements_2026_09_variant_id_created_at_idx;
-
-
---
--- Name: inventory_stock_movements_2026_09_warehouse_id_created_at_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
-ALTER INDEX public.idx_inventory_movements_wh_time ATTACH PARTITION public.inventory_stock_movements_2026_09_warehouse_id_created_at_idx;
-
-
---
 -- Name: inventory_stock_movements_2026_10_batch_id_created_at_idx; Type: INDEX ATTACH; Schema: public; Owner: -
 --
 
@@ -8750,6 +8458,55 @@ ALTER INDEX public.idx_inventory_movements_wh_time ATTACH PARTITION public.inven
 
 
 --
+-- Name: inventory_stock_movements_2027_02_batch_id_created_at_idx; Type: INDEX ATTACH; Schema: public; Owner: -
+--
+
+ALTER INDEX public.idx_inventory_movements_batch ATTACH PARTITION public.inventory_stock_movements_2027_02_batch_id_created_at_idx;
+
+
+--
+-- Name: inventory_stock_movements_2027_02_pkey; Type: INDEX ATTACH; Schema: public; Owner: -
+--
+
+ALTER INDEX public.inventory_stock_movements_pkey1 ATTACH PARTITION public.inventory_stock_movements_2027_02_pkey;
+
+
+--
+-- Name: inventory_stock_movements_2027_02_project_id_created_at_idx; Type: INDEX ATTACH; Schema: public; Owner: -
+--
+
+ALTER INDEX public.idx_inventory_movements_project_time ATTACH PARTITION public.inventory_stock_movements_2027_02_project_id_created_at_idx;
+
+
+--
+-- Name: inventory_stock_movements_2027_02_reason_code_idx; Type: INDEX ATTACH; Schema: public; Owner: -
+--
+
+ALTER INDEX public.idx_inventory_movements_reason ATTACH PARTITION public.inventory_stock_movements_2027_02_reason_code_idx;
+
+
+--
+-- Name: inventory_stock_movements_2027_02_stock_id_create_time_idx; Type: INDEX ATTACH; Schema: public; Owner: -
+--
+
+ALTER INDEX public.idx_inventory_movements_stock_time ATTACH PARTITION public.inventory_stock_movements_2027_02_stock_id_create_time_idx;
+
+
+--
+-- Name: inventory_stock_movements_2027_02_variant_id_created_at_idx; Type: INDEX ATTACH; Schema: public; Owner: -
+--
+
+ALTER INDEX public.idx_inventory_movements_variant_time ATTACH PARTITION public.inventory_stock_movements_2027_02_variant_id_created_at_idx;
+
+
+--
+-- Name: inventory_stock_movements_2027_02_warehouse_id_created_at_idx; Type: INDEX ATTACH; Schema: public; Owner: -
+--
+
+ALTER INDEX public.idx_inventory_movements_wh_time ATTACH PARTITION public.inventory_stock_movements_2027_02_warehouse_id_created_at_idx;
+
+
+--
 -- Name: inventory_stock_movements_default_batch_id_created_at_idx; Type: INDEX ATTACH; Schema: public; Owner: -
 --
 
@@ -8796,76 +8553,6 @@ ALTER INDEX public.idx_inventory_movements_variant_time ATTACH PARTITION public.
 --
 
 ALTER INDEX public.idx_inventory_movements_wh_time ATTACH PARTITION public.inventory_stock_movements_default_warehouse_id_created_at_idx;
-
-
---
--- Name: master_data_changes_2026_08_entity_label_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
-ALTER INDEX public.idx_master_data_changes_label_trgm ATTACH PARTITION public.master_data_changes_2026_08_entity_label_idx;
-
-
---
--- Name: master_data_changes_2026_08_pkey; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
-ALTER INDEX public.master_data_changes_pkey1 ATTACH PARTITION public.master_data_changes_2026_08_pkey;
-
-
---
--- Name: master_data_changes_2026_08_project_id_created_at_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
-ALTER INDEX public.idx_master_data_changes_time ATTACH PARTITION public.master_data_changes_2026_08_project_id_created_at_idx;
-
-
---
--- Name: master_data_changes_2026_08_project_id_entity_type_entity_i_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
-ALTER INDEX public.idx_master_data_changes_entity ATTACH PARTITION public.master_data_changes_2026_08_project_id_entity_type_entity_i_idx;
-
-
---
--- Name: master_data_changes_2026_08_project_id_entity_type_field_cr_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
-ALTER INDEX public.idx_master_data_changes_field ATTACH PARTITION public.master_data_changes_2026_08_project_id_entity_type_field_cr_idx;
-
-
---
--- Name: master_data_changes_2026_09_entity_label_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
-ALTER INDEX public.idx_master_data_changes_label_trgm ATTACH PARTITION public.master_data_changes_2026_09_entity_label_idx;
-
-
---
--- Name: master_data_changes_2026_09_pkey; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
-ALTER INDEX public.master_data_changes_pkey1 ATTACH PARTITION public.master_data_changes_2026_09_pkey;
-
-
---
--- Name: master_data_changes_2026_09_project_id_created_at_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
-ALTER INDEX public.idx_master_data_changes_time ATTACH PARTITION public.master_data_changes_2026_09_project_id_created_at_idx;
-
-
---
--- Name: master_data_changes_2026_09_project_id_entity_type_entity_i_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
-ALTER INDEX public.idx_master_data_changes_entity ATTACH PARTITION public.master_data_changes_2026_09_project_id_entity_type_entity_i_idx;
-
-
---
--- Name: master_data_changes_2026_09_project_id_entity_type_field_cr_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
-ALTER INDEX public.idx_master_data_changes_field ATTACH PARTITION public.master_data_changes_2026_09_project_id_entity_type_field_cr_idx;
 
 
 --
@@ -9009,6 +8696,41 @@ ALTER INDEX public.idx_master_data_changes_field ATTACH PARTITION public.master_
 
 
 --
+-- Name: master_data_changes_2027_02_entity_label_idx; Type: INDEX ATTACH; Schema: public; Owner: -
+--
+
+ALTER INDEX public.idx_master_data_changes_label_trgm ATTACH PARTITION public.master_data_changes_2027_02_entity_label_idx;
+
+
+--
+-- Name: master_data_changes_2027_02_pkey; Type: INDEX ATTACH; Schema: public; Owner: -
+--
+
+ALTER INDEX public.master_data_changes_pkey1 ATTACH PARTITION public.master_data_changes_2027_02_pkey;
+
+
+--
+-- Name: master_data_changes_2027_02_project_id_created_at_idx; Type: INDEX ATTACH; Schema: public; Owner: -
+--
+
+ALTER INDEX public.idx_master_data_changes_time ATTACH PARTITION public.master_data_changes_2027_02_project_id_created_at_idx;
+
+
+--
+-- Name: master_data_changes_2027_02_project_id_entity_type_entity_i_idx; Type: INDEX ATTACH; Schema: public; Owner: -
+--
+
+ALTER INDEX public.idx_master_data_changes_entity ATTACH PARTITION public.master_data_changes_2027_02_project_id_entity_type_entity_i_idx;
+
+
+--
+-- Name: master_data_changes_2027_02_project_id_entity_type_field_cr_idx; Type: INDEX ATTACH; Schema: public; Owner: -
+--
+
+ALTER INDEX public.idx_master_data_changes_field ATTACH PARTITION public.master_data_changes_2027_02_project_id_entity_type_field_cr_idx;
+
+
+--
 -- Name: master_data_changes_default_entity_label_idx; Type: INDEX ATTACH; Schema: public; Owner: -
 --
 
@@ -9041,48 +8763,6 @@ ALTER INDEX public.idx_master_data_changes_entity ATTACH PARTITION public.master
 --
 
 ALTER INDEX public.idx_master_data_changes_field ATTACH PARTITION public.master_data_changes_default_project_id_entity_type_field_cr_idx;
-
-
---
--- Name: page_views_2026_08_pkey; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
-ALTER INDEX public.page_views_pkey1 ATTACH PARTITION public.page_views_2026_08_pkey;
-
-
---
--- Name: page_views_2026_08_project_id_path_viewed_at_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
-ALTER INDEX public.idx_page_views_project_path_time ATTACH PARTITION public.page_views_2026_08_project_id_path_viewed_at_idx;
-
-
---
--- Name: page_views_2026_08_project_id_viewed_at_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
-ALTER INDEX public.idx_page_views_project_time ATTACH PARTITION public.page_views_2026_08_project_id_viewed_at_idx;
-
-
---
--- Name: page_views_2026_09_pkey; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
-ALTER INDEX public.page_views_pkey1 ATTACH PARTITION public.page_views_2026_09_pkey;
-
-
---
--- Name: page_views_2026_09_project_id_path_viewed_at_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
-ALTER INDEX public.idx_page_views_project_path_time ATTACH PARTITION public.page_views_2026_09_project_id_path_viewed_at_idx;
-
-
---
--- Name: page_views_2026_09_project_id_viewed_at_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
-ALTER INDEX public.idx_page_views_project_time ATTACH PARTITION public.page_views_2026_09_project_id_viewed_at_idx;
 
 
 --
@@ -9170,6 +8850,27 @@ ALTER INDEX public.idx_page_views_project_time ATTACH PARTITION public.page_view
 
 
 --
+-- Name: page_views_2027_02_pkey; Type: INDEX ATTACH; Schema: public; Owner: -
+--
+
+ALTER INDEX public.page_views_pkey1 ATTACH PARTITION public.page_views_2027_02_pkey;
+
+
+--
+-- Name: page_views_2027_02_project_id_path_viewed_at_idx; Type: INDEX ATTACH; Schema: public; Owner: -
+--
+
+ALTER INDEX public.idx_page_views_project_path_time ATTACH PARTITION public.page_views_2027_02_project_id_path_viewed_at_idx;
+
+
+--
+-- Name: page_views_2027_02_project_id_viewed_at_idx; Type: INDEX ATTACH; Schema: public; Owner: -
+--
+
+ALTER INDEX public.idx_page_views_project_time ATTACH PARTITION public.page_views_2027_02_project_id_viewed_at_idx;
+
+
+--
 -- Name: page_views_default_pkey; Type: INDEX ATTACH; Schema: public; Owner: -
 --
 
@@ -9235,6 +8936,14 @@ ALTER TABLE ONLY public.blueprint_versions
 
 
 --
+-- Name: build_job_seq build_job_seq_project_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.build_job_seq
+    ADD CONSTRAINT build_job_seq_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE;
+
+
+--
 -- Name: content_template_component_pins content_template_component_pins_template_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -9272,14 +8981,6 @@ ALTER TABLE ONLY public.document_snapshots
 
 ALTER TABLE ONLY public.document_snapshots
     ADD CONSTRAINT document_snapshots_source_template_version_id_fkey FOREIGN KEY (source_template_version_id) REFERENCES public.content_template_versions(id);
-
-
---
--- Name: inventory_stock_movements fk_inventory_movements_product; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE public.inventory_stock_movements
-    ADD CONSTRAINT fk_inventory_movements_product FOREIGN KEY (product_id) REFERENCES public.products(id) ON DELETE RESTRICT;
 
 
 --
@@ -9859,16 +9560,16 @@ ALTER TABLE ONLY public.webhook_deliveries
 
 
 --
--- Name: analytics_daily_stats; Type: ROW SECURITY; Schema: public; Owner: -
---
-
-ALTER TABLE public.analytics_daily_stats ENABLE ROW LEVEL SECURITY;
-
---
 -- Name: blocks; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.blocks ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: build_job_seq; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.build_job_seq ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: comments; Type: ROW SECURITY; Schema: public; Owner: -
@@ -9937,18 +9638,6 @@ ALTER TABLE public.inventory_sources ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.inventory_stock_movements ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: inventory_stock_movements_2026_08; Type: ROW SECURITY; Schema: public; Owner: -
---
-
-ALTER TABLE public.inventory_stock_movements_2026_08 ENABLE ROW LEVEL SECURITY;
-
---
--- Name: inventory_stock_movements_2026_09; Type: ROW SECURITY; Schema: public; Owner: -
---
-
-ALTER TABLE public.inventory_stock_movements_2026_09 ENABLE ROW LEVEL SECURITY;
-
---
 -- Name: inventory_stock_movements_2026_10; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -9971,6 +9660,12 @@ ALTER TABLE public.inventory_stock_movements_2026_12 ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.inventory_stock_movements_2027_01 ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: inventory_stock_movements_2027_02; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.inventory_stock_movements_2027_02 ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: inventory_stock_movements_default; Type: ROW SECURITY; Schema: public; Owner: -
@@ -10003,18 +9698,6 @@ ALTER TABLE public.inventory_warehouses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.master_data_changes ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: master_data_changes_2026_08; Type: ROW SECURITY; Schema: public; Owner: -
---
-
-ALTER TABLE public.master_data_changes_2026_08 ENABLE ROW LEVEL SECURITY;
-
---
--- Name: master_data_changes_2026_09; Type: ROW SECURITY; Schema: public; Owner: -
---
-
-ALTER TABLE public.master_data_changes_2026_09 ENABLE ROW LEVEL SECURITY;
-
---
 -- Name: master_data_changes_2026_10; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -10037,6 +9720,12 @@ ALTER TABLE public.master_data_changes_2026_12 ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.master_data_changes_2027_01 ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: master_data_changes_2027_02; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.master_data_changes_2027_02 ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: master_data_changes_default; Type: ROW SECURITY; Schema: public; Owner: -
@@ -10120,18 +9809,6 @@ ALTER TABLE public.page_routes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.page_views ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: page_views_2026_08; Type: ROW SECURITY; Schema: public; Owner: -
---
-
-ALTER TABLE public.page_views_2026_08 ENABLE ROW LEVEL SECURITY;
-
---
--- Name: page_views_2026_09; Type: ROW SECURITY; Schema: public; Owner: -
---
-
-ALTER TABLE public.page_views_2026_09 ENABLE ROW LEVEL SECURITY;
-
---
 -- Name: page_views_2026_10; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -10154,6 +9831,12 @@ ALTER TABLE public.page_views_2026_12 ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.page_views_2027_01 ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: page_views_2027_02; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.page_views_2027_02 ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: page_views_daily; Type: ROW SECURITY; Schema: public; Owner: -
@@ -10228,17 +9911,17 @@ ALTER TABLE public.product_tags ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.products ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: analytics_daily_stats project_isolation; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY project_isolation ON public.analytics_daily_stats USING ((project_id = (NULLIF(current_setting('app.project_id'::text, true), ''::text))::uuid)) WITH CHECK ((project_id = (NULLIF(current_setting('app.project_id'::text, true), ''::text))::uuid));
-
-
---
 -- Name: blocks project_isolation; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY project_isolation ON public.blocks USING ((project_id = (NULLIF(current_setting('app.project_id'::text, true), ''::text))::uuid)) WITH CHECK ((project_id = (NULLIF(current_setting('app.project_id'::text, true), ''::text))::uuid));
+
+
+--
+-- Name: build_job_seq project_isolation; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY project_isolation ON public.build_job_seq USING ((project_id = (NULLIF(current_setting('app.project_id'::text, true), ''::text))::uuid)) WITH CHECK ((project_id = (NULLIF(current_setting('app.project_id'::text, true), ''::text))::uuid));
 
 
 --
@@ -10312,20 +9995,6 @@ CREATE POLICY project_isolation ON public.inventory_stock_movements USING ((proj
 
 
 --
--- Name: inventory_stock_movements_2026_08 project_isolation; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY project_isolation ON public.inventory_stock_movements_2026_08 USING ((project_id = (NULLIF(current_setting('app.project_id'::text, true), ''::text))::uuid)) WITH CHECK ((project_id = (NULLIF(current_setting('app.project_id'::text, true), ''::text))::uuid));
-
-
---
--- Name: inventory_stock_movements_2026_09 project_isolation; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY project_isolation ON public.inventory_stock_movements_2026_09 USING ((project_id = (NULLIF(current_setting('app.project_id'::text, true), ''::text))::uuid)) WITH CHECK ((project_id = (NULLIF(current_setting('app.project_id'::text, true), ''::text))::uuid));
-
-
---
 -- Name: inventory_stock_movements_2026_10 project_isolation; Type: POLICY; Schema: public; Owner: -
 --
 
@@ -10351,6 +10020,13 @@ CREATE POLICY project_isolation ON public.inventory_stock_movements_2026_12 USIN
 --
 
 CREATE POLICY project_isolation ON public.inventory_stock_movements_2027_01 USING ((project_id = (NULLIF(current_setting('app.project_id'::text, true), ''::text))::uuid)) WITH CHECK ((project_id = (NULLIF(current_setting('app.project_id'::text, true), ''::text))::uuid));
+
+
+--
+-- Name: inventory_stock_movements_2027_02 project_isolation; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY project_isolation ON public.inventory_stock_movements_2027_02 USING ((project_id = (NULLIF(current_setting('app.project_id'::text, true), ''::text))::uuid)) WITH CHECK ((project_id = (NULLIF(current_setting('app.project_id'::text, true), ''::text))::uuid));
 
 
 --
@@ -10389,20 +10065,6 @@ CREATE POLICY project_isolation ON public.master_data_changes USING ((project_id
 
 
 --
--- Name: master_data_changes_2026_08 project_isolation; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY project_isolation ON public.master_data_changes_2026_08 USING ((project_id = (NULLIF(current_setting('app.project_id'::text, true), ''::text))::uuid)) WITH CHECK ((project_id = (NULLIF(current_setting('app.project_id'::text, true), ''::text))::uuid));
-
-
---
--- Name: master_data_changes_2026_09 project_isolation; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY project_isolation ON public.master_data_changes_2026_09 USING ((project_id = (NULLIF(current_setting('app.project_id'::text, true), ''::text))::uuid)) WITH CHECK ((project_id = (NULLIF(current_setting('app.project_id'::text, true), ''::text))::uuid));
-
-
---
 -- Name: master_data_changes_2026_10 project_isolation; Type: POLICY; Schema: public; Owner: -
 --
 
@@ -10428,6 +10090,13 @@ CREATE POLICY project_isolation ON public.master_data_changes_2026_12 USING ((pr
 --
 
 CREATE POLICY project_isolation ON public.master_data_changes_2027_01 USING ((project_id = (NULLIF(current_setting('app.project_id'::text, true), ''::text))::uuid)) WITH CHECK ((project_id = (NULLIF(current_setting('app.project_id'::text, true), ''::text))::uuid));
+
+
+--
+-- Name: master_data_changes_2027_02 project_isolation; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY project_isolation ON public.master_data_changes_2027_02 USING ((project_id = (NULLIF(current_setting('app.project_id'::text, true), ''::text))::uuid)) WITH CHECK ((project_id = (NULLIF(current_setting('app.project_id'::text, true), ''::text))::uuid));
 
 
 --
@@ -10487,20 +10156,6 @@ CREATE POLICY project_isolation ON public.page_views USING ((project_id = (NULLI
 
 
 --
--- Name: page_views_2026_08 project_isolation; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY project_isolation ON public.page_views_2026_08 USING ((project_id = (NULLIF(current_setting('app.project_id'::text, true), ''::text))::uuid)) WITH CHECK ((project_id = (NULLIF(current_setting('app.project_id'::text, true), ''::text))::uuid));
-
-
---
--- Name: page_views_2026_09 project_isolation; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY project_isolation ON public.page_views_2026_09 USING ((project_id = (NULLIF(current_setting('app.project_id'::text, true), ''::text))::uuid)) WITH CHECK ((project_id = (NULLIF(current_setting('app.project_id'::text, true), ''::text))::uuid));
-
-
---
 -- Name: page_views_2026_10 project_isolation; Type: POLICY; Schema: public; Owner: -
 --
 
@@ -10526,6 +10181,13 @@ CREATE POLICY project_isolation ON public.page_views_2026_12 USING ((project_id 
 --
 
 CREATE POLICY project_isolation ON public.page_views_2027_01 USING ((project_id = (NULLIF(current_setting('app.project_id'::text, true), ''::text))::uuid)) WITH CHECK ((project_id = (NULLIF(current_setting('app.project_id'::text, true), ''::text))::uuid));
+
+
+--
+-- Name: page_views_2027_02 project_isolation; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY project_isolation ON public.page_views_2027_02 USING ((project_id = (NULLIF(current_setting('app.project_id'::text, true), ''::text))::uuid)) WITH CHECK ((project_id = (NULLIF(current_setting('app.project_id'::text, true), ''::text))::uuid));
 
 
 --

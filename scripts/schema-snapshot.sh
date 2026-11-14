@@ -47,7 +47,46 @@ SNAPSHOT="$SNAPSHOT_DIR/CURRENT.sql"
 CHECK=0
 [ "${1:-}" = "--check" ] && CHECK=1
 
+# 快照只应与「跑完本仓 public/migrations 的库」比对，不与业务库比对。
+# config.yaml 的 database.dbname 是本机业务库（artex），里面混着别的应用的表与运行时
+# 副产品：plugin_migration_ledger、analytics_daily_stats 在本仓迁移链里没有 CREATE，
+# tools / task_templates / traffic_evidence_snapshots 等表也来自别的应用。拿它比对会得到
+# 与仓库无关的噪声（实测 6315 行 diff），--check 永远红，久了对账就没人看了。
+# 所以默认自建一个临时库、跑一遍迁移再比；要复用已有终态库时显式给 GOWP_SNAPSHOT_DB。
+SNAPSHOT_DB="${GOWP_SNAPSHOT_DB:-}"
+ADMIN_DB="${GOWP_ADMIN_DB:-postgres}"
+if [ -z "$SNAPSHOT_DB" ]; then
+  SNAPSHOT_DB="wp_schema_probe_$$"
+  PROBE=1
+else
+  PROBE=0
+fi
+
 command -v pg_dump >/dev/null 2>&1 || { echo "✗ 需要 pg_dump" >&2; exit 1; }
+
+# 默认空实现：只有自建探测库时才需要有实际动作。--check 分支会再设一次 trap，
+# 必须把两步合并，否则后设的 trap 会覆盖掉这里的清理（实测临时库会残留）。
+cleanup_probe() { :; }
+
+if [ "$PROBE" -eq 1 ]; then
+  command -v psql >/dev/null 2>&1 || { echo "✗ 自建探测库需要 psql" >&2; exit 1; }
+  command -v go >/dev/null 2>&1 || { echo "✗ 自建探测库需要 go（要跑迁移）" >&2; exit 1; }
+  PROBE_LOG="/tmp/wp-schema-probe-migrate.log"
+  cleanup_probe() {
+    psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$ADMIN_DB" \
+      -c "DROP DATABASE IF EXISTS \"$SNAPSHOT_DB\" WITH (FORCE)" >/dev/null || \
+      echo "⚠ 临时库 $SNAPSHOT_DB 未能自动删除，请手动 DROP DATABASE" >&2
+  }
+  trap cleanup_probe EXIT
+  psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$ADMIN_DB" -v ON_ERROR_STOP=1 \
+    -c "CREATE DATABASE \"$SNAPSHOT_DB\"" >/dev/null
+  echo "… 在 $SNAPSHOT_DB 执行全量迁移（约一分钟）"
+  if ! GOWP_DATABASE_DBNAME="$SNAPSHOT_DB" go run ./cmd -migrate-only >"$PROBE_LOG" 2>&1; then
+    echo "✗ 迁移失败，日志：$PROBE_LOG；临时库 $SNAPSHOT_DB 已保留便于排查" >&2
+    trap - EXIT
+    exit 1
+  fi
+fi
 
 # ── dump ─────────────────────────────────────────────────────────────────────
 # --schema-only：只要结构。数据快照属于备份（scripts/backup.sh），不是这份文档的事。
@@ -55,7 +94,7 @@ command -v pg_dump >/dev/null 2>&1 || { echo "✗ 需要 pg_dump" >&2; exit 1; }
 #   · 属主/权限 —— 随部署角色变，进快照会让 diff 全是噪音
 #   · pg_dump 的随机 \restrict 标记与生成时间戳 —— 否则每次生成都不同，--check 永远红
 dump_schema() {
-  pg_dump -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" \
+  pg_dump -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$SNAPSHOT_DB" \
     --schema-only --no-owner --no-privileges --no-comments \
     --exclude-table='sys_migration_marker' \
     | sed -E \
@@ -70,7 +109,7 @@ dump_schema() {
 if [ "$CHECK" -eq 1 ]; then
   [ -f "$SNAPSHOT" ] || { echo "✗ 快照不存在：$SNAPSHOT（先跑 bash scripts/schema-snapshot.sh）" >&2; exit 1; }
   TMP="$(mktemp)"
-  trap 'rm -f "$TMP"' EXIT
+  trap 'rm -f "$TMP"; cleanup_probe' EXIT
   dump_schema > "$TMP"
   # 比对**只跳过文件头**：头部含生成时间与迁移版本，每次都会变。头部之外逐字节比对
   # （表、列、索引、约束、函数、触发器全部在内）—— 「只比关键字行」会让列类型改动漏网。
@@ -99,7 +138,7 @@ mkdir -p "$SNAPSHOT_DIR"
   echo "-- "
   echo "-- 更新方式：bash scripts/schema-snapshot.sh"
   echo "-- 漂移检测：bash scripts/schema-snapshot.sh --check（CI 里跑）"
-  echo "-- 迁移台账版本：$(psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -tAc \
+  echo "-- 迁移台账版本：$(psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$SNAPSHOT_DB" -tAc \
         "SELECT coalesce(max(version),'none') FROM sys_migration_marker" 2>/dev/null || echo unknown)"
   echo "-- 生成时间：$(date -Iseconds)"
   echo
