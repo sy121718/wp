@@ -6,7 +6,7 @@
 -- 更新方式：bash scripts/schema-snapshot.sh
 -- 漂移检测：bash scripts/schema-snapshot.sh --check（CI 里跑）
 -- 迁移台账版本：597-block-bulk-delete-grant-copy
--- 生成时间：2026-11-15T06:49:15+08:00
+-- 生成时间：2026-11-15T07:16:33+08:00
 
 --
 -- PostgreSQL database dump

@@ -182,3 +182,4 @@
 747-shared-feedback-short-keys-i18n
 759-sys-baseline
 760-inventory-movement-fk-restore
+761-ai-event-call-log-columns

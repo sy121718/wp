@@ -120,8 +120,6 @@ func init() {
 
 	registerAISessionUsageNotesI18n()
 
-	registerAIEventProviderModel()
-
 	registerAISessionUsageHoverI18n()
 
 	registerAISessionTrendOtherI18n()
@@ -131,8 +129,6 @@ func init() {
 	registerAILeadI18n()
 
 	registerAIMenuMergeFollowup()
-
-	registerAIEventUser()
 
 	registerAIUserRequiredI18n()
 
@@ -195,8 +191,6 @@ func init() {
 	registerCustomerRfmFilterI18n()
 
 	registerCustomerTierFilterI18n()
-
-	registerAICallLogCachedTokens()
 
 	registerAIUsageMetricsI18n()
 
@@ -338,4 +332,6 @@ func init() {
 	registerSysBaseline()
 
 	registerInventoryMovementFKRestore()
+
+	registerAIEventCallLogColumns()
 }

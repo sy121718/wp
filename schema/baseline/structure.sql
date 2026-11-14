@@ -1,6 +1,6 @@
 -- 初始化基线：结构（由 scripts/baseline-generate.sh 生成，请勿手改）。
 -- 不含任何 _YYYY_MM 月分区：月窗口由 partition.EnsureAhead 在初始化末尾补齐。
--- 生成时间：2026-11-15T06:47:08+08:00
+-- 生成时间：2026-11-15T07:16:21+08:00
 
 --
 -- PostgreSQL database dump
@@ -231,7 +231,9 @@ CREATE TABLE public.ai_call_log (
     latency_ms bigint DEFAULT 0 NOT NULL,
     status character varying(20) DEFAULT ''::character varying NOT NULL,
     error_key character varying(80) DEFAULT ''::character varying NOT NULL,
-    create_time timestamp with time zone DEFAULT now() NOT NULL
+    create_time timestamp with time zone DEFAULT now() NOT NULL,
+    cached_tokens bigint DEFAULT 0 NOT NULL,
+    cached_reported boolean DEFAULT false NOT NULL
 );
 
 
@@ -269,7 +271,10 @@ CREATE TABLE public.ai_event (
     content text DEFAULT ''::text NOT NULL,
     content_tokens bigint DEFAULT 0 NOT NULL,
     meta jsonb DEFAULT '{}'::jsonb NOT NULL,
-    create_time timestamp with time zone DEFAULT now() NOT NULL
+    create_time timestamp with time zone DEFAULT now() NOT NULL,
+    provider_key character varying(50) DEFAULT ''::character varying NOT NULL,
+    model_id character varying(120) DEFAULT ''::character varying NOT NULL,
+    user_id bigint DEFAULT 0 NOT NULL
 );
 
 
@@ -5387,6 +5392,20 @@ CREATE INDEX idx_ai_call_log_user_time ON public.ai_call_log USING btree (user_i
 --
 
 CREATE INDEX idx_ai_event_session_kind ON public.ai_event USING btree (session_id, kind);
+
+
+--
+-- Name: idx_ai_event_session_model; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ai_event_session_model ON public.ai_event USING btree (session_id, provider_key, model_id);
+
+
+--
+-- Name: idx_ai_event_user_time; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ai_event_user_time ON public.ai_event USING btree (user_id, create_time DESC);
 
 
 --
