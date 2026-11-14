@@ -1,17 +1,13 @@
 package view
 
 import (
-	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 
-	"go_wp/pkg/bulkids"
 	"go_wp/pkg/facing"
-	"go_wp/pkg/logger"
 	"go_wp/pkg/pagination"
 	"go_wp/pkg/reqparams"
-	"go_wp/pkg/response"
 )
 
 // 后台页面渲染的公共事实在这里装配一次；应用只在装配期把请求事实的来源注入。
@@ -173,6 +169,13 @@ func RenderFragment(c *gin.Context, tpl string, data any) {
 	c.HTML(http.StatusOK, tpl, prepareView(c, data))
 }
 
+// RenderFragmentStatus 是明确失败片段的渲染入口：状态码由调用方给出（4xx），
+// 数据仍是业务事实、由模板取词。它与 RenderFragment 共用同一份请求事实注入，
+// 区别只在状态码 —— c.Status 会被随后的 c.HTML(200) 覆盖，必须在这里给。
+func RenderFragmentStatus(c *gin.Context, status int, tpl string, data any) {
+	c.HTML(status, tpl, prepareView(c, data))
+}
+
 // RenderFailure 只传失败事实给 Jet；错误模板不依赖登录态、菜单或业务查询。
 func RenderFailure(c *gin.Context, status int, scene string, err error) {
 	if c.Writer.Written() {
@@ -269,16 +272,6 @@ func ErrorFactText(c *gin.Context, fact ErrFact) string {
 	return ScopeTranslate(c)(fact.Key, fact.Fallback)
 }
 
-// PageErrorText 是 PageErrorFact + ErrorFactText 的组合。
-func PageErrorText(c *gin.Context, scene string, err error) string {
-	return ErrorFactText(c, PageErrorFact(c, scene, err))
-}
-
-// PageErrorTextQuiet 是 PageErrorFactQuiet + ErrorFactText 的组合。
-func PageErrorTextQuiet(c *gin.Context, scene string, err error) string {
-	return ErrorFactText(c, PageErrorFactQuiet(c, scene, err))
-}
-
 // InternalErrorFact 返回归口错误事实。
 func InternalErrorFact() ErrFact { return FailureKey() }
 
@@ -291,25 +284,6 @@ func FailureKey() ErrFact {
 func InternalMsg() facing.Msg {
 	k := FailureKey()
 	return facing.Msg{Key: k.Key, Fallback: k.Fallback}
-}
-
-// BulkIDsFacingText 把批量 id 超限 / 读取失败转成受控文案。
-func BulkIDsFacingText(c *gin.Context, err error) string {
-	var tooMany *bulkids.IDsError
-	if errors.As(err, &tooMany) {
-		logger.Scene("view").
-			With("path", ScopeRequestURI(c)).
-			With("count", tooMany.Count).
-			With("max", tooMany.Max).
-			Warn("批量操作被拒：提交的 id 数量超过上限")
-		return response.MessageOf(c, "view", err)
-	}
-	if err != nil {
-		logger.Scene("view").
-			With("path", ScopeRequestURI(c)).
-			Error(err, "批量 id 读取失败：未命中受控错误，只对外给归口文案")
-	}
-	return response.MessageOf(c, "view", err)
 }
 
 // AttachPaginationFacts 把计算好的分页事实放进渲染数据；

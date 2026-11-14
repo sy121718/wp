@@ -108,3 +108,15 @@ func TestExemptKindRejectsPerm(t *testing.T) {
 	}()
 	Declare(http.MethodGet, "/api/__test__/exempt-with-perm", "x:read", RouteExempt)
 }
+
+// Kind 是登记事实，不从「有没有权限码」推断：漏写必须显式失败，
+// 不能静默当成受保护 API 让启动核对看不出登记本身缺项。
+func TestDeclareRouteRequiresExplicitKind(t *testing.T) {
+	withCleanRegistry(t)
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("缺少 Kind 的登记应当 panic")
+		}
+	}()
+	DeclareRoute(RouteSpec{Method: http.MethodGet, Path: "/admin/__test__/page", Perm: "page:read"})
+}

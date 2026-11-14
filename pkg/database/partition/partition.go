@@ -165,11 +165,17 @@ func DetachBefore(ctx context.Context, db *gorm.DB, table string, cutoff time.Ti
 
 const maintenanceInterval = 24 * time.Hour
 
-func StartScheduler(ctx context.Context, db *gorm.DB, opts Options) {
+// 返回的 stop 等待循环退出：调用方必须在关闭数据库之前调用它。
+func StartScheduler(ctx context.Context, db *gorm.DB, opts Options) func() {
 	if db == nil {
-		return
+		return func() {}
 	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	done := make(chan struct{})
 	go func() {
+		defer close(done)
 		run := func() {
 			runCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 			defer cancel()
@@ -206,6 +212,7 @@ func StartScheduler(ctx context.Context, db *gorm.DB, opts Options) {
 			}
 		}
 	}()
+	return func() { <-done }
 }
 
 type RLSGap struct {

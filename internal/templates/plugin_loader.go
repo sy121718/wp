@@ -38,12 +38,16 @@ func NewCompositeSetCached(fingerprint string, plugins []PluginFS) (*jet.Set, er
 func ResetCompositeSetCache() { jetpkg.ResetCompositeSetCache() }
 
 // embeddedComponentLoader 返回应用内置组件模板的 loader。
+//
+// 必须合并构建器登记的组件自带模板（core.container / core.card 等）：集中目录里只有
+// 少量公共片段，真正的组件模板由各组件包 core.RegisterTemplate 登记。
+// 插件装配走的是这条路径，漏掉它会让含插件模板的页面以「获取组件模板失败」编译中断。
 func embeddedComponentLoader() (*jetpkg.FSLoader, error) {
 	loader, err := newEmbeddedComponentLoader()
 	if err != nil {
 		return nil, fmt.Errorf("内置组件模板加载失败: %w", err)
 	}
-	return loader, nil
+	return withOwnedTemplates(loader), nil
 }
 
 // toJetPluginFS 把应用的插件模板源交给公共 loader。

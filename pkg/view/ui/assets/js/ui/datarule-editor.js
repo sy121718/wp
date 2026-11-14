@@ -38,11 +38,18 @@
     function reindex(root) {
         root.querySelectorAll('[data-datarule-group]').forEach(function (group, gi) {
             group.querySelector('[data-group-index]').textContent = gi;
-            group.querySelector('[data-group-logic]').name = 'groups[' + gi + '].logic';
-            group.querySelectorAll('[data-datarule-row]').forEach(function (row, ri) {
+            // 组逻辑与条件行都是**静态平行键**（groupLogic / condField / condOp /
+            // condValue / condGroup）：同名控件按出现顺序保留多值，服务端按顺序配对。
+            // 不再拼 groups[<gi>].conditions[<ri>] 这类动态下标 —— 字段门禁与契约
+            // 才能静态对账，服务端也不需要按正则拆键。
+            group.querySelector('[data-group-logic]').name = 'groupLogic';
+            group.querySelectorAll('[data-datarule-row]').forEach(function (row) {
                 ['field', 'op', 'value'].forEach(function (name) {
-                    row.querySelector('[data-row-' + name + ']').name = 'groups[' + gi + '].conditions[' + ri + '].' + name;
+                    var node = row.querySelector('[data-row-' + name + ']');
+                    if (node) node.name = 'cond' + name.charAt(0).toUpperCase() + name.slice(1);
                 });
+                var groupNode = row.querySelector('[data-cond-group]');
+                if (groupNode) groupNode.value = String(gi);
             });
         });
         root.querySelector('[data-datarule-empty]').hidden = fields(root).length > 0;

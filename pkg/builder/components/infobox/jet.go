@@ -1,6 +1,7 @@
 package infobox
 
 import (
+	"go_wp/pkg/richtext"
 	"strings"
 
 	"go_wp/pkg/builder/core"
@@ -70,7 +71,7 @@ func BuildView(p *Props, siteLink func(string) string) View {
 	if v.TitleTag == "" {
 		v.TitleTag = "h3"
 	}
-	v.Text = core.RichTextHTML(p.Text)
+	v.Text = richtext.RichTextHTML(p.Text)
 	v.Loading = p.Loading
 	v.FetchPriority = p.FetchPriority
 

@@ -2,10 +2,9 @@ package faq
 
 import (
 	json "go_wp/pkg/jsonx"
+	"go_wp/pkg/richtext"
 	"regexp"
 	"strings"
-
-	"go_wp/pkg/builder/core"
 )
 
 var richTextBlockBreakRe = regexp.MustCompile(`(?i)</?(p|div|li|blockquote|pre|h[1-6]|br|figure|figcaption)\b[^>]*>`)
@@ -57,10 +56,10 @@ func mainEntityOf(p *Props) []map[string]any {
 }
 
 func plainAnswer(src string) string {
-	rich := core.RichTextHTML(src)
+	rich := richtext.RichTextHTML(src)
 	if rich == "" {
 		return ""
 	}
 	spaced := richTextBlockBreakRe.ReplaceAllString(rich, " ")
-	return strings.Join(strings.Fields(core.StripRichTags(spaced)), " ")
+	return strings.Join(strings.Fields(richtext.StripRichTags(spaced)), " ")
 }

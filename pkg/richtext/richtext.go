@@ -1,4 +1,4 @@
-package core
+package richtext
 
 import (
 	"html"
@@ -261,6 +261,13 @@ var richHrefSchemes = map[string]bool{
 	"mailto": true, "tel": true, "callto": true, "sms": true,
 	"cid": true, "xmpp": true, "matrix": true,
 }
+
+// IsSafeRichHref 判断富文本链接/媒体地址的 scheme 是否在白名单内
+// （http/https/ftp/ftps/mailto/tel/callto/sms/cid/xmpp/matrix，以及站内相对路径）。
+func IsSafeRichHref(raw string) bool { return isSafeRichHref(raw) }
+
+// StripHrefNoise 去掉 scheme 判定前的空白与控制字符，供调用方复用同一判据。
+func StripHrefNoise(s string) string { return stripRichHrefNoise(s) }
 
 func isSafeRichHref(raw string) bool {
 	href := strings.TrimSpace(raw)

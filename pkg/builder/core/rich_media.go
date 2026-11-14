@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"strings"
 
+	"go_wp/pkg/richtext"
 	"go_wp/pkg/upload"
 	xhtml "golang.org/x/net/html"
 )
@@ -39,7 +40,7 @@ func NormalizeRichMediaURLs(src string) (string, error) {
 			if attr.Key != "src" {
 				continue
 			}
-			if !isSafeRichHref(attr.Val) && strings.Contains(stripRichHrefNoise(attr.Val), ":") {
+			if !richtext.IsSafeRichHref(attr.Val) && strings.Contains(richtext.StripHrefNoise(attr.Val), ":") {
 
 				continue
 			}

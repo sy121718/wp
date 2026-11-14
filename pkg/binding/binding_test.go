@@ -102,30 +102,63 @@ func newContext(method, target, body string) (*gin.Context, *httptest.ResponseRe
 	return c, rec
 }
 
-func TestJSONAcceptsFormBody(t *testing.T) {
-	c, rec := newContext(http.MethodPost, "/x", "name=abc&page=3")
+// 兼容入口同时接受 JSON 与表单：访客下单、退货申请等公开端点两种调用方都在用。
+// 正因如此它不声明唯一协议（契约生成器标 unknown），需要协议时用显式入口。
+func TestCompatJSONAcceptsBothShapes(t *testing.T) {
+	c, _ := newContext(http.MethodPost, "/x", "name=abc&page=3")
 	c.Request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req, ok := JSON[sampleReq](c)
-	if !ok {
-		t.Fatalf("表单体应能绑定，实际失败（状态 %d，body %s）", rec.Code, rec.Body.String())
+	if req, ok := JSON[sampleReq](c); !ok || req.Name != "abc" || req.Page != 3 {
+		t.Fatalf("兼容入口应接受表单体：%+v ok=%v", req, ok)
 	}
-	if req.Name != "abc" || req.Page != 3 {
-		t.Fatalf("表单字段没绑上：%+v", req)
+
+	c, _ = newContext(http.MethodPost, "/x", `{"name":"abc","page":3}`)
+	c.Request.Header.Set("Content-Type", "application/json")
+	if req, ok := JSON[sampleReq](c); !ok || req.Name != "abc" || req.Page != 3 {
+		t.Fatalf("兼容入口应接受 JSON：%+v ok=%v", req, ok)
 	}
 }
 
-func TestJSONFormMultiValue(t *testing.T) {
+// 多值表单由表单入口绑定（读写方法均确定的 Form/ParseForm）。
+func TestFormReadsMultiValueBody(t *testing.T) {
 	type multiReq struct {
 		TagIDs []string `form:"tagIds"`
 	}
 	c, _ := newContext(http.MethodPost, "/x", "tagIds=t1&tagIds=t2&tagIds=t3")
 	c.Request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req, ok := JSON[multiReq](c)
+	req, ok := Form[multiReq](c)
 	if !ok {
 		t.Fatalf("多值表单应能绑定")
 	}
 	if len(req.TagIDs) != 3 || req.TagIDs[0] != "t1" || req.TagIDs[2] != "t3" {
 		t.Fatalf("同名多值没收成切片：%v", req.TagIDs)
+	}
+}
+
+// 显式 JSON 入口不接受表单体：协议由端点声明，不按 Content-Type 猜。
+func TestParseJSONRejectsFormBody(t *testing.T) {
+	c, _ := newContext(http.MethodPost, "/x", "name=abc&page=3")
+	c.Request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if _, err := ParseJSON[sampleReq](c); err == nil {
+		t.Fatal("ParseJSON 不该接受表单体")
+	}
+}
+
+// 显式表单入口只读 body，不合并查询串。
+func TestParseFormIgnoresQuery(t *testing.T) {
+	c, _ := newContext(http.MethodPost, "/x?name=from-query", "page=3")
+	c.Request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req, err := ParseForm[sampleReq](c)
+	if err != nil || req.Name != "" || req.Page != 3 {
+		t.Fatalf("表单入口不该合并查询串：%+v err=%v", req, err)
+	}
+}
+
+// 查询入口只读查询串。
+func TestQueryReadsOnlyQueryString(t *testing.T) {
+	c, _ := newContext(http.MethodGet, "/x?name=abc&page=3", "")
+	req, ok := Query[sampleReq](c)
+	if !ok || req.Name != "abc" || req.Page != 3 {
+		t.Fatalf("查询入口应从查询串绑定：%+v ok=%v", req, ok)
 	}
 }
 

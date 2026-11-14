@@ -1,6 +1,7 @@
 package quote
 
 import (
+	"go_wp/pkg/richtext"
 	"strings"
 
 	"go_wp/pkg/builder/core"
@@ -28,7 +29,7 @@ func BuildView(p *Props, siteLink func(string) string) View {
 		source = core.SiteLinkOrSame(siteLink, source)
 	}
 	return View{
-		Text:      core.RichTextHTML(p.Text),
+		Text:      richtext.RichTextHTML(p.Text),
 		Author:    p.Author,
 		Source:    source,
 		HasAuthor: p.Author != "",

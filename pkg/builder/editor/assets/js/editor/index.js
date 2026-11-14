@@ -96,6 +96,10 @@ export function mount(extraMethods) {
         throw error;
     }
     window.__wb = wb;
+    // meta 是编辑器自己的实时元数据（主题设置等会被面板就地更新）；
+    // 业务侧的对象提供器必须读这一份，而不是重新解析 #wb-meta 数据岛 ——
+    // 数据岛是页面加载时的事实，保存后面板再打开会提交旧值。
+    wb.meta = meta;
     window.workbench = workbench;
     return wb;
 }

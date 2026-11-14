@@ -113,7 +113,9 @@
         }
         if (!state.write) return;
         var eventTarget = state.owner.isConnected ? state.owner : document;
-        eventTarget.dispatchEvent(new CustomEvent('write:success', { bubbles: true }));
+        eventTarget.dispatchEvent(new CustomEvent('write:success', {
+            bubbles: true, detail: { requestBody: state.requestBody }
+        }));
         var close = attr(state, 'data-write-close');
         if (close) {
             var panel = document.querySelector(close);
@@ -139,8 +141,11 @@
             state.write = unsafe;
             // 抽屉入口在外壳之外，错误区仍由目标所在的 Jet 宿主明确提供。
             if (!unsafe && state.target?.matches('[data-drawer-body]')) state.errorBox = statusOf(state.target);
-            // 多个查询入口可以更新同一区域；查询按目标、写操作按表单隔离迟到结果。
-            state.scope = unsafe ? owner : ctx.target || owner;
+            // 迟到判定按**目标区域**，不按表单：同一块区域可以有几个不同表单在写
+            // （工作台的页面设置与「设置访问密码」就是两个表单写同一个面板）。
+            // 按表单隔离时，慢的旧响应会把快的新结果覆盖掉，用户看到的是过期面板。
+            // 目标未声明时退回表单自身（与只提交、不换区域的行为一致）。
+            state.scope = ctx.target || owner;
             requests.set(ctx, state);
             request.headers.Accept = 'text/html';
             request.redirect = 'error';
@@ -173,6 +178,11 @@
                 ctx.request.body = JSON.stringify(payload);
                 ctx.request.headers['Content-Type'] = 'application/json';
             }
+            // 成功确认必须对应发出的值，不得在响应到达后重新读取仍可编辑的表单。
+            // 字符串快照不会随 DOM 或 URLSearchParams 后续变化；multipart 不复制文件。
+            var body = ctx.request.body;
+            state.requestBody = body instanceof URLSearchParams ? body.toString() :
+                typeof body === 'string' ? body : undefined;
             if (ctx.request.timeout == null && !htmx.config.defaultTimeout) ctx.request.timeout = 30000;
             state.started = true;
             active.set(state.owner, (active.get(state.owner) || 0) + 1);

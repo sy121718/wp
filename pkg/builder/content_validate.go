@@ -3,6 +3,7 @@ package builder
 import (
 	"errors"
 	"fmt"
+	"go_wp/pkg/richtext"
 	"strings"
 
 	"go_wp/pkg/builder/core"
@@ -30,7 +31,7 @@ func ContentTargetLimit(contextName string) (limit int, ok bool) {
 	if !whitelisted {
 		return 0, false
 	}
-	limit = core.MaxRichLen
+	limit = richtext.MaxRichLen
 	if meta.MaxLen > 0 && meta.MaxLen < limit {
 		limit = meta.MaxLen
 	}
@@ -57,7 +58,7 @@ func ValidateContentTarget(contextName, sourceText, targetText string) error {
 	if limit, _ := ContentTargetLimit(contextName); limit > 0 && len(target) > limit {
 		return fmt.Errorf("%w（上限 %d 字节，实际 %d 字节）", ErrContentTargetTooLong, limit, len(target))
 	}
-	if core.HasRichMarkup(target) != core.HasRichMarkup(sourceText) {
+	if richtext.HasRichMarkup(target) != richtext.HasRichMarkup(sourceText) {
 		return fmt.Errorf("%w（字段 %s.%s）", ErrContentTargetShape, meta.Type, meta.Field)
 	}
 	return nil

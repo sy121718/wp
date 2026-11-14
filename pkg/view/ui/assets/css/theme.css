@@ -1396,7 +1396,7 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
 
 /* ── 12. 描述类字段的控件基座：富文本容器与字数提示 ────────────────────
    控件选型见 admin-ui-logic §9 —— 可含格式的多段描述用 Trix 富文本
-   （.rich-editor，落库前过 core.SanitizeRichHTML 白名单清洗）；
+   （.rich-editor，落库前过 richtext.SanitizeRichHTML 白名单清洗）；
    meta 类字段（SEO 标题 / 描述）必须是纯文本，用 textarea + 实时字数提示：
    搜索引擎读的是纯文本，富文本标签会直接进 meta。 */
 .rich-editor {

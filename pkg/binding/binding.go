@@ -9,38 +9,13 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	ginbinding "github.com/gin-gonic/gin/binding"
 
 	"go_wp/pkg/response"
 )
 
 type FormBinder interface {
 	BindForm(url.Values) error
-}
-
-func JSON[T any](c *gin.Context) (*T, bool) {
-	var req T
-
-	if hasBodyWithoutContentType(c) {
-		if err := c.ShouldBindJSON(&req); err != nil {
-			response.ParamError(c)
-			return nil, false
-		}
-		return &req, true
-	}
-	if err := c.ShouldBind(&req); err != nil {
-		response.ParamError(c)
-		return nil, false
-	}
-
-	if isFormBody(c) {
-		if b, ok := any(&req).(FormBinder); ok {
-			if err := b.BindForm(c.Request.PostForm); err != nil {
-				response.ParamError(c)
-				return nil, false
-			}
-		}
-	}
-	return &req, true
 }
 
 func JSONLimited[T any](c *gin.Context, maxBytes int64) (*T, bool) {
@@ -61,6 +36,15 @@ func JSONLimited[T any](c *gin.Context, maxBytes int64) (*T, bool) {
 	return JSON[T](c)
 }
 
+// isMultipartBody 判断请求体声明的编码是否为 multipart/form-data。
+// 只看 Content-Type，不解析表单内容 —— 它与 FormPost 一样只读 body。
+func isMultipartBody(c *gin.Context) bool {
+	if c == nil || c.Request == nil {
+		return false
+	}
+	return strings.HasPrefix(strings.ToLower(c.GetHeader("Content-Type")), "multipart/form-data")
+}
+
 func isFormBody(c *gin.Context) bool {
 	if c.Request == nil {
 		return false
@@ -79,6 +63,38 @@ func hasBodyWithoutContentType(c *gin.Context) bool {
 		return false
 	}
 	return strings.TrimSpace(c.GetHeader("Content-Type")) == ""
+}
+
+// JSON 是兼容入口：写方法按 Content-Type 在 JSON 与表单之间选择，读方法读查询串。
+//
+// 它服务的是一批**同时接受 JSON 与表单**的公开端点（访客下单、退货申请、站点账号），
+// 这些端点的调用方既有 JSON 客户端也有 htmx 表单，不能收窄成单一协议。
+// 正因为它不声明唯一协议，契约生成器把它标成 unknown —— 要声明协议请用
+// ParseJSON（JSON body）或 ParseForm / BindForm（表单 body）。
+func JSON[T any](c *gin.Context) (*T, bool) {
+	var req T
+
+	if hasBodyWithoutContentType(c) {
+		if err := c.ShouldBindJSON(&req); err != nil {
+			response.ParamError(c)
+			return nil, false
+		}
+		return &req, true
+	}
+	if err := c.ShouldBind(&req); err != nil {
+		response.ParamError(c)
+		return nil, false
+	}
+
+	if isFormBody(c) {
+		if b, ok := any(&req).(FormBinder); ok {
+			if err := b.BindForm(bodyValues(c)); err != nil {
+				response.ParamError(c)
+				return nil, false
+			}
+		}
+	}
+	return &req, true
 }
 
 type QueryBinder interface {
@@ -123,19 +139,46 @@ func ParseQuery[T any](c *gin.Context) (*T, error) {
 	return &req, nil
 }
 
+// ParseForm 是显式表单绑定：只读请求体，不合并查询串。
+//
+// ShouldBind 会按 Content-Type 自动选择 binder 并把 query 并进表单，
+// 于是 `POST /save?id=x` 在 body 为空时也能绑出 id —— 写端点与查询串的边界就没了。
+// 这里按声明的编码选 FormPost 或 FormMultipart，两者都只读 body：
+// 字段只可能来自请求体，取不到就是零值，交给调用方显式校验。
 func ParseForm[T any](c *gin.Context) (*T, error) {
 	var req T
-	if err := c.ShouldBind(&req); err != nil {
+	binder := ginbinding.FormPost
+	if isMultipartBody(c) {
+		binder = ginbinding.FormMultipart
+	}
+	if err := c.ShouldBindWith(&req, binder); err != nil {
 		return &req, err
 	}
 	if b, ok := any(&req).(FormBinder); ok {
-		if err := b.BindForm(c.Request.PostForm); err != nil {
+		if err := b.BindForm(bodyValues(c)); err != nil {
 			return &req, err
 		}
 	}
 	return &req, nil
 }
 
+// bodyValues 返回请求体里的表单值：urlencoded 用 PostForm，
+// multipart 解析后值在 MultipartForm.Value，PostForm 不会自动合并。
+// 两者都只来自 body，不混入查询串。
+func bodyValues(c *gin.Context) url.Values {
+	if c == nil || c.Request == nil {
+		return url.Values{}
+	}
+	if c.Request.MultipartForm != nil {
+		return url.Values(c.Request.MultipartForm.Value)
+	}
+	return c.Request.PostForm
+}
+
+// Form 是兼容入口：按 Content-Type 选择 binder 并合并查询串。
+//
+// 与 JSON 同理，它不声明唯一协议，契约生成器标成 unknown。
+// 要声明协议请用 ParseForm（只读 body 的表单）或 Query（只读查询串）。
 func Form[T any](c *gin.Context) (*T, bool) {
 	var req T
 	if err := c.ShouldBind(&req); err != nil {
@@ -143,7 +186,7 @@ func Form[T any](c *gin.Context) (*T, bool) {
 		return nil, false
 	}
 	if b, ok := any(&req).(FormBinder); ok {
-		if err := b.BindForm(c.Request.PostForm); err != nil {
+		if err := b.BindForm(bodyValues(c)); err != nil {
 			response.ParamError(c)
 			return nil, false
 		}

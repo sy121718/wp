@@ -3,6 +3,7 @@ package richdoc
 import (
 	"fmt"
 	json "go_wp/pkg/jsonx"
+	"go_wp/pkg/richtext"
 	"strings"
 
 	"github.com/google/uuid"
@@ -50,7 +51,7 @@ type ExportResult struct {
 	Lossless bool
 }
 
-const maxTextLen = core.MaxRichLen
+const maxTextLen = richtext.MaxRichLen
 
 func newNode(componentType string, props any) (*core.Node, error) {
 	raw, err := json.Marshal(props)
@@ -61,11 +62,11 @@ func newNode(componentType string, props any) (*core.Node, error) {
 }
 
 func sanitizeText(src string) string {
-	return strings.TrimSpace(core.SanitizeRichHTML(strings.TrimSpace(src)))
+	return strings.TrimSpace(richtext.SanitizeRichHTML(strings.TrimSpace(src)))
 }
 
 func hasVisibleContent(htmlFragment string) bool {
-	if strings.TrimSpace(core.StripRichTags(htmlFragment)) != "" {
+	if strings.TrimSpace(richtext.StripRichTags(htmlFragment)) != "" {
 		return true
 	}
 

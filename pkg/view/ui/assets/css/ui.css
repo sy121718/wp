@@ -955,6 +955,8 @@ select.form-select {
 .form-textarea { resize: vertical; min-height: 100px; }
 .form-hint { margin-top: var(--ui-sp-xs); font-size: 12px; color: var(--sky-c-text-mute, #6b7280); }
 .form-error { margin-top: var(--ui-sp-xs); font-size: 12px; color: var(--sky-c-danger, #b34a4a); }
+/* 批量/多条拒绝的逐条明细（id / 名称 / 原因），由共享失败模板渲染。 */
+.form-error-list { margin: var(--ui-sp-xs) 0 0; padding-left: 1.1em; font-size: 12px; color: var(--sky-c-danger, #b34a4a); }
 
 /* ===== 折叠控件（details / summary）的默认指示图标 =====
    摘要行是**后台控件**而不是正文内容，所以基座直接给图标 —— 新页面不用再各写一遍 ▾ / ▸。

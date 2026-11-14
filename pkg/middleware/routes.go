@@ -5,11 +5,17 @@ import (
 	"net/http"
 	"path"
 	"slices"
-	"strings"
 	"sync"
 
 	"github.com/gin-gonic/gin"
 )
+
+// RoutePageWrite 是需要逐条鉴权对象的后台 HTML 写入口。
+//
+// 它有自己的 Kind：既不是 authorizedAPI 组的 RouteProtected（整组挂 CasbinMiddleware），
+// 也不是豁免（RouteExempt 不带权限对象）。写入口的鉴权对象来自它挂的
+// CasbinMiddlewareForPath(...)，必须与真实入口分开登记。
+const RoutePageWrite RouteKind = "page_write"
 
 // RouteKind 是路由登记的真实用途，由创建该路由组的装配方显式给定，
 // 不从 URL、方法、Accept 或 HX 头推断。
@@ -65,6 +71,9 @@ func (r *Registry) Declare(method, path, perm string, kind RouteKind) {
 }
 
 // DeclareRoute 登记完整绑定（含复用的鉴权对象/方法）。
+//
+// Kind 必须由调用方显式声明：按「权限是否为空」推断用途，会把一条忘记写 Kind
+// 的页面入口静默当成受保护 API，启动核对再也看不出登记本身漏了事实。
 func (r *Registry) DeclareRoute(spec RouteSpec) {
 	if spec.AuthObject == "" {
 		spec.AuthObject = spec.Path
@@ -73,11 +82,7 @@ func (r *Registry) DeclareRoute(spec RouteSpec) {
 		spec.AuthMethod = spec.Method
 	}
 	if spec.Kind == "" {
-		if spec.Perm == exemptPerm {
-			spec.Kind = RouteExempt
-		} else {
-			spec.Kind = RouteProtected
-		}
+		panic("路由登记缺少 Kind（显式声明 protected/page/exempt）：" + spec.Method + " " + spec.Path)
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -102,9 +107,18 @@ func (r *Registry) declaredOrPanicLocked(spec RouteSpec) (RouteSpec, bool) {
 	if r.frozen {
 		panic("路由登记已冻结：启动后不得再注册（" + spec.Method + " " + spec.Path + "）")
 	}
-	// 空权限只允许用于明确豁免；非豁免声明必须带权限码，否则等于静默公开。
-	if spec.Perm == exemptPerm && spec.Kind != RouteExempt {
-		panic("空权限只能用于明确豁免的声明：" + spec.Method + " " + spec.Path)
+	// 空权限只允许用于「明确豁免」与「后台写入口」：前者不查目录，后者不归某个
+	// 独立权限码（它复用 API 对象的权限），两者都由 AuthObject/AuthMethod 说明
+	// 实际检查的鉴权目标。其余声明必须带权限码，否则等于静默公开。
+	if spec.Perm == exemptPerm && spec.Kind != RouteExempt && spec.Kind != RoutePageWrite && spec.Kind != RoutePage {
+		panic("空权限只能用于明确豁免、后台写入口或复用权限对象的页面声明：" + spec.Method + " " + spec.Path)
+	}
+	// 空权限的页面/写入口必须指向一个可核对的策略目标：
+	// 或复用的 API 对象，或目录里以自身路径登记的策略对象（页面即权限对象的既有形状）。
+	// 前者由 verifyDeclaredPermissions 按目录核对；后者同样在目录里，不存在「无目标」。
+	// 因此这里不禁止 AuthObject == Path —— 它仍是一个真实被检查的对象。
+	if spec.Kind == RoutePageWrite && (spec.AuthObject == "" || spec.AuthObject == spec.Path) {
+		panic("后台写入口必须登记它实际检查的鉴权对象（不能等于自身路径）：" + spec.Method + " " + spec.Path)
 	}
 	if spec.Perm != exemptPerm && spec.Kind == RouteExempt {
 		panic("豁免声明不得携带权限点：" + spec.Method + " " + spec.Path)
@@ -114,26 +128,40 @@ func (r *Registry) declaredOrPanicLocked(spec RouteSpec) (RouteSpec, bool) {
 	}
 	key := spec.Method + " " + spec.Path
 	if prev, dup := r.declaredKeys[key]; dup {
-		if prev.Perm == spec.Perm {
+		// 重复声明必须是**同一事实**：权限码、用途与鉴权目标都一致才算幂等。
+		// 只比权限码会放过「同路径同码、但换了 Kind 或鉴权目标」的漂移。
+		if prev == spec {
 			return prev, false
 		}
-		if spec.Perm == exemptPerm || prev.Perm == exemptPerm {
-			panic("同一路由既声明了权限点又声明了豁免：" + key)
+		if prev.Perm != spec.Perm {
+			if spec.Perm == exemptPerm || prev.Perm == exemptPerm {
+				panic("同一路由既声明了权限点又声明了豁免：" + key)
+			}
+			panic("同一路由被声明了两种权限点：" + key + " → " + prev.Perm + " / " + spec.Perm)
 		}
-		panic("同一路由被声明了两种权限点：" + key + " → " + prev.Perm + " / " + spec.Perm)
+		panic("同一路由的两次声明不一致（Kind / 鉴权目标）：" + key +
+			" → " + string(prev.Kind) + " " + prev.AuthMethod + " " + prev.AuthObject +
+			" / " + string(spec.Kind) + " " + spec.AuthMethod + " " + spec.AuthObject)
 	}
-	if spec.Perm == exemptPerm {
+	if spec.Perm == exemptPerm && spec.Kind == RouteExempt {
 		r.declaredKeys[key] = spec
 		r.exemptRoutes = append(r.exemptRoutes, key)
 		return spec, true
 	}
-	if strings.HasPrefix(spec.Path, "/api/") {
-		// API 路由必须各自一个权限点：策略表按权限码唯一映射一条路径。
+	if spec.Kind == RoutePageWrite || (spec.Perm == exemptPerm && spec.Kind == RoutePage) {
+		// 后台写入口不占用「一个权限点一条受保护操作」的名额：它的权限来自复用的
+		// API 对象，多个写入口可以合法复用同一个对象（与页面 GET 同一语义）。
+		r.declaredKeys[key] = spec
+		return spec, true
+	}
+	// 「一个权限点只映射一条受保护操作」按**显式用途**判断，不按路径前缀：
+	// /api 前缀曾用来推断 API 路由，但访客端点、页面与 HTML 写入口都可能不在 /api。
+	if spec.Kind == RouteProtected {
 		if r.apiPermPaths == nil {
 			r.apiPermPaths = map[string]string{}
 		}
 		if prev, used := r.apiPermPaths[spec.Perm]; used && prev != key {
-			panic("同一权限点绑定到多条 API 路由：" + spec.Perm + " → " + prev + " / " + key)
+			panic("同一权限点绑定到多条受保护操作：" + spec.Perm + " → " + prev + " / " + key)
 		}
 		r.apiPermPaths[spec.Perm] = key
 	}
@@ -339,4 +367,72 @@ func lastRouteChar(s string) uint8 {
 		return 0
 	}
 	return s[len(s)-1]
+}
+
+// DeclarePageWrite 登记后台 HTML 写入口：真实入口 + 复用的鉴权对象分开写。
+//
+// 后台写入口不走 authorizedAPI 组（没有 CasbinMiddleware 包整组），而是每条路由
+// 挂 CasbinMiddlewareForPath(<API 对象>)。因此：
+//
+//	· Method/Path 是**真实后台入口**（/admin/... 或 /workbench/...），
+//	· AuthObject/AuthMethod 是它实际检查的 API 权限对象 —— 与鉴权中间件一一对应。
+//
+// 不登记就会让「这个写入口要哪项权限」在启动期不可审计（can't answer 哪一个策略保护它）。
+//
+// 这是显式事实，不做前缀推断：调用方必须写出真实路径与它在检查的对象。
+func (r *Registry) DeclarePageWrite(method, path, authObject, authMethod string) {
+	if authObject == "" || authMethod == "" {
+		panic("后台写入口登记缺少鉴权对象/方法：" + method + " " + path)
+	}
+	r.DeclareRoute(RouteSpec{
+		Method: method, Path: path, Perm: "",
+		Kind:       RoutePageWrite,
+		AuthObject: authObject, AuthMethod: authMethod,
+	})
+}
+
+// DeclarePageGet 登记后台页面 GET 的真实入口与它实际检查的权限对象。
+//
+// 页面 GET 用 PageAuthz(<API 对象>) 鉴权：Method/Path 是真实后台入口，
+// AuthObject/AuthMethod 是它检查的 API 权限对象（页面对应列表/详情操作）。
+// 页面可以在多个入口复用同一对象，因此不占用「一个权限点一条受保护操作」的名额。
+// authObject 为空时按自身路径登记（order/overview 这类页面本身就是权限对象，
+// 目录里也按页面路径登记了一条策略）。其它页面复用 API 对象时显式填写。
+func (r *Registry) DeclarePageGet(path, authObject string) {
+	r.DeclarePageGetAs(path, authObject, http.MethodGet)
+}
+
+// DeclarePageGetAs 是显式鉴权方法的版本：页面 GET 复用写操作权限时，
+// 实际检查的是被复用对象的**写方法**（如编辑器预览读草稿，查的是 page:draft_save 的 POST）。
+func (r *Registry) DeclarePageGetAs(path, authObject, authMethod string) {
+	if authObject == "" {
+		authObject = path
+	}
+	r.DeclareRoute(RouteSpec{
+		Method: http.MethodGet, Path: path, Perm: "",
+		Kind:       RoutePage,
+		AuthObject: authObject, AuthMethod: authMethod,
+	})
+}
+
+// DeclarePageGetOn 是 DeclarePageGet 的空安全包级入口：模块路由里 reg 可能为 nil
+// （模块单测只挂路由、不建装配索引）。
+func DeclarePageGetOn(reg *Registry, path, authObject string) {
+	DeclarePageGetAsOn(reg, path, authObject, http.MethodGet)
+}
+
+// DeclarePageGetAsOn 是 DeclarePageGetAs 的空安全包级入口。
+func DeclarePageGetAsOn(reg *Registry, path, authObject, authMethod string) {
+	if reg == nil {
+		return
+	}
+	reg.DeclarePageGetAs(path, authObject, authMethod)
+}
+
+// DeclarePageWriteOn 是 DeclarePageWrite 的空安全包级入口。
+func DeclarePageWriteOn(reg *Registry, method, path, authObject, authMethod string) {
+	if reg == nil {
+		return
+	}
+	reg.DeclarePageWrite(method, path, authObject, authMethod)
 }

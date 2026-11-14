@@ -2,6 +2,7 @@ package card
 
 import (
 	"go_wp/pkg/builder/core"
+	"go_wp/pkg/richtext"
 )
 
 func CompileCSS(id string, p *Props, b *core.CSSBuckets) {
@@ -52,7 +53,7 @@ func BuildView(p *Props, siteLink func(string) string) View {
 		HasImage:  p.ImageSrc != "",
 		ImageSrc:  p.ImageSrc,
 		Title:     p.Title,
-		Text:      core.RichTextHTML(p.Text),
+		Text:      richtext.RichTextHTML(p.Text),
 		HasButton: p.Label != "" && p.ButtonLink != "",
 		Label:     p.Label,
 

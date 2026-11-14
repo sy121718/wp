@@ -19,7 +19,8 @@ func TestJSONLimitedReadFailure(t *testing.T) {
 	}
 }
 
-func TestJSONLimitedFormBinder(t *testing.T) {
+// JSONLimited 在限长之后复用兼容入口，因此仍接受表单体（它服务的端点两种形状都有）。
+func TestJSONLimitedAcceptsFormBody(t *testing.T) {
 	c, _ := newContext(http.MethodPost, "/x", "name=abc&extra=a&extra=b")
 	c.Request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req, ok := JSONLimited[sampleReq](c, 100)

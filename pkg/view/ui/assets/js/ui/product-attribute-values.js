@@ -47,14 +47,18 @@
             });
             values.push(item);
         });
-        return {
+        var payload = {
             projectId: fields.get('projectId') || '',
-            id: fields.get('id') || '',
             key: fields.get('key') || '',
             name: fields.get('name') || '',
             sort: Number(fields.get('sort') || 0),
-            isVariation: fields.get('isVariation') === '1',
-            values: values
+            isVariation: fields.get('isVariation') === '1'
         };
+        // 新建抽屉没有 id；把空 id 也提交上去会让线上键超出 create DTO 的字段表。
+        if (fields.get('id')) payload.id = fields.get('id');
+        // 值行只在新建抽屉里渲染：编辑时没有行就不提交 values。
+        // 编辑 DTO 不含 values，带上空数组只是给服务端一个会被忽略的键。
+        if (values.length > 0) payload.values = values;
+        return payload;
     });
 })(window);

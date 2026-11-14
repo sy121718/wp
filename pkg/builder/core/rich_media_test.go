@@ -4,6 +4,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"go_wp/pkg/richtext"
 )
 
 func TestRichMediaRequiresReliableSource(t *testing.T) {
@@ -39,7 +41,7 @@ func TestRichMediaExternalAndSanitizerBoundary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cleaned := SanitizeRichHTML(got)
+	cleaned := richtext.SanitizeRichHTML(got)
 	for _, forbidden := range []string{"javascript", "script:", "onerror", "srcset", "video", "source", "poster", "/storage/"} {
 		if strings.Contains(cleaned, forbidden) {
 			t.Fatalf("不能扩展白名单或恢复危险属性 %s: %s", forbidden, cleaned)
