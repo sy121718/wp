@@ -47,7 +47,11 @@ func (h *Handle) BlockPreview(c *gin.Context) {
 }
 
 func (h *Handle) PreviewDraft(c *gin.Context) {
-	req, _ := binding.ParseForm[workbenchdto.PreviewDraftReq](c)
+	req, bindErr := binding.ParseForm[workbenchdto.PreviewDraftReq](c)
+	if bindErr != nil {
+		response.ParamError(c)
+		return
+	}
 	pageID := strings.TrimSpace(req.ID)
 	document := json.RawMessage(req.DraftDocument)
 	version, err := strconv.ParseInt(strings.TrimSpace(req.ExpectedVersion), 10, 64)

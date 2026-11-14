@@ -21,9 +21,8 @@ import (
 
 	"go_wp/internal/pipeline"
 	"go_wp/pkg/auth"
+	"go_wp/pkg/binding"
 	"go_wp/pkg/builder"
-
-	ginbinding "github.com/gin-gonic/gin/binding"
 )
 
 const AccessUnlockPath = "/access/unlock"
@@ -337,10 +336,10 @@ func AccessUnlockHandler() gin.HandlerFunc {
 // accessUnlockHandler 是具名函数而不是闭包：写端点契约生成器按函数身份扫描，
 // 闭包体拿不到 DTO 字段表。
 func accessUnlockHandler(c *gin.Context) {
-	var form accessUnlockForm
 	// 解锁页是标准表单；绑定失败与「路径不合法」走同一条受控失败渲染，
 	// 不改成 JSON 400。
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	form, err := binding.ParseForm[accessUnlockForm](c)
+	if err != nil {
 		serveUnlockFailure(c, nil, "/", false)
 		return
 	}

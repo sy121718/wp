@@ -49,7 +49,11 @@ func (h *Handle) OutlineTree(c *gin.Context) {
 	var page struct {
 		Root []workbenchservice.OutlineNode `json:"root"`
 	}
-	req, _ := binding.ParseForm[workbenchdto.OutlineTreeReq](c)
+	req, err := binding.ParseForm[workbenchdto.OutlineTreeReq](c)
+	if err != nil {
+		response.ParamError(c)
+		return
+	}
 	if doc := req.Document; doc != "" {
 		_ = json.Unmarshal([]byte(doc), &page)
 	}

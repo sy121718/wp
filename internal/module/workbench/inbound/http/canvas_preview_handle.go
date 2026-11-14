@@ -59,7 +59,11 @@ func (h *Handle) TemplatePreview(c *gin.Context) {
 }
 
 func (h *Handle) TemplatePreviewDraft(c *gin.Context) {
-	req, _ := binding.ParseForm[workbenchdto.TemplatePreviewDraftReq](c)
+	req, err := binding.ParseForm[workbenchdto.TemplatePreviewDraftReq](c)
+	if err != nil {
+		response.ParamError(c)
+		return
+	}
 	templateID := strings.TrimSpace(req.ID)
 	document := json.RawMessage(req.DraftDocument)
 	if req.InstanceID != "" && len(document) > 0 {
