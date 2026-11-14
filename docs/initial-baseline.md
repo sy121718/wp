@@ -1,11 +1,11 @@
 # 初始化基线收敛：设计与现状
 
-**状态：阶段 1 已落地；阶段 2（真基线）仅设计，未实施。**
+**状态：阶段 1（结构快照）与阶段 2（真基线）均已落地，验收脚本可复跑。**
 本文是这份收敛的唯一判据来源。任务书 [TASK-framework-foundation.md](../TASK-framework-foundation.md) 只引用，不复制。
 
 ## 1. 现状事实（实测）
 
-- 初始化 = 跑完 `public/migrations` 的 699 个迁移。迁移执行器**没有版本台账**：每条迁移自带 `checkSQL` 幂等检查，命中即跳过（[public/migrations/migrator.go](../public/migrations/migrator.go)）。`sys_migration_marker` 只记「一次性数据动作」，不是版本表。
+- 初始化 = 跑完 `public/migrations` 的 701 个 SQL 文件（177 条注册迁移 + seed）。迁移执行器**没有版本台账**：每条迁移自带 `CheckSQL` 幂等检查，命中即跳过（[public/migrations/migrator.go](../public/migrations/migrator.go)）。`sys_migration_marker` 只记「一次性数据动作」，不是版本表。
 - 隔离库实测：`go run ./cmd -migrate-only` 从空库到终态约 53 秒，退出码 0。
 - 结构快照 [schema/CURRENT.sql](../schema/CURRENT.sql) 由 [scripts/schema-snapshot.sh](../scripts/schema-snapshot.sh) 生成，来源是「跑完本仓迁移的库」，当前 131 张表 / 10320 行。
 - 分区表只有 3 张：`page_views`、`inventory_stock_movements`、`master_data_changes`（[173_partition_append_only_tables.sql](../public/migrations/173_partition_append_only_tables.sql)）。月分区窗口由两处生成：迁移 173 的 DO 块（建库时）+ [pkg/database/partition](../pkg/database/partition/partition.go) 的 `EnsureAhead`（启动与 `-migrate-only` 都会跑），范围 `AheadMonths=3`，即当前月 -1 至 +3，另有一张 `_default` 兜底。
@@ -32,43 +32,92 @@ GOWP_SNAPSHOT_DB=wp_baseline_probe bash scripts/schema-snapshot.sh
 - 排除属主、授权、注释、`sys_migration_marker`（执行台账，不是结构）与 pg_dump 的随机标记，否则每次生成都不同。
 - 结构快照是**回归判据**，不是初始化脚本：它不含数据，也不含分区窗口的正确生成规则。
 
-## 3. 阶段 2：真基线（设计，未实施）
+## 3. 阶段 2：真基线（已落地）
 
-目标：新环境初始化 = 载入基线 + 只跑基线之后的增量；不再重演 699 条历史修补。终态必须与全量迁移一致。
+目标：新环境初始化 = 载入基线 + 只跑基线之后的增量；终态与全量迁移逐行一致。
 
-三部分：
+### 3.1 产物与生成
 
-1. **结构基线** `schema/baseline/*.sql`：非分区对象全量（表/列/索引/约束/扩展/函数/触发器/RLS/default 分区）+ 3 张分区父表结构，**剔除全部 `_YYYY_MM` 月分区**。
-2. **系统数据基线**：只导通用初始数据 —— 有效词条（`sys_i18n`）、权限目录（`sys_permission`）、默认菜单（`sys_menus`）、字典、默认配置。**不得从 artex 全库导出**：用户、订单、密钥、自定义译文、角色授权都不是默认值。
-3. **增量**：基线之后新增的迁移照常注册与执行。
+`schema/baseline/` 四件，缺一不可：
 
-版本跳过机制（关键设计）：
+| 文件 | 内容 |
+|---|---|
+| `structure.sql` | 非分区对象全量（表/列/索引/约束/扩展/函数/触发器/RLS/default 分区）+ 3 张分区父表结构，剔除全部 `_YYYY_MM` 月分区 |
+| `system_data.sql` | **迁移阶段产生的**系统数据（词条、权限、菜单、字典、默认配置），不含业务数据，也不含 seed 的产物 |
+| `manifest.txt` | 基线覆盖的 177 个迁移 version，逐行一条，顺序即注册顺序 |
+| `init.sql` | `\ir structure.sql` → `\ir system_data.sql` → 写 `sys_baseline` 一行 |
 
-- 迁移版本号是字符串（`596-sys-migration-marker`），不能按字符串排序判先后；**顺序权威是注册表的注册序列**。
-- 因此基线生成时产出 `schema/baseline/manifest.txt`：逐行列出基线覆盖的全部 version。
-- 基线库建 `sys_baseline(version, manifest_sha256, applied_at, note)`；执行器读到该行时，跳过 manifest 中的 version，只跑新增项。
-- `manifest.txt` 缺失或哈希不匹配 → 视为未载入基线，回落到全量迁移（安全默认）。
+生成与校验：
 
-分区规则（必须）：基线里不写月分区名，初始化最后调用 `partition.EnsureAhead` 补齐 `-1..+3` 窗口与 `_default`。否则换个月份初始化，基线就与运行期不一致。
+```bash
+bash scripts/baseline-generate.sh          # 自建临时库跑 -migrate-only -skip-seeds，生成四件，结束删库
+bash scripts/baseline-generate.sh --check  # 产物与当前代码不一致则退出码 1（改过迁移必须重生成）
+```
 
-现有库接入（不丢数据）：
+`--check` 的比对对象是「一阶」结果（跑完迁移的库直出结构），与产物生成路径完全一致，所以逐字节可比；只有「重放基线后的库」才会出现下面 3.6 的 deparse 差异。
 
-1. 先核验：表/列/索引/约束/触发器/RLS/分区父表都达到基线（逐项比对，不能只看「表存在」）。
-2. 通过后写入 `sys_baseline` 记录，manifest 取仓库当前版本。
-3. 核验失败 → 不接入，继续走全量迁移并报差异清单。
+### 3.2 为什么基线必须导「seed 前」状态
 
-验收（全部满足才算完成）：
+迁移与 seed 是两个阶段：`Run` 跑完全部 Migration，之后 `RunSeeds` 才跑 Seed。基线若导 seed 之后的终态，重放基线的库再跑 seed 时条件判断会变：
 
-- 基线库 + 增量 与 全量迁移库 的结构 diff 为空（分区窗口按同一月份对齐后比较）。
-- 系统数据逐表 diff 为空（词条、权限、菜单、字典、默认配置）。
-- 同一基线重复执行幂等：结构不变、数据不增、`sys_baseline` 不重写。
-- 现有库接入前后：业务表行数不变，结构 diff 为空。
+- 618 的 `ConditionSQL` 只判「新键 `admin.product_pricing.applied` 是否已有 2 行」；
+- 基线已含这 2 行 → 整条 seed 跳过 → 同一条 seed 里的 `DELETE`（删旧 key `.lead` / `.tail`）不执行；
+- 实测基线库比全量库多 4 行旧词条（2 个 key × 2 语言）。
 
-## 4. 未实施清单
+导「seed 前」状态后，两边 seed 阶段的输入完全相同，终态一致。`cmd/main.go` 为此增加 `-skip-seeds`（只与 `-migrate-only` 一起用，只为基线生成）。
 
-- `schema/baseline/` 目录、`init.sql`、系统数据快照、`manifest.txt` 均未生成。
-- `sys_baseline` 表与迁移器跳过逻辑未实现。
-- 现有库（artex）接入核验未执行。
-- 基线结构与数据的一致性测试未写。
+### 3.3 跳过判定
 
-在以上未完成前，**初始化仍以全量迁移为准**，本文的阶段 1 快照只用于回归对比。
+`baselineSkipSet`（[public/migrations/baseline_skip.go](../public/migrations/baseline_skip.go)）三条全满足才跳过 manifest 内的 version：
+
+1. 仓库 manifest 非空；
+2. 库里有 `sys_baseline` 表且至少一行；
+3. 最新一行的 `manifest_sha256` 与仓库 manifest 的 SHA-256 相等。
+
+任一不满足 → 返回 nil，回落全量迁移（安全默认）。**比哈希而不是比 version 列表**：manifest、structure.sql、system_data.sql 是同一批产物，只比 version 的话基线 SQL 内容变了也会被误判成「已覆盖」。
+
+跳过不写任何台账（本来就没有版本台账）；seed 每次照跑，靠自身 `ConditionSQL` 幂等。
+
+### 3.4 分区
+
+基线里不写月分区名；初始化最后调用 `partition.EnsureAhead` 补齐 `-1..+3` 与 `_default`。`-migrate-only` 也会跑这一步，所以同一天建的基线库与全量库月分区窗口相同。
+
+### 3.5 现有库接入
+
+```bash
+bash scripts/baseline-adopt.sh --db DBNAME            # 只核验
+bash scripts/baseline-adopt.sh --db DBNAME --apply    # 核验通过后写水位
+```
+
+核验三条，任一不过都不写库：
+
+1. `sys_baseline` 不存在或为空（已接入过的库不改水位）；
+2. 库结构与 `structure.sql` 归一化后一致；
+3. `system_data.sql` 里每张表的行数不多于现有库（少了说明 seed 没跑全）。
+
+### 3.6 验收
+
+```bash
+bash scripts/baseline-verify.sh          # 建两个临时库，约 2 分钟
+bash scripts/baseline-verify.sh --keep   # 保留库与 /tmp/wp-baseline-verify-* 日志
+```
+
+三条判据：
+
+1. **等价**：空库全量迁移 与 基线库（`init.sql` + 迁移）结构一致（月分区除外）、逐表行数一致（`sys_baseline` 除外）；
+2. **幂等**：基线库再跑一次迁移，结构逐字节不变、`sys_baseline` 仍只有一行；
+3. **回落**：篡改 `sys_baseline.manifest_sha256` 并删掉 `admin_side_effect_tasks`（由 manifest 内迁移 705 建）后再跑迁移，该表必须被重建。
+
+实测结论（2026-11-15）：三条全绿。结构比较归一了 pg_dump 的两种 deparse —— 同一 CHECK 表达式在一阶库是 `ANY ((ARRAY[...])::text[])`，重放一次后是 `ANY (ARRAY[(...)::text])`，语义相同；实测全库 9 处（8 个 CHECK 约束 + 1 个部分索引），归一是比较口径，不是放宽判据（其余差异仍会报红）。
+
+### 3.7 验收发现的既有漂移（已修）
+
+`760-inventory-movement-fk-restore`：173 用「重命名旧表 → 建分区父表 → 搬数据 → 删旧表」把 `inventory_stock_movements` 改成月分区表，134 加在旧表上的 `fk_inventory_movements_product` 随旧表一起消失，173 之后没有任何迁移补回。结果是**存量库有这条外键、新库没有**（实测 artex 与 wp_baseline_dev 有 7 个同名约束行，含各分区；新库 0 个）。补一条幂等迁移把两侧收敛到同一形状。
+
+### 3.8 已知限制
+
+- artex 接入未执行：需按 3.5 核验后人工 `--apply`。
+- **seed 里仍有 DDL**：6 张 `ai_*` 表由 seed 542 建（`registerSeed` + `CREATE TABLE`），所以结构基线（`-skip-seeds` 生成）不含它们，靠初始化时跑 seed 补齐。这是既有形状，本次不改历史 seed；新数据/结构应分别落在 Migration 与 Seed。
+- 结构比较依赖 deparse 归一规则。将来 pg_dump 若改变其它表达式的输出形式，验收会报红，需要在 `scripts/baseline-verify.sh` 的 `normalize` 里补规则，**不要放宽成忽略 CHECK**。
+- manifest 必须与注册表同序同集：改迁移就要重生成基线，[public/migrations/baseline_manifest_test.go](../public/migrations/baseline_manifest_test.go) 会拦。
+- `schema/CURRENT.sql`（阶段 1）与基线是两份产物：前者用于回归比对含月分区全量结构，后者用于初始化。改迁移时两者都要更新。

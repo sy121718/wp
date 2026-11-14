@@ -1,6 +1,6 @@
 # 框架基础归一与可视化工具化任务书
 
-当前状态（2026-11-15 第十九轮收口）：**154 处原生 FormPost 已全部迁移、初始化基线阶段 1 落地（阶段 2 未实施）**。契约 362 条：**239 form / 106 json / 8 query / 4 multipart / 3 nobody / 2 raw，unknown 为 0**；`ParseForm` 端点额外声明 `encodings: [urlencoded, multipart]`，`BindForm` 钩子读取的字面量键（remember / pageSize / emailNotify / shipName…）已并入字段表。非表单编码现在直接 400，不再「忽略 JSON 后写默认值」。447 历史 SQL 已恢复原文并归档，现行执行源改为 758b。密码业务链补齐生产布局（`/production`）三视口 × 四输入 12 格。`go test ./...` **283 包 ok（rls 188 秒）**；`check-all.sh --with-db` 39/39；`go build ./...`、`go vet ./...`、`write-contracts -check` 通过。第十七轮改动分五批提交（`e466ac95` / `db4ba666` / `e95c7ce7` / `5e9e3842` / `ee1c3391`），第十八轮改动分五批提交（`2edc91ea` / `ff6b9730` / `63d347fe` / `f5625910` / `87960150`），第十九轮改动分六批提交（`f8bed43c` / `2854dc40` / `52142147` / `a95c86ef` / `e5ac0333` / `74c840f9`），另 `c1cfc5dd` 修分区列名回退。最新范围与证据边界以[当前收口任务](#当前收口任务)为准；历轮记录保留为历史，不据其旧缺口重复实施。未 push。
+当前状态（2026-11-15 第十九轮收口）：**154 处原生 FormPost 已全部迁移、初始化基线阶段 1、2 均已落地**。契约 362 条：**239 form / 106 json / 8 query / 4 multipart / 3 nobody / 2 raw，unknown 为 0**；`ParseForm` 端点额外声明 `encodings: [urlencoded, multipart]`，`BindForm` 钩子读取的字面量键（remember / pageSize / emailNotify / shipName…）已并入字段表。非表单编码现在直接 400，不再「忽略 JSON 后写默认值」。447 历史 SQL 已恢复原文并归档，现行执行源改为 758b。密码业务链补齐生产布局（`/production`）三视口 × 四输入 12 格。`go test ./...` **283 包 ok（rls 188 秒）**；`check-all.sh --with-db` 39/39；`go build ./...`、`go vet ./...`、`write-contracts -check` 通过。第十七轮改动分五批提交（`e466ac95` / `db4ba666` / `e95c7ce7` / `5e9e3842` / `ee1c3391`），第十八轮改动分五批提交（`2edc91ea` / `ff6b9730` / `63d347fe` / `f5625910` / `87960150`），第十九轮改动分六批提交（`f8bed43c` / `2854dc40` / `52142147` / `a95c86ef` / `e5ac0333` / `74c840f9`），另 `c1cfc5dd` 修分区列名回退。最新范围与证据边界以[当前收口任务](#当前收口任务)为准；历轮记录保留为历史，不据其旧缺口重复实施。未 push。
 
 本任务书是本次重构的唯一实施清单，不是第二份架构规范；规范仍以 [AGENTS.md](AGENTS.md) 为准。原 [商品后台通用写反馈任务书](TASK-html-feedback.md) 保留为背景和原始用例索引，其实施安排由本文接替：不再由 `internal/adminui` 承担成功渲染，不分开交付第二套反馈，不按旧任务书默认运行全量门禁。
 
@@ -786,14 +786,14 @@ pkg/database/{retention,partition}
 - 循环终止：无新增循环；契约字段收集仍以 AST 子节点边界终止。
 - 跨表事务：事务边界未改；447/758b 只做原文归档与注册指向。
 - 外部调用超时/重试：无新增外部调用。
-- 未闭环（如实登记）：原生 FormPost 对非 urlencoded 静默零值；初始化基线收敛（下节）；跨进程策略传播与 artex 业务页面走查未实测。
+- 未闭环（如实登记）：原生 FormPost 对非 urlencoded 静默零值；跨进程策略传播与 artex 业务页面走查未实测；artex 库接入基线未执行（见下节）。
 
-### 初始化基线收敛（阶段 1 已落地，阶段 2 未实施）
+### 初始化基线收敛（阶段 1、阶段 2 均已落地）
 
 设计与判据见 [docs/initial-baseline.md](docs/initial-baseline.md)，此处只记进度：
 
 - 阶段 1（已完成）：[schema/CURRENT.sql](schema/CURRENT.sql) 改为「迁移终态库」生成（131 张表 / 10320 行），不再混入 artex 的外来表；[scripts/schema-snapshot.sh](scripts/schema-snapshot.sh) 默认自建临时库跑全量迁移再比对，`--check` 实测绿，`GOWP_SNAPSHOT_DB` 可复用已有终态库；`--check` 分支 trap 覆盖导致临时库残留的 bug 已修（默认路径重跑确认无残留）。
-- 阶段 2（未实施）：结构基线 + 系统数据基线 + manifest 跳过机制，清单见文档第 4 节。在完成前，初始化仍以全量迁移为准。
+- 阶段 2（已完成，2026-11-15）：`schema/baseline/` 四件产物（structure / system_data / manifest / init）+ 迁移 `759-sys-baseline` 台账表 + `baselineSkipSet` 哈希跳过（不匹配即回落全量）+ `cmd -skip-seeds`（基线只导「迁移后、seed 前」状态，否则重放后 seed 因新键已存在而跳过，漏掉同批 seed 的删除，实测多 4 行旧词条）。`scripts/baseline-generate.sh` 生成、`--check` 实测绿；`scripts/baseline-verify.sh` 三条验收实测全绿（结构/行数等价、重复执行幂等、哈希不匹配回落全量）；`scripts/baseline-adopt.sh` 供现有库接入（默认只核验）。验收中发现并修复既有漂移 `760-inventory-movement-fk-restore`：173 重建 `inventory_stock_movements` 分区表时丢了 134 的 `fk_inventory_movements_product`，存量库有、新库无。`public/migrations/baseline_manifest_test.go` 钉住 manifest 与注册表同序同集。artex 库接入未执行（需人工 `--apply`）。
 
 ### 第十九轮：原生 FormPost 全量迁移与基线快照（2026-11-15）
 
