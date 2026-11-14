@@ -135,7 +135,12 @@ func Run(db *gorm.DB) error {
 }
 
 func runAll(db *gorm.DB) error {
+	skip := baselineSkipSet(db)
 	for _, m := range All() {
+		if skip[m.Version] {
+			logger.Scene("init").With("version", m.Version).With("table", m.TableName).Info("基线已覆盖，跳过")
+			continue
+		}
 		if err := apply(db, m); err != nil {
 			return fmt.Errorf("迁移 %s (%s) 失败: %w", m.Version, m.TableName, err)
 		}

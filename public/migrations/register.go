@@ -334,4 +334,8 @@ func init() {
 	registerSysconfigErrorI18n()
 
 	registerProductTitleRetiredKeyCleanup()
+
+	registerSysBaseline()
+
+	registerInventoryMovementFKRestore()
 }
