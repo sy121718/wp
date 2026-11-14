@@ -136,14 +136,21 @@ go run ./cmd/workbench-contracts -check
 
 普通 `go test` 会检查生成文件漂移；没有 Node 时部分 JS 检查会跳过，完整工作台检查则明确失败。数据库测试应使用专用测试实例，可通过 `PGHOST`、`PGPORT`、`PGUSER`、`PGPASSWORD`、`PGDATABASE` 和 `TEST_REDIS_ADDR` 配置；部分测试支持容器回退。验收时须检查 skip 原因，不能只看退出码。
 
-不依赖数据库的交互验证页可按需启动，监听回环地址，15 分钟后退出：
+不依赖数据库的交互验证页是按需启动的**手工夹具**：起一个回环地址站点并常驻到 duration 结束，不会自己跑完，因此不进默认验收。两者在常驻前都会自检页面与静态资源，取不到就直接失败。
 
 ```bash
-GOWP_REPEATER_BROWSER=1 go test ./public/test/dashboard/feature \
+# 编辑器 repeater：真实面板、控件、撤销逻辑与编译器，文档只保存在内存
+GOWP_REPEATER_BROWSER=1 GOWP_REPEATER_BROWSER_DURATION=10m \
+  go test ./internal/module/workbench/inbound/http \
   -run TestRepeaterBrowserFixture -v -timeout 20m
+
+# 后台分类 / 品牌 / 标签列表页
+GOWP_ADMIN_UI_BROWSER=1 GOWP_ADMIN_UI_BROWSER_DURATION=10m \
+  go test ./public/test/product/feature \
+  -run TestAdminUIBrowserFixture -v -timeout 25m
 ```
 
-它使用真实面板、控件、撤销逻辑与编译器，测试文档只保存在内存。它不覆盖完整登录、持久化发布或画布交互。
+短时冒烟把 duration 设成 `30s`。repeater 夹具不覆盖完整登录、持久化发布或画布交互；后台夹具只验证列表页骨架与公共控件。
 
 ## 阅读入口
 

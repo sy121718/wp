@@ -48,10 +48,9 @@ CHECK=0
 [ "${1:-}" = "--check" ] && CHECK=1
 
 # 快照只应与「跑完本仓 public/migrations 的库」比对，不与业务库比对。
-# config.yaml 的 database.dbname 是本机业务库（artex），里面混着别的应用的表与运行时
-# 副产品：plugin_migration_ledger、analytics_daily_stats 在本仓迁移链里没有 CREATE，
-# tools / task_templates / traffic_evidence_snapshots 等表也来自别的应用。拿它比对会得到
-# 与仓库无关的噪声（实测 6315 行 diff），--check 永远红，久了对账就没人看了。
+# 业务库（config.yaml 的 database.dbname）里除了本仓表，还可能有运行时副产品与
+# 无关对象：plugin_migration_ledger、analytics_daily_stats 在本仓迁移链里没有 CREATE，
+# 混进来会得到与仓库无关的噪声（实测 6315 行 diff），--check 永远红，久了对账就没人看了。
 # 所以默认自建一个临时库、跑一遍迁移再比；要复用已有终态库时显式给 GOWP_SNAPSHOT_DB。
 SNAPSHOT_DB="${GOWP_SNAPSHOT_DB:-}"
 ADMIN_DB="${GOWP_ADMIN_DB:-postgres}"

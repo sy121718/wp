@@ -786,7 +786,7 @@ pkg/database/{retention,partition}
 - 循环终止：无新增循环；契约字段收集仍以 AST 子节点边界终止。
 - 跨表事务：事务边界未改；447/758b 只做原文归档与注册指向。
 - 外部调用超时/重试：无新增外部调用。
-- 未闭环（如实登记）：原生 FormPost 对非 urlencoded 静默零值；跨进程策略传播与 artex 业务页面走查未实测；artex 库接入基线经核验不适用（见下节）。
+- 遗留结清（第二十轮）：原生 FormPost 静默零值已在第十九轮迁移闭环；跨进程策略传播已由 `pkg/casbin/multi_instance_test.go` 实测（不跨实例传播，需 `ReloadPolicy` 或重启）；artex 业务页面走查随 artex 库剥离不再适用（见下节）。
 
 ### 初始化基线收敛（阶段 1、阶段 2 均已落地）
 
@@ -856,11 +856,11 @@ pkg/database/{retention,partition}
 
 `c6b4a178..4be9537d`（321 个提交）推到 `origin/main`，本地与远端对齐、0 待推送；此前自 2026-10-29 起从未 push。
 
-**4. 仍未闭环**
+**4. 遗留项的决定与执行（同日）**
 
-- `TestRepeaterBrowserFixture` 在当前环境挂住（>6 分钟无输出，已停掉），需单独排查。
-- `TestAdminUIBrowserFixture` 需要外部服务地址（`GOWP_ADMIN_UI_BROWSER_ADDR`），本次未跑。
-- 跨进程策略传播仍未实测（[:345](#345) 口径）；artex 接入基线留待人工 `baseline-adopt.sh --apply`。
+- `TestRepeaterBrowserFixture` / `TestAdminUIBrowserFixture` 是**手工浏览器夹具**（起回环站点并常驻到 duration），此前被误记为「挂住」。现统一：支持 `GOWP_REPEATER_BROWSER_DURATION` / `GOWP_ADMIN_UI_BROWSER_DURATION`，常驻前自检页面与静态资源；README 已修正包路径（repeater 在 `internal/module/workbench/inbound/http`，不在 `public/test/dashboard/feature`）。
+- 跨进程策略传播：**已实测**（`pkg/casbin/multi_instance_test.go`）——策略写入只重建本进程的内存 enforcer 与 URL→code 映射，另一实例在 `ReloadPolicy` 或滚动重启前看不到新策略；当前没有 Watcher/TTL 自动刷新，多实例部署必须显式重载。
+- artex 隔离：本仓业务库已切回 `wp`（`config.yaml` 的 `dbname`，与示例一致），运行时无 artex DSN；`artex` 库已剥离本仓 135 张表与 4 个函数，剩余 55 张都是 artex 自有；基线接入被混库检测拒绝，不再接入。
 
 ### 第十七轮实施与验收（2026-11-14）
 

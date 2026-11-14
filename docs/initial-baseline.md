@@ -99,6 +99,8 @@ bash scripts/baseline-adopt.sh --db DBNAME --apply    # 核验通过后写水位
 
 实测（2026-11-15）：`artex` 被拒在混库检测 —— 多出 60+ 张其他项目的表（`conversations` / `findings` / `tools` / `tasks` / `assets` / `llm_profiles` / `mcp_servers` 等），另有 `pgcrypto` / `vector` 扩展与 `sync_task_asset_links` 等外来函数。该库不接入基线；要接入请用只跑过本仓迁移的库，或新建库载入基线。
 
+同日收尾：本仓业务库已切回 `wp`（`config.yaml` 的 `database.dbname`，与 `config.yaml.example` 一致），运行时不再有指向 `artex` 的 DSN；`artex` 库已剥离本仓 135 张表与 4 个函数，剩余 55 张均为 artex 自有，服务重启后 200。该库今后不承载本仓数据。
+
 ### 3.6 验收
 
 ```bash

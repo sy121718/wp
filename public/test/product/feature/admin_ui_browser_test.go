@@ -148,7 +148,16 @@ func TestAdminUIBrowserFixture(t *testing.T) {
 	}
 	server := &http.Server{Handler: router, ReadHeaderTimeout: 3 * time.Second}
 	defer server.Close()
+
+	// 常驻前自检一次：夹具站点至少要能渲染列表页骨架，
+	// 否则打开浏览器看到的是 500 或空壳，事后排查会误判成前端问题。
+	page := httptest.NewRecorder()
+	router.ServeHTTP(page, httptest.NewRequest(http.MethodGet, "/admin/product-brands", nil))
+	if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), `class="data-table"`) {
+		t.Fatalf("后台夹具自检失败：GET /admin/product-brands = %d", page.Code)
+	}
+
 	go server.Serve(listener)
-	t.Logf("后台浏览器夹具：http://%s/admin/product-brands", listener.Addr())
+	t.Logf("后台浏览器夹具：http://%s/admin/product-brands（%s 后自动退出）", listener.Addr(), duration)
 	<-time.After(duration)
 }
