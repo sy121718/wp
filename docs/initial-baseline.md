@@ -92,8 +92,12 @@ bash scripts/baseline-adopt.sh --db DBNAME --apply    # 核验通过后写水位
 核验三条，任一不过都不写库：
 
 1. `sys_baseline` 不存在或为空（已接入过的库不改水位）；
-2. 库结构与 `structure.sql` 归一化后一致；
+2. 库结构与「重放 `init.sql` 再跑 `-migrate-only` 的临时库」一致 —— 两侧都是 `pg_dump` 输出，比较口径对称，deparse 差异继续按 3.6 归一；
 3. `system_data.sql` 里每张表的行数不多于现有库（少了说明 seed 没跑全）。
+
+第 2 条先做**混库检测**：现有库若有重放库里不存在的表，直接判「不是本仓迁移产物库」并点名表名，不再往下比 —— 这类库混了别的应用对象，接入基线等于把外来结构当成基线的一部分固化。
+
+实测（2026-11-15）：`artex` 被拒在混库检测 —— 多出 60+ 张其他项目的表（`conversations` / `findings` / `tools` / `tasks` / `assets` / `llm_profiles` / `mcp_servers` 等），另有 `pgcrypto` / `vector` 扩展与 `sync_task_asset_links` 等外来函数。该库不接入基线；要接入请用只跑过本仓迁移的库，或新建库载入基线。
 
 ### 3.6 验收
 
@@ -116,7 +120,7 @@ bash scripts/baseline-verify.sh --keep   # 保留库与 /tmp/wp-baseline-verify-
 
 ### 3.8 已知限制
 
-- artex 接入未执行：需按 3.5 核验后人工 `--apply`。
+- artex 不是本仓迁移产物库（3.5 实测），不接入基线；需要基线环境请新建库载入 `schema/baseline/init.sql`。
 - **seed 里仍有 DDL**：6 张 `ai_*` 表由 seed 542 建（`registerSeed` + `CREATE TABLE`），所以结构基线（`-skip-seeds` 生成）不含它们，靠初始化时跑 seed 补齐。这是既有形状，本次不改历史 seed；新数据/结构应分别落在 Migration 与 Seed。
 - 结构比较依赖 deparse 归一规则。将来 pg_dump 若改变其它表达式的输出形式，验收会报红，需要在 `scripts/baseline-verify.sh` 的 `normalize` 里补规则，**不要放宽成忽略 CHECK**。
 - manifest 必须与注册表同序同集：改迁移就要重生成基线，[public/migrations/baseline_manifest_test.go](../public/migrations/baseline_manifest_test.go) 会拦。

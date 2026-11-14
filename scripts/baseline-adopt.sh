@@ -6,7 +6,8 @@
 #
 # 安全默认：不加 --apply 只核验、不写库。核验不通过一律不写。
 #   1. 库必须可连，且 sys_baseline 不存在或为空（已有水位说明接入过）；
-#   2. 结构与 schema/baseline/structure.sql 归一化后必须一致（deparse 差异不算差异）；
+#   2. 结构与「重放 schema/baseline/init.sql 再跑 -migrate-only 的临时库」一致
+#      （两侧都是 pg_dump 输出，deparse 差异已归一；现有库混入的非迁移表会被点名）；
 #   3. 系统数据：system_data.sql 里每张表的 COPY 行数不得多于现有库的行数（少了说明 seed 没跑全）。
 #
 # 用法：
@@ -44,7 +45,13 @@ done
 [ -n "$TARGET_DB" ] || { echo "✗ 需要 --db DBNAME" >&2; exit 2; }
 
 TMP=$(mktemp -d)
-trap 'rm -rf "$TMP"' EXIT
+REPLAY_DB="wp_baseline_adopt_replay_$$"
+admin_psql() { psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d postgres -v ON_ERROR_STOP=1 "$@"; }
+cleanup() {
+  admin_psql -c "DROP DATABASE IF EXISTS \"$REPLAY_DB\" WITH (FORCE)" >/dev/null 2>&1 || true
+  rm -rf "$TMP"
+}
+trap cleanup EXIT
 fail() { echo "✗ $*" >&2; exit 1; }
 
 db_psql() { psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$TARGET_DB" -tA -v ON_ERROR_STOP=1 "$@"; }
@@ -67,15 +74,40 @@ normalize() {
     -e 's/[[:space:]]+$//'
 }
 
-echo "… 核验结构"
-pg_dump -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$TARGET_DB" \
-  --schema-only --no-owner --no-privileges --no-comments \
-  --exclude-table="$MONTH_PARTITION" 2>/dev/null | normalize >"$TMP/live.sql"
-grep -v '^-- ' "$BASELINE_DIR/structure.sql" | normalize >"$TMP/base.sql"
-if ! diff -u "$TMP/base.sql" "$TMP/live.sql" >"$TMP/struct.diff"; then
-  echo "── 结构差异（前 40 行）──" >&2
-  head -40 "$TMP/struct.diff" >&2
-  fail "库 $TARGET_DB 的结构与 $BASELINE_DIR/structure.sql 不一致，先跑 -migrate-only 补齐再接入"
+echo "… 重放基线到临时库 $REPLAY_DB"
+admin_psql -c "DROP DATABASE IF EXISTS \"$REPLAY_DB\" WITH (FORCE)" >/dev/null 2>&1 || true
+admin_psql -c "CREATE DATABASE \"$REPLAY_DB\"" >/dev/null
+if ! psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$REPLAY_DB" -v ON_ERROR_STOP=1 \
+  -f "$BASELINE_DIR/init.sql" >"$TMP/replay-init.log" 2>&1; then
+  tail -20 "$TMP/replay-init.log" >&2
+  fail "重放 $BASELINE_DIR/init.sql 失败"
+fi
+if ! GOWP_DATABASE_DBNAME="$REPLAY_DB" go run ./cmd -migrate-only >"$TMP/replay-migrate.log" 2>&1; then
+  tail -30 "$TMP/replay-migrate.log" >&2
+  fail "重放库跑迁移失败"
+fi
+
+echo "… 核验结构（现有库 vs 重放库）"
+struct_dump() {
+  pg_dump -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$1" \
+    --schema-only --no-owner --no-privileges --no-comments \
+    --exclude-table="$MONTH_PARTITION" 2>/dev/null | normalize
+}
+tables_of() {
+  grep -oE '^CREATE TABLE public\.[^ ]+' "$1" | sed -E 's/^CREATE TABLE public\."?([^"]*)"?/\1/' | sort -u
+}
+struct_dump "$REPLAY_DB" >"$TMP/replay.sql"
+struct_dump "$TARGET_DB" >"$TMP/live.sql"
+extra=$(comm -13 <(tables_of "$TMP/replay.sql") <(tables_of "$TMP/live.sql"))
+if [ -n "$extra" ]; then
+  echo "── 现有库多出的表（$(printf "%s\n" "$extra" | wc -l | tr -d " ") 张，非本仓迁移产物）──" >&2
+  printf "%s\n" "$extra" | sed "s/^/  + /" >&2
+  fail "库 $TARGET_DB 混入其他项目的对象，不是本仓迁移产物库，不能接入基线"
+fi
+if ! diff -u "$TMP/replay.sql" "$TMP/live.sql" >"$TMP/struct.diff"; then
+  echo "── 结构差异（前 60 行）──" >&2
+  head -60 "$TMP/struct.diff" >&2
+  fail "库 $TARGET_DB 的结构与基线不一致，先跑 -migrate-only 补齐再接入"
 fi
 echo "  ✓ 结构一致"
 
