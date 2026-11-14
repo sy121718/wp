@@ -1,6 +1,6 @@
 # 框架基础归一与可视化工具化任务书
 
-当前状态（2026-11-14 第十八轮收口）：**第十七轮的四项缺口已闭环，初始化基线收敛待实施**。契约 362 条：**239 form / 106 json / 8 query / 4 multipart / 3 nobody / 2 raw，unknown 为 0**；`ParseForm` 端点额外声明 `encodings: [urlencoded, multipart]`，`BindForm` 钩子读取的字面量键（remember / pageSize / emailNotify / shipName…）已并入字段表。非表单编码现在直接 400，不再「忽略 JSON 后写默认值」。447 历史 SQL 已恢复原文并归档，现行执行源改为 758b。密码业务链补齐生产布局（`/production`）三视口 × 四输入 12 格。`go test ./...` **283 包 ok（rls 188 秒）**；`check-all.sh --with-db` 39/39；`go build ./...`、`go vet ./...`、`write-contracts -check` 通过。第十七轮改动分五批提交（`e466ac95` / `db4ba666` / `e95c7ce7` / `5e9e3842` / `ee1c3391`），第十八轮改动分五批提交（`2edc91ea` / `ff6b9730` / `63d347fe` / `f5625910` / `87960150`）。最新范围与证据边界以[当前收口任务](#当前收口任务)为准；历轮记录保留为历史，不据其旧缺口重复实施。未 push。
+当前状态（2026-11-15 第十九轮收口）：**154 处原生 FormPost 已全部迁移、初始化基线阶段 1 落地（阶段 2 未实施）**。契约 362 条：**239 form / 106 json / 8 query / 4 multipart / 3 nobody / 2 raw，unknown 为 0**；`ParseForm` 端点额外声明 `encodings: [urlencoded, multipart]`，`BindForm` 钩子读取的字面量键（remember / pageSize / emailNotify / shipName…）已并入字段表。非表单编码现在直接 400，不再「忽略 JSON 后写默认值」。447 历史 SQL 已恢复原文并归档，现行执行源改为 758b。密码业务链补齐生产布局（`/production`）三视口 × 四输入 12 格。`go test ./...` **283 包 ok（rls 188 秒）**；`check-all.sh --with-db` 39/39；`go build ./...`、`go vet ./...`、`write-contracts -check` 通过。第十七轮改动分五批提交（`e466ac95` / `db4ba666` / `e95c7ce7` / `5e9e3842` / `ee1c3391`），第十八轮改动分五批提交（`2edc91ea` / `ff6b9730` / `63d347fe` / `f5625910` / `87960150`），第十九轮改动分六批提交（`f8bed43c` / `2854dc40` / `52142147` / `a95c86ef` / `e5ac0333` / `74c840f9`），另 `c1cfc5dd` 修分区列名回退。最新范围与证据边界以[当前收口任务](#当前收口任务)为准；历轮记录保留为历史，不据其旧缺口重复实施。未 push。
 
 本任务书是本次重构的唯一实施清单，不是第二份架构规范；规范仍以 [AGENTS.md](AGENTS.md) 为准。原 [商品后台通用写反馈任务书](TASK-html-feedback.md) 保留为背景和原始用例索引，其实施安排由本文接替：不再由 `internal/adminui` 承担成功渲染，不分开交付第二套反馈，不按旧任务书默认运行全量门禁。
 
@@ -775,7 +775,7 @@ pkg/database/{retention,partition}
 - 一处真实残留（已修）：workbench 三个处理器丢弃绑定错误 —— [canvas_bridge_handle.go](internal/module/workbench/inbound/http/canvas_bridge_handle.go) 的 `PreviewDraft`、[inspector_handle.go](internal/module/workbench/inbound/http/inspector_handle.go) 的 `OutlineTree`、[canvas_preview_handle.go](internal/module/workbench/inbound/http/canvas_preview_handle.go) 的 `TemplatePreviewDraft`。此前 `POST /workbench/outline` 带 `application/json` 返回 200 与空树；三处现在绑定失败即 `response.ParamError(c)` 返回，[form_encoding_guard_test.go](internal/module/workbench/inbound/http/form_encoding_guard_test.go) 对三条路径钉住 400。
 - 一处表述过度：「原生 FormPost 端点仍拒绝 multipart」只在模板与契约声明意义上成立。gin v1.12.0 的 `formPostBinding.Bind` 只做 `req.ParseForm()` + `mapForm(req.PostForm)`；实测 multipart、JSON、无 Content-Type 三种请求都返回 `nil` error 与零值。这些端点运行时未强制编码，靠 service 必填校验兜底；契约也没有给它们声明 `encodings`，两处口径一致。
 - 数字订正：生产 `binding.ParseForm` 40 处（含测试 53 处）；GET 读端点 8 处调用点；迁移文件 699 个。
-- 仍待实施：模块内原生 `ginbinding.FormPost` 152 处（43 个文件），另 `internal/middleware/builtin/access_guard.go:343` 一处读端点同形。其中 130 处可机械迁到 `ParseForm`，15 处是「绑定与必填」写在同一个 if 里的复合条件写法，7 处是其他换行形态。按域迁移，不在本轮做批量替换。
+- 已实施（第十九轮）：模块内 152 处原生 `ginbinding.FormPost`（43 个文件）与 `internal/middleware/builtin/access_guard.go:343` 全部改成 `binding.ParseForm`，生产代码零残留；按域并行的迁移细节与全量验证见下节。
 
 **7. 逻辑检查结论**
 
@@ -794,6 +794,36 @@ pkg/database/{retention,partition}
 
 - 阶段 1（已完成）：[schema/CURRENT.sql](schema/CURRENT.sql) 改为「迁移终态库」生成（131 张表 / 10320 行），不再混入 artex 的外来表；[scripts/schema-snapshot.sh](scripts/schema-snapshot.sh) 默认自建临时库跑全量迁移再比对，`--check` 实测绿，`GOWP_SNAPSHOT_DB` 可复用已有终态库；`--check` 分支 trap 覆盖导致临时库残留的 bug 已修（默认路径重跑确认无残留）。
 - 阶段 2（未实施）：结构基线 + 系统数据基线 + manifest 跳过机制，清单见文档第 4 节。在完成前，初始化仍以全量迁移为准。
+
+### 第十九轮：原生 FormPost 全量迁移与基线快照（2026-11-15）
+
+承接上节遗留的 152 处原生 `ginbinding.FormPost`（43 个文件）与初始化基线阶段 1。
+
+**1. 绑定入口统一（生产零残留）**
+
+- 154 个站点迁到 `binding.ParseForm`：模块内 152 处 + [access_guard.go](internal/middleware/builtin/access_guard.go) 的 `AccessUnlockHandler` + 2 处未别名的 `binding.FormPost`。生产代码 `ShouldBindWith(..., FormPost)` 归零，只剩 [pkg/binding/binding.go](pkg/binding/binding.go) 的分派实现与测试夹具。
+- 泛型辅助一次覆盖多端点：`runOrderBulkWrite`（批量订单/采购）、`runTransferWrite`（5 个调拨端点）。
+- 行为修复：[inventory_reason_form_req.go](internal/module/inventory/dto/inventory_reason_form_req.go) 的 `ReasonFormReq.BindForm` 此前只填 `submitted` map，而 `UpdateReq()` 靠它判 PATCH 字段；迁移前钩子从不执行，原因编辑的 name/status/sort 永远不更新，迁移后按提交字段生效。
+- 保留：`plugin` 的 `ToggleUpload` 用 `ginbinding.FormMultipart`（上传），不在本次范围。
+
+**2. 契约生成器两处识别缺陷**
+
+- [cmd/write-contracts/main.go](cmd/write-contracts/main.go) 的 `chainedBinderProtocol` 只沿链传协议字符串、丢 `encodings`，17 条泛型辅助端点因此缺编码声明；改为按 `iprotocol → encodings` 一并传递。
+- `isBinderGenericCall` 不认 `pkg/binding` 的泛型入口，`product` 的 `DeleteTag` / `RecalcTags` 契约字段表为空、字段对账报错；新增 `isPkgBindingGeneric` 识别 `binding.ParseForm/ParseJSON/Query/Form/JSON`。
+- 重生成契约：仍是 362 条，form 端点 239 条全部带 `encodings`（此前 40 条）。
+
+**3. 初始化基线阶段 1**
+
+- [schema/CURRENT.sql](schema/CURRENT.sql) 由只跑过本仓迁移的隔离库生成（131 张表 / 10320 行），不再混入 artex 的 `plugin_migration_ledger` / `analytics_daily_stats` / `tools` 等外来对象。
+- [scripts/schema-snapshot.sh](scripts/schema-snapshot.sh) 增加 `SNAPSHOT_DB` / `ADMIN_DB`，默认自建 `wp_schema_probe_$$` 跑 `go run ./cmd -migrate-only` 再比对；修 `--check` 分支 trap 覆盖 `cleanup_probe` 造成临时库残留的 bug。
+- 设计与阶段 2 清单：[docs/initial-baseline.md](docs/initial-baseline.md)。
+
+**4. 全量验证（本轮实际执行）**
+
+- `go test ./internal/... ./pkg/... -count=1`：EXIT=0。
+- `go test ./public/test/... -count=1 -p 4`：**64 包 ok**，唯一红项 `public/test/partition/unit` 的 `TestTableTimeColumnsMatchPartitionKeys` —— `a95c86ef` 把两张分区表的 `TimeColumn` 误改为 `created_at`（真实分区键是 `create_time`），已回退并在 `c1cfc5dd` 复绿。
+- `bash scripts/check-all.sh` 31 脚本全过；`--db-only` 8 脚本全过（重复索引只报告、不自动 DROP）。
+- 一处测试对齐：`public/test/publication/feature/seo_audit_json_test.go` 的 multipart 子用例按新契约改为「multipart 也在契约内」（`74c840f9`）。
 
 ### 第十七轮实施与验收（2026-11-14）
 
