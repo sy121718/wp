@@ -1,11 +1,16 @@
 #!/usr/bin/env bash
 # baseline-verify.sh — 初始化基线验收（需要本地 PostgreSQL）。
 #
-# 验收三条，任何一条不成立即非零退出：
-#   1. 等价：空库跑全量迁移 与「重放 schema/baseline/init.sql 后再跑迁移」结构一致、系统数据行数一致；
+# 验收五条，任何一条不成立即非零退出：
+#   1. 等价：空库跑全量迁移 与「重放 schema/baseline/init.sql 后再跑迁移」结构一致、
+#      系统数据**内容**一致（逐表行数 + 行级 md5 聚合，时间字面量归一）；
 #   2. 幂等：基线库再跑一次迁移，结构逐字节不变、sys_baseline 仍只有一行；
-#   3. 回落：篡改 sys_baseline.manifest_sha256 后删一张基线内迁移建的表，再跑迁移必须把它建回来
-#      （证明哈希不匹配时确实回落全量，而不是静默跳过）。
+#   3. 跳过生效：匹配哈希时删掉一张基线内迁移建的表，再跑迁移它**不能被重建**
+#      （证明基线覆盖的迁移确实没执行，而不是执行了再靠幂等检查混过去）；
+#   4. 拒绝重放：篡改 sys_baseline.manifest_sha256 后再跑迁移必须失败并给出「基线产物已变更」提示，
+#      库结构保持不变（历史迁移假定从空库开始，在终态结构上重放必然半途报错）；
+#   5. 摘要口径：init.sql 记录的内容摘要必须等于 cmd/baseline-digest 的输出
+#      （生成器与迁移器各算一遍，这里钉住两侧一致）。
 #
 # 结构比较前要归一 pg_dump 的两种 deparse：同一 CHECK 表达式在一阶库是
 # ANY ((ARRAY['a'::character varying, ...])::text[])，重放一次后变成
@@ -93,21 +98,30 @@ struct_dump() {
     --exclude-table="$MONTH_PARTITION" 2>/dev/null | normalize
 }
 
-table_counts() {
-  local db="$1" q
-  q=$(db_psql "$db" -c "SELECT string_agg(format('SELECT %L AS tbl, count(*) AS n FROM public.%I', c.relname, c.relname), ' UNION ALL ' ORDER BY c.relname)
-        FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-        WHERE n.nspname = 'public' AND c.relkind = 'r' AND c.relpersistence = 'p'
-          AND c.relname <> 'sys_baseline'")
-  [ -n "$q" ] || fail "$db 没有可比对的表"
-  db_psql "$db" -c "$q ORDER BY tbl"
+# 每张表的行数与内容指纹：行级 md5（时间字面量归一）排序后再聚合。
+# 只比行数证明不了终态一致 —— 缺一个必需键、同时多一条无关记录，行数照样相等。
+content_fingerprints() {
+  local db="$1"
+  psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$db" -tA -v ON_ERROR_STOP=1 <<'SQL'
+SET TimeZone = 'UTC';
+SELECT format(
+  'SELECT %L AS tbl, count(*) AS n, coalesce(md5(string_agg(h, '''' ORDER BY h)), '''') AS h FROM (SELECT md5(regexp_replace(x::text, %L, ''<TS>'', ''g'')) AS h FROM public.%I x) s',
+  c.relname,
+  '[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?\+[0-9]{2}',
+  c.relname)
+FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+WHERE n.nspname = 'public' AND c.relkind = 'r' AND c.relpersistence = 'p'
+  AND c.relname <> 'sys_baseline'
+ORDER BY c.relname;
+\gexec
+SQL
 }
 
-echo "… 1/4 建全量库 $FULL_DB 并跑完整迁移"
+echo "… 1/5 建全量库 $FULL_DB 并跑完整迁移"
 create_db "$FULL_DB"
 migrate_db "$FULL_DB" "$LOG_DIR/full.log"
 
-echo "… 2/4 建基线库 $BASE_DB，重放 schema/baseline/init.sql 后跑迁移"
+echo "… 2/5 建基线库 $BASE_DB，重放 schema/baseline/init.sql 后跑迁移"
 create_db "$BASE_DB"
 if ! psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$BASE_DB" -v ON_ERROR_STOP=1 \
   -f schema/baseline/init.sql >"$LOG_DIR/base-init.log" 2>&1; then
@@ -116,7 +130,7 @@ if ! psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$BASE_DB" -v ON_ERROR_ST
 fi
 migrate_db "$BASE_DB" "$LOG_DIR/base-migrate.log"
 
-echo "… 3/4 比较结构、系统数据行数、幂等"
+echo "… 3/5 比较结构、系统数据内容、幂等"
 struct_dump "$FULL_DB" >"$LOG_DIR/full.struct.sql"
 struct_dump "$BASE_DB" >"$LOG_DIR/base.struct.sql"
 if ! diff -u "$LOG_DIR/full.struct.sql" "$LOG_DIR/base.struct.sql" >"$LOG_DIR/struct.diff"; then
@@ -126,14 +140,14 @@ if ! diff -u "$LOG_DIR/full.struct.sql" "$LOG_DIR/base.struct.sql" >"$LOG_DIR/st
 fi
 echo "  ✓ 结构一致（月分区除外，deparse 已归一）"
 
-table_counts "$FULL_DB" >"$LOG_DIR/full.counts.txt"
-table_counts "$BASE_DB" >"$LOG_DIR/base.counts.txt"
-if ! diff -u "$LOG_DIR/full.counts.txt" "$LOG_DIR/base.counts.txt" >"$LOG_DIR/counts.diff"; then
-  echo "── 行数差异（前 30 行）──" >&2
-  head -30 "$LOG_DIR/counts.diff" >&2
-  fail "系统数据行数不一致：$LOG_DIR/counts.diff"
+content_fingerprints "$FULL_DB" >"$LOG_DIR/full.content.txt"
+content_fingerprints "$BASE_DB" >"$LOG_DIR/base.content.txt"
+if ! diff -u "$LOG_DIR/full.content.txt" "$LOG_DIR/base.content.txt" >"$LOG_DIR/content.diff"; then
+  echo "── 系统数据内容差异（前 30 行）──" >&2
+  head -30 "$LOG_DIR/content.diff" >&2
+  fail "系统数据内容不一致：$LOG_DIR/content.diff"
 fi
-echo "  ✓ $(wc -l <"$LOG_DIR/full.counts.txt" | tr -d ' ') 张表的行数一致（sys_baseline 除外）"
+echo "  ✓ $(wc -l <"$LOG_DIR/full.content.txt" | tr -d ' ') 张表的行数与内容指纹一致（sys_baseline 除外）"
 
 migrate_db "$BASE_DB" "$LOG_DIR/base-migrate-2.log"
 struct_dump "$BASE_DB" >"$LOG_DIR/base.struct.2.sql"
@@ -144,13 +158,33 @@ rows=$(db_psql "$BASE_DB" -c "SELECT count(*) FROM sys_baseline")
 [ "$rows" = "1" ] || fail "重复迁移后 sys_baseline 行数为 $rows，应为 1"
 echo "  ✓ 重复执行幂等（结构不变、sys_baseline 仍 1 行）"
 
-echo "… 4/4 验证哈希不匹配时回落全量"
-db_psql "$BASE_DB" -c "UPDATE sys_baseline SET manifest_sha256 = repeat('0', 64)" >/dev/null
+echo "… 4/5 验证匹配哈希时被覆盖的迁移确实没执行"
 db_psql "$BASE_DB" -c "DROP TABLE IF EXISTS public.$PROBE_TABLE" >/dev/null
 [ "$(db_psql "$BASE_DB" -c "SELECT to_regclass('public.$PROBE_TABLE') IS NULL")" = "t" ] || fail "探针表未删除"
-migrate_db "$BASE_DB" "$LOG_DIR/base-migrate-fallback.log"
-[ "$(db_psql "$BASE_DB" -c "SELECT to_regclass('public.$PROBE_TABLE') IS NOT NULL")" = "t" ] || \
-  fail "哈希不匹配时迁移未回落全量：$PROBE_TABLE 未被重建（日志：$LOG_DIR/base-migrate-fallback.log）"
-echo "  ✓ 哈希不匹配 → 全量迁移重建了 $PROBE_TABLE"
+migrate_db "$BASE_DB" "$LOG_DIR/base-migrate-skip.log"
+if [ "$(db_psql "$BASE_DB" -c "SELECT to_regclass('public.$PROBE_TABLE') IS NULL")" != "t" ]; then
+  fail "匹配哈希时仍执行了基线内迁移：$PROBE_TABLE 被重建（日志：$LOG_DIR/base-migrate-skip.log）"
+fi
+echo "  ✓ 匹配哈希 → 基线内迁移未执行（$PROBE_TABLE 仍缺失）"
+
+echo "… 5/5 验证哈希不匹配时明确拒绝（不静默重放历史迁移）"
+# 回落全量看着「安全」，实际跑不通：历史迁移假定从空库开始（164 的 UPDATE 引用 updated_at，
+# 而 223 已 DROP 它建的索引、201/205 已改名），在终态结构上重放必然半途报错。
+# 正确行为是拒绝并指出处置办法，同时保持库不变。
+db_psql "$BASE_DB" -c "UPDATE sys_baseline SET manifest_sha256 = repeat('0', 64)" >/dev/null
+if GOWP_DATABASE_DBNAME="$BASE_DB" go run ./cmd -migrate-only >"$LOG_DIR/base-migrate-mismatch.log" 2>&1; then
+  fail "哈希不匹配时迁移仍成功退出：历史迁移被静默重放（日志：$LOG_DIR/base-migrate-mismatch.log）"
+fi
+grep -q '基线产物已变更' "$LOG_DIR/base-migrate-mismatch.log" || \
+  fail "哈希不匹配时没有给出「基线产物已变更」提示（日志：$LOG_DIR/base-migrate-mismatch.log）"
+if [ "$(db_psql "$BASE_DB" -c "SELECT to_regclass('public.$PROBE_TABLE') IS NULL")" != "t" ]; then
+  fail "哈希不匹配时仍重放了历史迁移：$PROBE_TABLE 被重建"
+fi
+echo "  ✓ 哈希不匹配 → 拒绝重放，库结构保持不变"
+
+recorded=$(grep -oE "'[0-9a-f]{64}'" schema/baseline/init.sql | head -1 | tr -d "'")
+computed=$(go run ./cmd/baseline-digest)
+[ "$recorded" = "$computed" ] || fail "init.sql 记录 $recorded，当前产物摘要 $computed：重跑 bash scripts/baseline-generate.sh"
+echo "  ✓ init.sql 的内容摘要与生成器一致（$(printf '%s' "$computed" | cut -c1-8)）"
 
 echo "✓ 初始化基线验收通过（日志：$LOG_DIR）"

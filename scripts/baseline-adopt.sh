@@ -1,18 +1,24 @@
 #!/usr/bin/env bash
 # baseline-adopt.sh — 把「已按本仓迁移建好」的现有库接入初始化基线。
 #
-# 接入的含义：往该库写一行 sys_baseline，登记当前 manifest 的哈希。之后跑 -migrate-only
-# 时迁移器会跳过 manifest 内的历史迁移（结构已经在库里），只执行 manifest 之后的新迁移。
+# 接入的含义：往该库写一行 sys_baseline，登记基线产物的内容摘要（与迁移器的跳过判定同源）。
+# 之后跑 -migrate-only 时迁移器会跳过基线覆盖的历史迁移与 seed（都已在库里），只执行段外增量。
 #
 # 安全默认：不加 --apply 只核验、不写库。核验不通过一律不写。
 #   1. 库必须可连，且 sys_baseline 不存在或为空（已有水位说明接入过）；
 #   2. 结构与「重放 schema/baseline/init.sql 再跑 -migrate-only 的临时库」一致
 #      （两侧都是 pg_dump 输出，deparse 差异已归一；现有库混入的非迁移表会被点名）；
-#   3. 系统数据：system_data.sql 里每张表的 COPY 行数不得多于现有库的行数（少了说明 seed 没跑全）。
+#   3. 系统数据：system_data.sql 里每张表的 COPY 行数不得多于现有库的行数（少了说明 seed 没跑全）；
+#      再核必需业务键 —— 词条 (item_key, lang)、权限 (permission_code)、菜单 (非空 permission_code)
+#      在基线里的每一个键都必须存在于现有库。行数够不代表键齐：缺一个必需键、同时多一条
+#      无关记录，行数照样相等。
 #
 # 用法：
-#   bash scripts/baseline-adopt.sh --db DBNAME             # 只核验
-#   bash scripts/baseline-adopt.sh --db DBNAME --apply     # 核验通过后写入水位
+#   bash scripts/baseline-adopt.sh --db DBNAME                       # 只核验
+#   bash scripts/baseline-adopt.sh --db DBNAME --apply               # 核验通过后写入水位
+#   bash scripts/baseline-adopt.sh --db DBNAME --refresh --apply     # 基线产物变更后更新既有水位
+#
+# --refresh 只改已有水位行的摘要与版本，不做任何结构/数据写入；核验不通过同样不写。
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -34,10 +40,12 @@ MONTH_PARTITION='*_[0-9][0-9][0-9][0-9]_[0-9][0-9]'
 BASELINE_DIR=schema/baseline
 TARGET_DB=""
 APPLY=0
+REFRESH=0
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --db) TARGET_DB="$2"; shift 2 ;;
     --apply) APPLY=1; shift ;;
+    --refresh) REFRESH=1; shift ;;
     -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
     *) echo "✗ 未知参数：$1" >&2; exit 2 ;;
   esac
@@ -60,8 +68,13 @@ db_psql() { psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$TARGET_DB" -tA -
 existing=$(db_psql -c "SELECT count(*) FROM sys_baseline" 2>/dev/null || echo "-")
 if [ "$existing" = "-" ]; then
   echo "  · sys_baseline 不存在，本次将建立水位"
-elif [ "$existing" != "0" ]; then
-  fail "库 $TARGET_DB 已有 $existing 行 sys_baseline，已接入过；如需改水位请先人工核对并删除旧行"
+elif [ "$existing" -gt 1 ]; then
+  fail "库 $TARGET_DB 有 $existing 行 sys_baseline，水位不唯一；先人工核对并保留一行"
+elif [ "$existing" = "1" ]; then
+  if [ "$REFRESH" -ne 1 ]; then
+    fail "库 $TARGET_DB 已接入过基线；基线产物变更后用 --refresh 更新水位"
+  fi
+  echo "  · 已有水位，核验通过后将更新它（--refresh）"
 fi
 
 normalize() {
@@ -131,13 +144,51 @@ if [ "$missing" -gt 0 ]; then
 fi
 echo "  ✓ $(wc -l <"$TMP/base.rows" | tr -d ' ') 张系统表的行数不少于基线"
 
-sha=$(sha256sum "$BASELINE_DIR/manifest.txt" | awk '{print $1}')
-version="adopt-$(date +%Y-%m-%d)"
+echo "… 核验必需业务键"
+# 把基线重放库的键集合 COPY 出来，载入目标库的临时表后做 anti-join。
+# COPY 文本格式处理转义，比在 bash 里解析 COPY 行可靠。
+required_key_missing=0
+check_required_keys() {
+  local tbl="$1" cols="$2" filter="${3:-}" cond out
+  cond=$(printf '%s' "$cols" | awk -F, '{for(i=1;i<=NF;i++){printf "%st.%s=b.%s", (i>1?" AND ":""), $i, $i}}')
+  psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$REPLAY_DB" -tA -v ON_ERROR_STOP=1 \
+    -c "COPY (SELECT $cols FROM public.$tbl) TO STDOUT" >"$TMP/$tbl.keys"
+  # -q 必须加：不加会把 CREATE TABLE AS / COPY n 这类状态标签混进输出，anti-join 结果为空时仍被判成缺键。
+  out=$(psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$TARGET_DB" -q -tA -v ON_ERROR_STOP=1 <<SQL
+CREATE TEMP TABLE _baseline_keys AS SELECT $cols FROM public.$tbl WITH NO DATA;
+\copy _baseline_keys FROM '$TMP/$tbl.keys'
+SELECT b.* FROM _baseline_keys b
+WHERE NOT EXISTS (SELECT 1 FROM public.$tbl t WHERE $cond) $filter;
+SQL
+)
+  if [ -n "$out" ]; then
+    echo "  ! $tbl 缺少基线里的键（前 5 条）：" >&2
+    printf '%s\n' "$out" | head -5 | sed 's/^/    /' >&2
+    required_key_missing=$((required_key_missing + 1))
+    return 1
+  fi
+  echo "  ✓ $tbl：基线键全部存在"
+}
+check_required_keys sys_i18n item_key,lang || true
+check_required_keys sys_permission permission_code || true
+check_required_keys sys_menus permission_code 'AND b.permission_code IS NOT NULL' || true
+if [ "$required_key_missing" -gt 0 ]; then
+  fail "$required_key_missing 张系统表缺少基线里的必需键，先跑 -migrate-only 补齐 seed 再接入"
+fi
+
+# 摘要必须与迁移器的跳过判定同源：自己算 manifest 哈希会与 ContentSHA256 漂移，
+# 接入后每次迁移都匹配不上、静默回落全量。
+sha="$(go run ./cmd/baseline-digest)"
+version="adopt-$(date +%Y-%m-%d)-${sha:0:8}"
 
 if [ "$APPLY" -ne 1 ]; then
   echo "… 核验通过（未写库）。--apply 将执行："
-  echo "    INSERT INTO sys_baseline (version, manifest_sha256, applied_at, note)"
-  echo "    VALUES ('$version', '$sha', now(), '现有库接入基线');"
+  if [ "$REFRESH" -eq 1 ] && [ "$existing" = "1" ]; then
+    echo "    UPDATE sys_baseline SET version='$version', manifest_sha256='$sha', applied_at=now()"
+  else
+    echo "    INSERT INTO sys_baseline (version, manifest_sha256, applied_at, note)"
+    echo "    VALUES ('$version', '$sha', now(), '现有库接入基线');"
+  fi
   exit 0
 fi
 
@@ -149,6 +200,12 @@ db_psql -c "CREATE TABLE IF NOT EXISTS sys_baseline (
   applied_at timestamptz NOT NULL DEFAULT now(),
   note text NOT NULL DEFAULT ''
 )" >/dev/null
-db_psql -c "INSERT INTO sys_baseline (version, manifest_sha256, note) VALUES ('$version', '$sha', '现有库接入基线')" >/dev/null
+if [ "$REFRESH" -eq 1 ] && [ "$existing" = "1" ]; then
+  db_psql -c "UPDATE sys_baseline SET version = '$version', manifest_sha256 = '$sha', applied_at = now(), note = '基线产物变更后更新水位'" >/dev/null
+else
+  db_psql -c "INSERT INTO sys_baseline (version, manifest_sha256, note) VALUES ('$version', '$sha', '现有库接入基线')" >/dev/null
+fi
 echo "✓ 已接入：$TARGET_DB → $version ($sha)"
-echo "  之后跑 ./app -migrate-only 会跳过 manifest 内 $(grep -vc '^#' "$BASELINE_DIR/manifest.txt") 个历史迁移"
+MIGRATIONS=$(awk '/^\[migrations\]/{f=1;next} /^\[seeds\]/{f=0} f&&NF&&!/^#/{c++} END{print c+0}' "$BASELINE_DIR/manifest.txt")
+SEEDS=$(awk '/^\[seeds\]/{f=1;next} f&&NF&&!/^#/{c++} END{print c+0}' "$BASELINE_DIR/manifest.txt")
+echo "  之后跑 ./app -migrate-only 会跳过基线覆盖的 $MIGRATIONS 条迁移与 $SEEDS 条 seed，只执行段外增量"

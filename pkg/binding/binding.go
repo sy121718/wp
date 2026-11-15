@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	"mime"
 	"net/http"
 	"net/url"
 	"reflect"
@@ -37,21 +38,43 @@ func JSONLimited[T any](c *gin.Context, maxBytes int64) (*T, bool) {
 	return JSON[T](c)
 }
 
+// formMediaType 解析请求声明的媒体类型，并回答它是否就是两种表单编码之一。
+//
+// 必须解析后精确比较，不能用前缀匹配：`application/x-www-form-urlencoded+json` 与
+// `application/x-www-form-urlencodedgarbage` 都以表单前缀开头，前缀匹配会把它们
+// 当成表单，于是非表单请求体退回零值表单并静默成功 —— 带默认值的 DTO（偏好页大小、
+// 通知开关）会把「用户没提交」写成「用户要求默认值」。
+func formMediaType(c *gin.Context) (string, bool) {
+	if c == nil || c.Request == nil {
+		return "", false
+	}
+	raw := strings.TrimSpace(c.GetHeader("Content-Type"))
+	if raw == "" {
+		return "", false
+	}
+	mt, _, err := mime.ParseMediaType(raw)
+	if err != nil {
+		// 媒体类型本身不合法（含 `;garbage` 之外的畸形串）：无法证明它是表单。
+		return "", false
+	}
+	switch mt {
+	case "multipart/form-data", "application/x-www-form-urlencoded":
+		return mt, true
+	default:
+		return mt, false
+	}
+}
+
 // isMultipartBody 判断请求体声明的编码是否为 multipart/form-data。
 // 只看 Content-Type，不解析表单内容 —— 它与 FormPost 一样只读 body。
 func isMultipartBody(c *gin.Context) bool {
-	if c == nil || c.Request == nil {
-		return false
-	}
-	return strings.HasPrefix(strings.ToLower(c.GetHeader("Content-Type")), "multipart/form-data")
+	mt, ok := formMediaType(c)
+	return ok && mt == "multipart/form-data"
 }
 
 func isFormBody(c *gin.Context) bool {
-	if c.Request == nil {
-		return false
-	}
-	ct := strings.ToLower(c.GetHeader("Content-Type"))
-	return strings.HasPrefix(ct, "application/x-www-form-urlencoded") || strings.HasPrefix(ct, "multipart/form-data")
+	_, ok := formMediaType(c)
+	return ok
 }
 
 func hasBodyWithoutContentType(c *gin.Context) bool {
@@ -180,10 +203,8 @@ func ParseForm[T any](c *gin.Context) (*T, error) {
 
 // isURLEncodedBody 判断请求体是否为 urlencoded 表单。
 func isURLEncodedBody(c *gin.Context) bool {
-	if c == nil || c.Request == nil {
-		return false
-	}
-	return strings.HasPrefix(strings.ToLower(c.GetHeader("Content-Type")), "application/x-www-form-urlencoded")
+	mt, ok := formMediaType(c)
+	return ok && mt == "application/x-www-form-urlencoded"
 }
 
 // bodyValues 返回请求体里的表单值：urlencoded 用 PostForm，

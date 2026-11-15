@@ -371,8 +371,10 @@ THEN 1 ELSE 0 END`,
 	register(Migration{
 		Version:   "068-pg-jsonb-partial-index",
 		TableName: "pages",
-		CheckSQL:  "SELECT CASE WHEN COUNT(*) = 4 THEN 1 ELSE 0 END FROM pg_indexes WHERE schemaname = current_schema() AND tablename = ? AND indexname IN ('idx_pages_blockref', 'idx_pages_structure_header', 'idx_pages_structure_footer', 'idx_pages_theme_alive')",
-		SQL:       mustSQL("068_pg_jsonb_partial_index.sql"),
+		// 判定保持原文：068 的 SQL 是历史原文（引用 updated_at），不改；缺失的三个
+		// 索引由 762-pages-structure-indexes 补建（见该条 CheckSQL）。
+		CheckSQL: "SELECT COUNT(*) FROM pg_indexes WHERE schemaname = current_schema() AND tablename = ? AND indexname = 'idx_pages_blockref'",
+		SQL:      mustSQL("068_pg_jsonb_partial_index.sql"),
 	})
 
 	register(Migration{

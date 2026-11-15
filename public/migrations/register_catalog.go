@@ -275,19 +275,18 @@ func registerCatalogAndInventory() {
 	register(Migration{
 		Version:   "111-master-data-changes",
 		TableName: "master_data_changes",
-		CheckSQL: allChecks(
-			"SELECT CASE WHEN COUNT(*) = 2 THEN 1 ELSE 0 END FROM ("+
-				"SELECT 1 FROM information_schema.tables "+
-				"WHERE table_schema = current_schema() AND table_name = ? "+
-				"UNION ALL "+
-				"SELECT 1 FROM pg_trigger t "+
-				"JOIN pg_class c ON c.oid = t.tgrelid "+
-				"JOIN pg_namespace n ON n.oid = c.relnamespace "+
-				"WHERE n.nspname = current_schema() AND c.relname = 'master_data_changes' "+
-				"AND t.tgname = 'trg_master_data_changes_append_only' AND NOT t.tgisinternal"+
-				") x",
-			coverObjects("master_data_changes", "idx_master_data_changes_entity", "idx_master_data_changes_time", "idx_master_data_changes_field"),
-		),
+		// 判定与 SQL 保持历史原文：两个时间索引由 763-master-data-changes-time-indexes
+		// 补建（原文用 created_at，存量/终态库重跑会撞已改名的 create_time）。
+		CheckSQL: "SELECT CASE WHEN COUNT(*) = 2 THEN 1 ELSE 0 END FROM (" +
+			"SELECT 1 FROM information_schema.tables " +
+			"WHERE table_schema = current_schema() AND table_name = ? " +
+			"UNION ALL " +
+			"SELECT 1 FROM pg_trigger t " +
+			"JOIN pg_class c ON c.oid = t.tgrelid " +
+			"JOIN pg_namespace n ON n.oid = c.relnamespace " +
+			"WHERE n.nspname = current_schema() AND c.relname = 'master_data_changes' " +
+			"AND t.tgname = 'trg_master_data_changes_append_only' AND NOT t.tgisinternal" +
+			") x",
 		SQL: mustSQL("111_master_data_changes.sql"),
 	})
 

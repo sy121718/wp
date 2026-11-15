@@ -135,15 +135,24 @@ func Run(db *gorm.DB) error {
 }
 
 func runAll(db *gorm.DB) error {
-	skip := baselineSkipSet(db)
-	for _, m := range All() {
+	skip, _, err := baselineState(db)
+	if err != nil {
+		return err
+	}
+	migrations := All()
+	skipped := 0
+	for _, m := range migrations {
 		if skip[m.Version] {
-			logger.Scene("init").With("version", m.Version).With("table", m.TableName).Info("基线已覆盖，跳过")
+			skipped++
 			continue
 		}
 		if err := apply(db, m); err != nil {
 			return fmt.Errorf("迁移 %s (%s) 失败: %w", m.Version, m.TableName, err)
 		}
+	}
+	// 汇总一条，作为「跳过分支确实生效」的可断言证据（逐条打印会把日志淹掉）。
+	if skipped > 0 {
+		logger.Scene("init").With("skipped", skipped).With("total", len(migrations)).Info("基线已覆盖，跳过迁移")
 	}
 	return nil
 }
@@ -284,10 +293,23 @@ func ApplyStatements(db *gorm.DB, version, tableName, checkSQL string, parts []s
 }
 
 func RunSeeds(db *gorm.DB) error {
-	for _, s := range AllSeeds() {
+	_, skip, err := baselineState(db)
+	if err != nil {
+		return err
+	}
+	seeds := AllSeeds()
+	skipped := 0
+	for _, s := range seeds {
+		if skip[s.Version] {
+			skipped++
+			continue
+		}
 		if err := applySeed(db, s); err != nil {
 			return fmt.Errorf("种子数据 %s (%s) 失败: %w", s.Version, s.TableName, err)
 		}
+	}
+	if skipped > 0 {
+		logger.Scene("init").With("skipped", skipped).With("total", len(seeds)).Info("基线已覆盖，跳过种子")
 	}
 	return nil
 }

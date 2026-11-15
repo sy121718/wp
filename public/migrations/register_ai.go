@@ -3,7 +3,7 @@ package migrations
 import "sync"
 
 // 511-ai-provider 是纯 DDL（建表/索引/注释，无数据），登记为迁移而不是 seed：
-// 结构必须由迁移阶段建，seed 只负责数据，否则结构基线（-skip-seeds）会缺这张表。
+// 结构必须由迁移阶段建，seed 只负责数据，否则结构基线会缺这张表。
 func registerAIProvider() {
 	registerAIProviderOnce.Do(registerAIProviderMigration)
 }

@@ -27,10 +27,6 @@ import (
 func main() {
 
 	migrateOnly := flag.Bool("migrate-only", false, "只执行数据库结构迁移与业务 seed，然后退出（不启动 HTTP 服务）")
-	// 只给基线生成用：跳过业务 seed，让库停在「迁移后、seed 前」的状态。
-	// 基线必须导这个状态，否则重放基线的库再跑 seed 时，seed 的条件判断（新键已存在 → 跳过）
-	// 与空库不同，会漏掉同一批 seed 里的删除/更新，终态与全量迁移对不上。
-	skipSeeds := flag.Bool("skip-seeds", false, "只跑结构迁移，不跑业务 seed（仅用于生成初始化基线）")
 	flag.Parse()
 
 	if *migrateOnly {
@@ -39,13 +35,13 @@ func main() {
 		config.SuppressWorkers()
 	}
 
-	if err := run(*migrateOnly, *skipSeeds); err != nil {
+	if err := run(*migrateOnly); err != nil {
 
 		log.Fatalf("服务启动失败: %v", err)
 	}
 }
 
-func run(migrateOnly, skipSeeds bool) error {
+func run(migrateOnly bool) error {
 
 	serverCfg, err := loadAndPrepareRuntime("config.yaml")
 	if err != nil {
@@ -56,9 +52,7 @@ func run(migrateOnly, skipSeeds bool) error {
 		// migrate-only 也要走统一收尾：失败不能绕过显式关闭。
 		seedErr := error(nil)
 		if config.RunMigrationsEnabled() {
-			if !skipSeeds {
-				seedErr = runSeeds()
-			}
+			seedErr = runSeeds()
 			if seedErr == nil {
 				seedErr = runPartitionMaintenance()
 			}

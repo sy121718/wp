@@ -56,31 +56,11 @@ CREATE INDEX IF NOT EXISTS idx_pages_structure_footer
 --
 -- 查询形态（page_model.go 的 RefreshThemeForTheme / RefreshStructureForTheme /
 -- MarkStaleForTheme / ReattachProjectPagesToTheme / ListAll(themeID)）：
---   WHERE theme_id = ? AND deleted_at IS NULL [ORDER BY update_time DESC]
--- 复合 (theme_id, update_time DESC) 同时服务等值命中与列表排序；
+--   WHERE theme_id = ? AND deleted_at IS NULL [ORDER BY updated_at DESC]
+-- 复合 (theme_id, updated_at DESC) 同时服务等值命中与列表排序；
 -- 部分条件 deleted_at IS NULL 与查询条件一致，索引里不留已删行。
---
--- 列名按现状取：205 之前 pages 的更新时间列叫 updated_at，205 把它重命名为
--- update_time。本迁移在 205 之后的库上重跑时必须跟着改名，否则整条迁移报
--- column "updated_at" does not exist（存量库的 CheckSQL 曾长期判「已应用」而
--- 从未真正执行，收紧判定后才暴露）。
-DO $$
-DECLARE
-    ts_col text;
-BEGIN
-    SELECT column_name INTO ts_col
-      FROM information_schema.columns
-     WHERE table_schema = current_schema()
-       AND table_name = 'pages'
-       AND column_name IN ('updated_at', 'update_time')
-     ORDER BY CASE column_name WHEN 'updated_at' THEN 0 ELSE 1 END
-     LIMIT 1;
-    IF ts_col IS NOT NULL THEN
-        EXECUTE format(
-            'CREATE INDEX IF NOT EXISTS idx_pages_theme_alive
-                 ON pages (theme_id, %I DESC) WHERE deleted_at IS NULL', ts_col);
-    END IF;
-END $$;
+CREATE INDEX IF NOT EXISTS idx_pages_theme_alive
+    ON pages (theme_id, updated_at DESC) WHERE deleted_at IS NULL;
 
 COMMENT ON INDEX idx_pages_blockref IS
     '块引用（core.globalref 的 blockId）表达式 GIN 索引，仅存活页面；表达式须与 page_model.go blockRefMatchCond 一致';

@@ -45,6 +45,13 @@ func TestParseFormRejectsNonFormEncodings(t *testing.T) {
 		{"JSON 带 charset", "application/json; charset=utf-8", `{"id":"from-json"}`},
 		{"纯文本", "text/plain", "id=from-text"},
 		{"无 Content-Type", "", `{"id":"from-json"}`},
+		// 前缀匹配的两个漏口：媒体类型以表单串开头但不是表单。用 HasPrefix 判定时
+		// 两者都会「绑定成功 + 全零值」，正是偏好被默认值覆盖的那条路径。
+		{"表单串 + 后缀 +json", "application/x-www-form-urlencoded+json", `{"id":"from-json"}`},
+		{"表单串 + garbage", "application/x-www-form-urlencodedgarbage", "id=from-body"},
+		{"multipart 串 + 后缀", "multipart/form-datax", "id=from-body"},
+		{"畸形媒体类型", "application/x-www-form-urlencoded;;;", "id=from-body"},
+		{"大小写变体的 JSON", "Application/JSON", `{"id":"from-json"}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			c, _ := gin.CreateTestContext(httptest.NewRecorder())

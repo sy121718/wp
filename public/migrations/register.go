@@ -334,4 +334,6 @@ func init() {
 	registerInventoryMovementFKRestore()
 
 	registerAIEventCallLogColumns()
+
+	registerBaselineBackports()
 }

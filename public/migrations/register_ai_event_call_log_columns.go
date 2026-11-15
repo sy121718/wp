@@ -7,7 +7,9 @@ func registerAIEventCallLogColumns() {
 		Version:   "761-ai-event-call-log-columns",
 		TableName: "ai_event",
 
-		CheckSQL: `SELECT CASE WHEN COUNT(*) = 5 THEN 1 ELSE 0 END
+		// 五列与两个索引都算本迁移的对象：只判列时，列齐索引缺的库会被整条跳过。
+		CheckSQL: allChecks(
+			`SELECT CASE WHEN COUNT(*) = 5 THEN 1 ELSE 0 END
 			FROM information_schema.columns
 			WHERE table_schema = current_schema()
 			  AND (table_name, column_name) IN (
@@ -17,6 +19,8 @@ func registerAIEventCallLogColumns() {
 			    ('ai_call_log', 'cached_tokens'),
 			    ('ai_call_log', 'cached_reported')
 			  )`,
+			coverObjects("idx_ai_event_session_model", "idx_ai_event_user_time"),
+		),
 		SQL: mustSQL("761_ai_event_call_log_columns.sql"),
 	})
 }

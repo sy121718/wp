@@ -1,6 +1,6 @@
 -- 初始化基线：结构（由 scripts/baseline-generate.sh 生成，请勿手改）。
 -- 不含任何 _YYYY_MM 月分区：月窗口由 partition.EnsureAhead 在初始化末尾补齐。
--- 生成时间：2026-11-15T07:16:21+08:00
+-- 生成时间：2026-11-15T17:35:50+08:00
 
 --
 -- PostgreSQL database dump
