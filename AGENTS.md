@@ -101,7 +101,7 @@ bash scripts/check-all.sh    # 门禁全集（--with-db 含需要库的那组）
 
 | 包 | 只准 | 一律禁止 |
 |---|---|---|
-| binding | 待清退的旧绑定与辅助实现；不是请求绑定入口规范，按实际调用逐项迁移 | 新增调用、表单与 JSON 双轨适配、业务校验 |
+| binding | **请求绑定的唯一入口**：`ParseForm`（只读 body、只接受 urlencoded/multipart、非表单编码直接报错）/ `ParseJSON` / `ParseQuery` 是规范入口；`Query`/`Form`/`JSON` 是返回 bool 的兼容入口（`Form`/`JSON` 不声明唯一协议，契约标 unknown），只准存量使用；`JSONLimited`/`ApplyListQuery`/`ListQuery*`/`Field` 是随调用方收口的辅助实现 | 业务校验、新增 `Form`/`JSON` 调用、表单与 JSON 双轨适配（已登记的双协议端点除外）、绕过入口直接 `ShouldBind` |
 | facing | 错误事实（key + 状态码；`facing.Msg` 的兜底是**消息事实**，合法保留） | 取词、日志 |
 | response | JSON 出口取词与状态码（`MessageOf` 产生 message） | 业务语义 |
 | view | 视图结果接口、请求级渲染接线、页面/片段渲染入口、统一成功与失败出口（不含模板引擎） | 模板引擎实现、业务逻辑、按模块定制包装 |
@@ -171,7 +171,7 @@ bash scripts/check-all.sh    # 门禁全集（--with-db 含需要库的那组）
 ## 写操作
 
 - 普通提交使用 Jet 原生 form + HTMX 4 标准表单编码与 HTML 交换；上传明确 multipart，复杂编辑器明确 JSON 输入。`write-base` 只接 CSRF、响应校验、错误区、生命周期和前端成功动作，不另写普通表单 fetch 执行器。
-- 查询用 `ShouldBindQuery`；普通写 body 用 `ShouldBindWith(..., binding.FormPost)`，避免合并 query；复杂输入用 `ShouldBindJSON`，上传明确 multipart。Gin 不会自动调用任意 `Validate()`，需要时显式调用；不新增万能 binder 或同义包装，保留请求体上限。
+- 查询用 `binding.ParseQuery[T]`（只读查询串）；普通写 body 用 `binding.ParseForm[T]`（只读 body，不合并 query，非表单编码直接报错）；复杂输入用 `binding.ParseJSON[T]`；上传明确 multipart（`ParseForm` 一视同仁，按声明的编码选 FormPost 或 FormMultipart）。不直接调 `ShouldBind`/`ShouldBindWith`：前者按 Content-Type 自适应并把 query 并进表单，后者对 JSON 体静默得到空表单，带默认值的 DTO 会把「没提交」写成「要求默认值」。Gin 不会自动调用任意 `Validate()`，需要时显式调用；不新增万能 binder 或同义包装，保留请求体上限。
 - DTO 不复用展示响应对象作为请求；操作人和授权范围等可信字段由服务端提供，不开放客户端绑定。归属、状态、事务与锁仍归 service。
 - 原生字段名与请求 tag 一致，ID 保持字符串；明确 checkbox、空数字、0、缺失/清空集合和完整替换/PATCH 语义。不得假设 Gin 自动理解任意嵌套表单下标，不新增通用 presence/表单 Schema。
 - 普通表单不逐页拼 JSON；复杂编辑器只提供真实业务对象，发送仍由 HTMX 执行，不 stringify 后藏进普通字段。旧字段整形、旧执行器、旧别名不保留。

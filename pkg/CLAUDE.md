@@ -6,7 +6,7 @@
 
 ## 包清单（职责一句）
 - 契约：`facing`（错误事实 key+状态码）、`response`（JSON 出口 `MessageOf` 取词产生 message，缺词时给归口文案）、`view`（视图结果、成功/失败出口、页面/片段渲染入口与请求级渲染接线；后台页面的 CSRF 与授权菜单树由应用经 `SetAdminPort` 注入）、`view/jet`（Jet 引擎、请求作用域、显示函数、缓冲渲染与失败接线）、`view/ui`（公共模板/控件/资产，唯一 UI 实现）、`view/ui/icons`（唯一 SVG 与目录源，Go 与浏览器同源）。
-- `binding` 是待清退的旧绑定与辅助实现，不再作为唯一入口；请求绑定使用 Gin 原生能力，具体判据见根规则。未迁调用按域整改，不新增调用或同义薄包装。
+- `binding` 是请求绑定的唯一入口，分三档：`ParseForm` / `ParseJSON` / `ParseQuery` 是规范入口（显式协议、显式错误、表单编码保护；内部仍用 Gin 原生 `FormPost`/`FormMultipart`/`ShouldBindQuery`）；`Query` / `Form` / `JSON` 是返回 bool 的兼容入口（`Form`/`JSON` 不声明唯一协议，契约标 unknown），只准存量使用、禁止新增；`JSONLimited` / `ApplyListQuery` / `ListQuery*` / `Field` 是随调用方逐步收口的辅助实现。不直接调 `ShouldBind`/`ShouldBindWith`（按 Content-Type 自适应、合并 query、对 JSON 体静默返回空表单）。具体判据见根规则。
 - 框架能力：`builder`（编译、组件、样式、富文本、可视化工具资产；业务扩展留 `internal/builder/extensions`）、`publish`（Store/PublicationStore/Manifest/Artifact/Publisher/路径锁）、`middleware`（通用请求与安全执行、路由权限登记：RouteSpec/RouteKind/DeclareRoute/RoutesOf/Snapshot/Exempts/Reset 与 RouteGroup）、`mcp`（工具运行机制）、`lifecycle`（初始化/就绪/逆序关闭）、`seo`、`uispec`、`scaffold`、`database/retention`、`database/partition`。
 - 基础设施：`i18n` `logger` `database` `cache` `rls` `jsonx` `utils` `money` `pagination` `pathkit` `safepath`。
 - 能力包（provider 型，实现放 `<pkg>/provider/`）：`auth` `casbin` `crypto` `captcha` `mailer` `queue` `upload` `validate` `sitehttps` `sitetz`。

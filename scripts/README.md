@@ -53,9 +53,9 @@ CI 与上线前跑的门禁（改了权限点 / service 层数据访问 / 后台
 
 新环境初始化不再重演全部历史迁移，而是「载入基线 + 只跑基线之后的增量」。判据见 [docs/initial-baseline.md](../docs/initial-baseline.md)。
 
-- `baseline-generate.sh` —— 生成 `schema/baseline/{structure.sql,system_data.sql,manifest.txt,init.sql}`。默认自建临时库跑全量迁移（`-migrate-only -skip-seeds`，只导「迁移后、seed 前」的状态），结束即删库；`--check` 只比对、过期则退出码 1（改过迁移就跑一遍，产物必须与代码同步）。
-- `baseline-verify.sh` —— 三条验收：基线库与全量库结构与行数一致、重复迁移幂等、哈希不匹配回落全量。建两个临时库，约 2 分钟；`--keep` 保留库与 `/tmp/wp-baseline-verify-*` 日志。
-- `baseline-adopt.sh --db DBNAME [--apply]` —— 现有库接入：先做混库检测（现有库多出的表直接判「不是本仓迁移产物库」并点名），再与「重放 `init.sql` 再跑 `-migrate-only` 的临时库」对称比较结构，最后核对系统表行数；全通过才写 `sys_baseline` 水位。默认只核验不写库。
+- `baseline-generate.sh` —— 生成 `schema/baseline/{structure.sql,system_data.sql,manifest.txt,init.sql}`。默认自建临时库跑 `-migrate-only`（含 seed，导 seed 后终态），结束即删库；`--check` 只比对、过期则退出码 1 —— 比较时归一头部「生成时间」与系统数据里的时间字面量，否则换一次生成或换一天都会误报。改过**已有**迁移才要重生成；只新增迁移不用（manifest 两段是注册表前缀，段外增量照常执行）。
+- `baseline-verify.sh` —— 五条验收：①结构与系统数据**内容**等价（逐表行数 + 行级 md5 聚合，时间字面量归一）；②重复迁移幂等；③匹配哈希时被覆盖的迁移**确实不执行**（删掉基线内迁移建的表再跑，它不能被重建）；④哈希不匹配时**拒绝重放**并保持库不变；⑤`init.sql` 记录的摘要与 `cmd/baseline-digest` 同源。建两个临时库，约 4 分钟；`--keep` 保留库与 `/tmp/wp-baseline-verify-*` 日志。
+- `baseline-adopt.sh --db DBNAME [--apply | --refresh --apply]` —— 现有库接入：混库检测（现有库多出的表直接判「不是本仓迁移产物库」并点名）→ 与「重放 `init.sql` 再跑 `-migrate-only` 的临时库」对称比较结构 → 系统表行数 → **必需业务键 anti-join**（词条 `(item_key, lang)` / 权限 / 菜单非空 `permission_code`，行数相等掩盖不了缺键）。水位摘要取自 `cmd/baseline-digest`，与迁移器同源，脚本不自己算。`--refresh` 用于基线产物变更后更新既有水位；默认只核验不写库。
 
 结构比较必须归一 pg_dump 的两种 deparse（同一 CHECK 表达式在「一阶库」与「重放基线后的库」里文本不同，语义相同），脚本内已处理。
 

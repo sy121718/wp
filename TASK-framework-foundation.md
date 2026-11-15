@@ -1,6 +1,6 @@
 # 框架基础归一与可视化工具化任务书
 
-当前状态（2026-11-15 第二十轮收口）：**154 处原生 FormPost 已全部迁移、初始化基线阶段 1、2 均已落地**。契约 362 条：**239 form / 106 json / 8 query / 4 multipart / 3 nobody / 2 raw，unknown 为 0**；`ParseForm` 端点额外声明 `encodings: [urlencoded, multipart]`，`BindForm` 钩子读取的字面量键（remember / pageSize / emailNotify / shipName…）已并入字段表。非表单编码现在直接 400，不再「忽略 JSON 后写默认值」。447 历史 SQL 已恢复原文并归档，现行执行源改为 758b。密码业务链补齐生产布局（`/production`）三视口 × 四输入 12 格。`go test ./...` **283 包 ok（rls 188 秒）**；`check-all.sh --with-db` 39/39；`go build ./...`、`go vet ./...`、`write-contracts -check` 通过。第十七轮改动分五批提交（`e466ac95` / `db4ba666` / `e95c7ce7` / `5e9e3842` / `ee1c3391`），第十八轮改动分五批提交（`2edc91ea` / `ff6b9730` / `63d347fe` / `f5625910` / `87960150`），第十九轮改动分六批提交（`f8bed43c` / `2854dc40` / `52142147` / `a95c86ef` / `e5ac0333` / `74c840f9`），另 `c1cfc5dd` 修分区列名回退。最新范围与证据边界以[当前收口任务](#当前收口任务)为准；历轮记录保留为历史，不据其旧缺口重复实施。第二十轮改动分两批提交（`c0610ea0` 观测列迁 761、`4be9537d` 浏览器矩阵），并已推送 `origin/main`（`c6b4a178..4be9537d`，321 个提交）。
+当前状态（2026-11-15 第二十二轮收口）：**154 处原生 FormPost 已全部迁移、初始化基线阶段 1、2 均已落地**。契约 362 条：**239 form / 106 json / 8 query / 4 multipart / 3 nobody / 2 raw，unknown 为 0**；`ParseForm` 端点额外声明 `encodings: [urlencoded, multipart]`，`BindForm` 钩子读取的字面量键（remember / pageSize / emailNotify / shipName…）已并入字段表。非表单编码现在直接 400，不再「忽略 JSON 后写默认值」。447 历史 SQL 已恢复原文并归档，现行执行源改为 758b。密码业务链补齐生产布局（`/production`）三视口 × 四输入 12 格。`go test ./...` **283 包 ok（rls 188 秒）**；`check-all.sh --with-db` 39/39；`go build ./...`、`go vet ./...`、`write-contracts -check` 通过。第十七轮改动分五批提交（`e466ac95` / `db4ba666` / `e95c7ce7` / `5e9e3842` / `ee1c3391`），第十八轮改动分五批提交（`2edc91ea` / `ff6b9730` / `63d347fe` / `f5625910` / `87960150`），第十九轮改动分六批提交（`f8bed43c` / `2854dc40` / `52142147` / `a95c86ef` / `e5ac0333` / `74c840f9`），另 `c1cfc5dd` 修分区列名回退。最新范围与证据边界以[当前收口任务](#当前收口任务)为准；历轮记录保留为历史，不据其旧缺口重复实施。第二十轮改动分两批提交（`c0610ea0` 观测列迁 761、`4be9537d` 浏览器矩阵），并已推送 `origin/main`（`c6b4a178..4be9537d`，321 个提交）；第二十一轮分两批（`e0f36f69` CheckSQL 覆盖与存量库列名、`a529aea3` wp 接入基线）；第二十二轮分两批（`048273f9` 两段 manifest / 内容摘要 / 拒绝重放、文档本提交）。第二十二轮复跑：`go build ./...` 绿、`go test ./public/migrations/` 94.170s ok、`go test ./pkg/binding/` ok、`bash scripts/check-all.sh` 31 脚本全过、`baseline-generate.sh --check` 与 `schema-snapshot.sh --check` 绿。
 
 本任务书是本次重构的唯一实施清单，不是第二份架构规范；规范仍以 [AGENTS.md](AGENTS.md) 为准。原 [商品后台通用写反馈任务书](TASK-html-feedback.md) 保留为背景和原始用例索引，其实施安排由本文接替：不再由 `internal/adminui` 承担成功渲染，不分开交付第二套反馈，不按旧任务书默认运行全量门禁。
 
@@ -793,15 +793,16 @@ pkg/database/{retention,partition}
 设计与判据见 [docs/initial-baseline.md](docs/initial-baseline.md)，此处只记进度：
 
 - 阶段 1（已完成）：[schema/CURRENT.sql](schema/CURRENT.sql) 改为「迁移终态库」生成（132 张表 / 10375 行，含 759 的 `sys_baseline`），不再混入 artex 的外来表；[scripts/schema-snapshot.sh](scripts/schema-snapshot.sh) 默认自建临时库跑全量迁移再比对，`--check` 实测绿，`GOWP_SNAPSHOT_DB` 可复用已有终态库；`--check` 分支 trap 覆盖导致临时库残留的 bug 已修（默认路径重跑确认无残留）。
-- 阶段 2（已完成，2026-11-15）：`schema/baseline/` 四件产物（structure / system_data / manifest / init）+ 迁移 `759-sys-baseline` 台账表 + `baselineSkipSet` 哈希跳过（不匹配即回落全量）+ `cmd -skip-seeds`（基线只导「迁移后、seed 前」状态，否则重放后 seed 因新键已存在而跳过，漏掉同批 seed 的删除，实测多 4 行旧词条）。`scripts/baseline-generate.sh` 生成、`--check` 实测绿；`scripts/baseline-verify.sh` 三条验收实测全绿（结构/行数等价、重复执行幂等、哈希不匹配回落全量）；`scripts/baseline-adopt.sh` 供现有库接入（默认只核验）。验收中发现并修复既有漂移 `760-inventory-movement-fk-restore`：173 重建 `inventory_stock_movements` 分区表时丢了 134 的 `fk_inventory_movements_product`，存量库有、新库无。`public/migrations/baseline_manifest_test.go` 钉住 manifest 与注册表同序同集。`scripts/baseline-adopt.sh` 的结构核验改为与「重放 `init.sql` 再跑 `-migrate-only` 的临时库」对称比较，并前置混库检测：现有库多出的表直接判「不是本仓迁移产物库」并点名。实测 `artex` 被拒 —— 多出 60+ 张其他项目的表（`conversations` / `findings` / `tools` / `tasks` / `assets` / `llm_profiles` / `mcp_servers` 等）与 `pgcrypto` / `vector` 扩展、`sync_task_asset_links` 等外来函数；该库不接入基线，需要基线环境请新建库载入 `schema/baseline/init.sql`。另：6 张 `ai_*` 表（seed 511/512/537/541/542，纯 DDL、无数据）已改为迁移登记，结构基线 112→118 张表、manifest 177→182 条，`baseline-verify.sh` 三条验收复跑全绿（129 张表行数一致）。2026-11-15 已把本仓在 `artex` 库的对象全部剥离（135 张表 + 4 个函数，事务内 `DROP ... CASCADE`），artex 恢复为 55 张自有表、`conversations`/`findings`/`assets`/`server_logs` 等行数与剥离前一致、服务 `HTTP 200`；剥离前整库备份在 `tmp/artex-before-cleanup-20261115.dump`，本仓 `config.yaml` 的 `dbname` 改回 `wp`。
+- 阶段 2（已完成，2026-11-15）：`schema/baseline/` 四件产物（structure / system_data / manifest / init）+ 迁移 `759-sys-baseline` 台账表 + `baselineState` 基线跳过（两段前缀 + 内容摘要；哈希不匹配时**拒绝重放**，不再回落全量 —— 历史迁移假定从空库开始，在终态结构上重放必然半途报错，见第二十二轮）。`scripts/baseline-generate.sh` 生成、`--check` 实测绿；`scripts/baseline-verify.sh` 五条验收实测全绿（结构+系统数据内容等价、重复执行幂等、匹配哈希时不执行被覆盖的迁移、哈希不匹配时拒绝重放、摘要口径与生成器一致）；`scripts/baseline-adopt.sh` 供现有库接入（默认只核验）。验收中发现并修复既有漂移 `760-inventory-movement-fk-restore`：173 重建 `inventory_stock_movements` 分区表时丢了 134 的 `fk_inventory_movements_product`，存量库有、新库无。`public/migrations/baseline_manifest_test.go` 钉住两段都是注册表前缀、段内无重复、init.sql 摘要与 `ContentSHA256` 同源。`scripts/baseline-adopt.sh` 的结构核验改为与「重放 `init.sql` 再跑 `-migrate-only` 的临时库」对称比较，并前置混库检测：现有库多出的表直接判「不是本仓迁移产物库」并点名。实测 `artex` 被拒 —— 多出 60+ 张其他项目的表（`conversations` / `findings` / `tools` / `tasks` / `assets` / `llm_profiles` / `mcp_servers` 等）与 `pgcrypto` / `vector` 扩展、`sync_task_asset_links` 等外来函数；该库不接入基线，需要基线环境请新建库载入 `schema/baseline/init.sql`。另：6 张 `ai_*` 表（seed 511/512/537/541/542，纯 DDL、无数据）已改为迁移登记，结构基线 112→118 张表、manifest 177→182 条，`baseline-verify.sh` 三条验收复跑全绿（129 张表行数一致）。2026-11-15 已把本仓在 `artex` 库的对象全部剥离（135 张表 + 4 个函数，事务内 `DROP ... CASCADE`），artex 恢复为 55 张自有表、`conversations`/`findings`/`assets`/`server_logs` 等行数与剥离前一致、服务 `HTTP 200`；剥离前整库备份在 `tmp/artex-before-cleanup-20261115.dump`，本仓 `config.yaml` 的 `dbname` 改回 `wp`。
 
 ### 第十九轮：原生 FormPost 全量迁移与基线快照（2026-11-15）
 
 承接上节遗留的 152 处原生 `ginbinding.FormPost`（43 个文件）与初始化基线阶段 1。
 
-**1. 绑定入口统一（生产零残留）**
+**1. 写端点统一到显式表单入口（生产零残留）**
 
 - 154 个站点迁到 `binding.ParseForm`：模块内 152 处 + [access_guard.go](internal/middleware/builtin/access_guard.go) 的 `AccessUnlockHandler` + 2 处未别名的 `binding.FormPost`。生产代码 `ShouldBindWith(..., FormPost)` 归零，只剩 [pkg/binding/binding.go](pkg/binding/binding.go) 的分派实现与测试夹具。
+- 这不是「`pkg/binding` 清退完成」：`ParseForm` 是**显式表单入口**（只读 body、拒绝非表单编码），迁到这里是收口不是扩张；返回 bool 的兼容入口仍有存量（`Query` / `Form` / `JSON`），已在 [AGENTS.md](AGENTS.md) 的 binding 行按「规范入口 / 兼容入口 / 辅助实现」三档正名，兼容入口禁止新增。
 - 泛型辅助一次覆盖多端点：`runOrderBulkWrite`（批量订单/采购）、`runTransferWrite`（5 个调拨端点）。
 - 行为修复：[inventory_reason_form_req.go](internal/module/inventory/dto/inventory_reason_form_req.go) 的 `ReasonFormReq.BindForm` 此前只填 `submitted` map，而 `UpdateReq()` 靠它判 PATCH 字段；迁移前钩子从不执行，原因编辑的 name/status/sort 永远不更新，迁移后按提交字段生效。
 - 保留：`plugin` 的 `ToggleUpload` 用 `ginbinding.FormMultipart`（上传），不在本次范围。
@@ -891,6 +892,57 @@ pkg/database/{retention,partition}
 **5. 验证**
 
 `go build ./...` OK；`go test ./public/migrations/` 整包绿；`baseline-generate.sh --check` 一致；`baseline-verify.sh` 三条全绿（结构一致 129 张表行数一致 / 幂等 / 哈希不匹配回落重建 `admin_side_effect_tasks`）。
+
+### 第二十二轮：审核八条落地、基线与绑定判据纠正（2026-11-15）
+
+用户审核不认可第二十一轮的「九条方向与三项遗留全部闭环、无阻塞项」，列出八条。本轮逐条处置，其中三条改变了既有结论。
+
+**1. 表单编码判定改为精确媒体类型**
+
+`isURLEncodedBody` / `isMultipartBody` 原用 `strings.HasPrefix`：`application/x-www-form-urlencoded+json`、`application/x-www-form-urlencodedgarbage` 都被判为合法表单，实测返回 `nil` 错误 + 空字段 —— 即第十九轮声称的「拒绝非表单编码」有漏口。改为 `formMediaType(c)`：`mime.ParseMediaType` 解析后精确比较 `multipart/form-data` 与 `application/x-www-form-urlencoded`，三个 `is*` 全走它；`TestParseFormRejectsNonFormEncodings` 扩到 9 例（`+json` / `garbage` / `multipart/form-datax` / `;;;` / `Application/JSON` 等）。
+
+**2. `pkg/binding` 正名为规范入口**
+
+[AGENTS.md](AGENTS.md) 原判 `pkg/binding` 待清退、禁止新增调用，与第十九轮把 154 处迁进 `binding.ParseForm` 相冲突。现按职责三档写明：`ParseForm` / `ParseJSON` / `ParseQuery` 是规范入口（内部仍用 Gin 原生 `FormPost` / `FormMultipart` / `ShouldBindQuery`）；`Query` / `Form` / `JSON` 是返回 bool 的兼容入口（`Form` / `JSON` 不声明唯一协议，契约标 unknown），只准存量、禁止新增；`JSONLimited` / `ApplyListQuery` / `ListQuery*` / `Field` 随调用方逐步收口。[pkg/CLAUDE.md](pkg/CLAUDE.md) 同步。存量：`ParseForm[` 198、`binding.Query[` 132、`ParseJSON[` 14、`binding.Form[` 11、`ListQuery` 9。
+
+**3. 基线要覆盖 seed 段，且必须导 seed 后终态**
+
+原实现只跳过 186 条迁移，加载基线后 440 条 seed 仍全跑，「基线 = 快路径」名不副实。现 manifest 分 `[migrations]` / `[seeds]` 两段（两段各自都是注册表前缀，`baseline_manifest_test.go` 钉住），`RunSeeds` 同样按跳过集合执行。基线改导 **seed 后终态**（删除 `cmd/main.go` 的 `-skip-seeds`）—— 只有输入完全相同，两边的 seed 结果才可能一致；旧「seed 前状态」的理由（让重放 seed 与全量一致）在整段跳过后已不成立。
+
+**4. 摘要覆盖内容，不只是清单**
+
+`ContentSHA256()` = manifest 原文 + structure.sql + system_data.sql（各带段标题），时间戳先归一会 `<TS>`、剥掉「生成时间」行，否则每次生成都变。新增 [cmd/baseline-digest](cmd/baseline-digest/main.go) 打印该摘要，生成、验收、接入三处共用同一口径。
+
+**5. `CheckSQL` 覆盖门禁：分两段，历史判定不动**
+
+`TestMigrationCheckSQLCoversEveryCreatedObject` 原规则漏判：只要 `CheckSQL` 提到任一对象就算覆盖。第一版把判定收紧到 20 条历史迁移（047 049 054 055 067 074 075 086 088 091 127 164 167 169 170 175 246 307 626 628），随即被 `TestSharedFeedbackArtexRowsUpgrade`（终态库上重跑整条链）逐个打回：068 / 111 / 164 / 167 / 171 的 SQL 引用改名前的列（`created_at` / `updated_at`，201/205 已改成 `create_time` / `update_time`），判定变严 → 终态库重放 → 必然 `SQLSTATE 42703`。20 条已全部回退。
+
+现规则分两段：门槛迁移 `761-ai-event-call-log-columns` 及之后新增的迁移必须覆盖本迁移 `CREATE` 的全部对象（被后续 `CREATE`/`DROP` 接管的豁免；只建表可整条判表名；纯增量迁移建的索引必须自己判）；更早的历史迁移保持原文，只检查「不得判终态已删对象」——判了后续 `DROP` 且未重建的对象会直接报错，因为那类迁移在终态库永远判不通过。历史漏掉的对象由新迁移承接（762 / 763 / 764），存量库是否齐由 `baseline-adopt` 与 `schema-snapshot --check` 保证。761 自身判定从「五列齐全」改为 `allChecks(五列, coverObjects(两个索引))`（761 只做 `ADD COLUMN` / `CREATE INDEX IF NOT EXISTS`，可安全重放）。
+
+**6. 验收口径升级**
+
+- [scripts/baseline-verify.sh](scripts/baseline-verify.sh) 重写为五步：结构一致 + **系统数据内容**一致（`\gexec` 逐表 `count(*) + md5(string_agg(...))`，实测 259 张表含月分区子表一致）、重复执行幂等、匹配哈希时被覆盖迁移不执行（直接证据：DROP `admin_side_effect_tasks` 后重跑不重建）、哈希不匹配时**拒绝重放**、`init.sql` 摘要与 `cmd/baseline-digest` 一致。
+- [scripts/baseline-adopt.sh](scripts/baseline-adopt.sh) 增加必需业务键 anti-join（`sys_i18n(item_key,lang)` / `sys_permission(permission_code)` / `sys_menus(permission_code)` 不得缺行），水位摘要改用 `cmd/baseline-digest`，版本号 `adopt-<date>-<sha8>`，新增 `--refresh`（已有 1 行水位时 UPDATE 而非拒绝）。
+
+**7. 历史迁移 SQL 回退原文，修复改用新迁移承接**
+
+第二十一轮曾直接改 068 / 111 / 171 的 SQL 与 `CheckSQL` 来补索引，违反「历史迁移不改」。三条 SQL 已 `git checkout` 回原文、`CheckSQL` 回原文口径，修复由三条新迁移承接：[762_pages_structure_indexes.sql](public/migrations/762_pages_structure_indexes.sql)（DO 块按 `information_schema` 取实际列名建三个页面索引）、[763_master_data_changes_time_indexes.sql](public/migrations/763_master_data_changes_time_indexes.sql)、[764_build_jobs_claim_index.sql](public/migrations/764_build_jobs_claim_index.sql)（只建 `idx_build_jobs_claim` —— `295` 已 `DROP` `idx_build_jobs_running`，不能建回来）。
+
+**8. `--check` 跨日误报**
+
+`init.sql` 的版本号原含日期，跨天必报差异；现改为 `baseline-<内容摘要前8>`。`--check` 对 structure / system_data 剥「生成时间」行并归一 system_data 里的时间字面量，`init.sql` 不做任何归一（内容一致就必须逐字节一致）。
+
+**关键结论：哈希不匹配不再回落全量，而是拒绝重放**
+
+实测 [164_content_template_is_default.sql](public/migrations/164_content_template_is_default.sql) 的 UPDATE 引用 `updated_at`，而 [223_content_template_default_per_project.sql:73](public/migrations/223_content_template_default_per_project.sql) 已 `DROP INDEX idx_content_templates_default_per_type`、201/205 已把列改名 `update_time` —— 在终态结构上重放历史迁移必然撞 `column "updated_at" does not exist (SQLSTATE 42703)`。「回落到全量」是在终态库上跑一遍注定失败的历史链，只会留下半成品结构和误导性错误。故 [baseline_skip.go](public/migrations/baseline_skip.go) 改为 `baselineState` 三态：无 manifest / 无 `sys_baseline` / 无水位 → 全量；摘要一致 → 跳过两段；摘要不等 → 返回「基线产物已变更：库登记 X，仓库产物 Y。历史迁移不能在已有结构的库上重放；请在新库重建，或核对后删除 sys_baseline 水位行再迁移」。跳过日志同时收敛为一条汇总（`skipped` / `total`），不再逐条刷屏。
+
+**实测**
+
+- `baseline-generate.sh`：118 张表 / 186 条迁移 + 440 条 seed / 114 张有数据表；`--check` EXIT=0。
+- `baseline-verify.sh`：五步全绿，摘要 `8a6d0f78…`，259 张表内容指纹一致。
+- `schema-snapshot.sh --check`：绿（终态结构未变，仅生成时间戳）。
+- `wp` 用 `--refresh --apply` 刷新水位；随后 `GOWP_DATABASE_DBNAME=wp go run ./cmd -migrate-only` 业务日志实测 `{"message":"基线已覆盖，跳过种子","skipped":440,"total":440}` 与 `{"message":"基线已覆盖，跳过迁移","skipped":186,"total":186}`，EXIT=0。
+- [docs/initial-baseline.md](docs/initial-baseline.md) 整份重写（含「维护动作清单」：新增迁移不用重生成 / 改已有迁移要重生成 + `--refresh` / 改结构另加 snapshot）；[scripts/README.md](scripts/README.md) 三脚本说明同步。
 
 ### 第十七轮实施与验收（2026-11-14）
 
