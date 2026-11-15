@@ -5,7 +5,7 @@
 
 ## 1. 现状事实（实测）
 
-- 初始化 = 跑完 `public/migrations` 的 701 个 SQL 文件（182 条注册迁移 + seed）。迁移执行器**没有版本台账**：每条迁移自带 `CheckSQL` 幂等检查，命中即跳过（[public/migrations/migrator.go](../public/migrations/migrator.go)）。`sys_migration_marker` 只记「一次性数据动作」，不是版本表。
+- 初始化 = 跑完 `public/migrations` 的 699 个 SQL 文件（183 条注册迁移 + seed）。迁移执行器**没有版本台账**：每条迁移自带 `CheckSQL` 幂等检查，命中即跳过（[public/migrations/migrator.go](../public/migrations/migrator.go)）。`sys_migration_marker` 只记「一次性数据动作」，不是版本表。
 - 隔离库实测：`go run ./cmd -migrate-only` 从空库到终态约 53 秒，退出码 0。
 - 结构快照 [schema/CURRENT.sql](../schema/CURRENT.sql) 由 [scripts/schema-snapshot.sh](../scripts/schema-snapshot.sh) 生成，来源是「跑完本仓迁移的库」，当前 132 张表 / 10375 行（含 759 的 `sys_baseline`）。
 - 分区表只有 3 张：`page_views`、`inventory_stock_movements`、`master_data_changes`（[173_partition_append_only_tables.sql](../public/migrations/173_partition_append_only_tables.sql)）。月分区窗口由两处生成：迁移 173 的 DO 块（建库时）+ [pkg/database/partition](../pkg/database/partition/partition.go) 的 `EnsureAhead`（启动与 `-migrate-only` 都会跑），范围 `AheadMonths=3`，即当前月 -1 至 +3，另有一张 `_default` 兜底。
@@ -44,7 +44,7 @@ GOWP_SNAPSHOT_DB=wp_baseline_probe bash scripts/schema-snapshot.sh
 |---|---|
 | `structure.sql` | 非分区对象全量（表/列/索引/约束/扩展/函数/触发器/RLS/default 分区，含纯 DDL 迁移建的 `ai_*` 六张表）+ 3 张分区父表结构，剔除全部 `_YYYY_MM` 月分区 |
 | `system_data.sql` | **迁移阶段产生的**系统数据（词条、权限、菜单、字典、默认配置），不含业务数据，也不含 seed 的产物 |
-| `manifest.txt` | 基线覆盖的 182 个迁移 version，逐行一条，顺序即注册顺序 |
+| `manifest.txt` | 基线覆盖的 183 个迁移 version，逐行一条，顺序即注册顺序 |
 | `init.sql` | `\ir structure.sql` → `\ir system_data.sql` → 写 `sys_baseline` 一行 |
 
 生成与校验：
@@ -99,6 +99,8 @@ bash scripts/baseline-adopt.sh --db DBNAME --apply    # 核验通过后写水位
 
 实测（2026-11-15）：`artex` 被拒在混库检测 —— 多出 60+ 张其他项目的表（`conversations` / `findings` / `tools` / `tasks` / `assets` / `llm_profiles` / `mcp_servers` 等），另有 `pgcrypto` / `vector` 扩展与 `sync_task_asset_links` 等外来函数。该库不接入基线；要接入请用只跑过本仓迁移的库，或新建库载入基线。
 
+同日接入本仓业务库 `wp`（`adopt-2026-11-15`，manifest `630757da…`，覆盖 183 个历史迁移）。接入前必须先 `-migrate-only` 把增量补齐并处理 3.7 的漂移；接入后再跑一次 `-migrate-only`，判据是结构 `pg_dump` 行数不变、`sys_baseline` 仍 1 行 —— 这才是「跳过确实生效」的证据（业务日志不落 stdout，不能拿它当判据）。
+
 同日收尾：本仓业务库已切回 `wp`（`config.yaml` 的 `database.dbname`，与 `config.yaml.example` 一致），运行时不再有指向 `artex` 的 DSN；`artex` 库已剥离本仓 135 张表与 4 个函数，剩余 55 张均为 artex 自有，服务重启后 200。该库今后不承载本仓数据。
 
 ### 3.6 验收
@@ -116,14 +118,23 @@ bash scripts/baseline-verify.sh --keep   # 保留库与 /tmp/wp-baseline-verify-
 
 实测结论（2026-11-15）：三条全绿。结构比较归一了 pg_dump 的两种 deparse —— 同一 CHECK 表达式在一阶库是 `ANY ((ARRAY[...])::text[])`，重放一次后是 `ANY (ARRAY[(...)::text])`，语义相同；实测全库 9 处（8 个 CHECK 约束 + 1 个部分索引），归一是比较口径，不是放宽判据（其余差异仍会报红）。
 
-### 3.7 验收发现的既有漂移（已修）
+### 3.7 验收与接入发现的既有漂移（已修）
 
-`760-inventory-movement-fk-restore`：173 用「重命名旧表 → 建分区父表 → 搬数据 → 删旧表」把 `inventory_stock_movements` 改成月分区表，134 加在旧表上的 `fk_inventory_movements_product` 随旧表一起消失，173 之后没有任何迁移补回。结果是**存量库有这条外键、新库没有**（实测 artex 与 wp_baseline_dev 有 7 个同名约束行，含各分区；新库 0 个）。补一条幂等迁移把两侧收敛到同一形状。
+1. **`760-inventory-movement-fk-restore`**：173 用「重命名旧表 → 建分区父表 → 搬数据 → 删旧表」把 `inventory_stock_movements` 改成月分区表，134 加在旧表上的 `fk_inventory_movements_product` 随旧表一起消失，173 之后没有任何迁移补回。结果是**存量库有这条外键、新库没有**（实测 artex 与 wp_baseline_dev 有 7 个同名约束行，含各分区；新库 0 个）。补一条幂等迁移把两侧收敛到同一形状。
+
+2. **068 的 CheckSQL 只判一个索引**（[public/migrations/register_i18n_layer.go:374](../public/migrations/register_i18n_layer.go)）：判 `idx_pages_blockref` 存在即认定整条已应用，同文件另三个索引（`idx_pages_theme_alive` / `idx_pages_structure_header` / `idx_pages_structure_footer`）从未创建 —— 存量库 `wp` 就是这样缺两个索引，adopt 核验报出来的。改为 `COUNT(*) = 4`。
+
+3. **171 的 CheckSQL 与终态相反**：原来判 `idx_build_jobs_claim` / `idx_build_jobs_running` / `uq_build_jobs_pending` 三个索引，而 295-build-jobs-lease 已经 `DROP INDEX idx_build_jobs_running`（回收改按租约到期判定，该索引零命中）。判 3 会让存量库每次重跑都重放本迁移，并重建出终态不该有的索引。改为只判 claim + uq。
+
+4. **迁移 SQL 依赖建表时的旧列名**：068 用 `updated_at`、171 与 111 用 `created_at` 建索引，而 201 / 205 已把列改名为 `create_time` / `update_time`。判定收紧后这些迁移会在存量库重跑，撞 `ERROR: column "updated_at" does not exist (SQLSTATE 42703)`。改为 DO 块从 `information_schema.columns` 取实际列名再 `EXECUTE format(... %I ...)`，两种列名状态都能跑。
+
+门禁：[public/migrations/check_sql_coverage_test.go](../public/migrations/check_sql_coverage_test.go) 的 `TestMigrationCheckSQLCoversEveryCreatedObject` —— CheckSQL 一旦逐对象判定，就必须覆盖本迁移全部 CREATE 对象；被后续迁移显式 `DROP ... IF EXISTS` 的对象豁免（第 3 条）。首次运行暴露 16 条：068、171、111、135、141、144、147、295、309、627、630 与 ai 五条 511/512/537/541/542。
 
 ### 3.8 已知限制
 
 - artex 不是本仓迁移产物库（3.5 实测），不接入基线；需要基线环境请新建库载入 `schema/baseline/init.sql`。
-- **seed 里曾有 DDL（已修）**：6 张 `ai_*` 表原由 seed 511/512/537/541/542 建（`CREATE TABLE IF NOT EXISTS`，无数据），`-skip-seeds` 生成的结构基线因此不含它们。现已改为迁移登记：`register(Migration{...})`，`CheckSQL` 仍是 `to_regclass` 判存在，存量库自动跳过；基线随之 112→118 张表、manifest 177→182 条。判据固定为「纯 DDL 走 Migration，seed 只写数据」。
+- **seed 里曾有 DDL（已修）**：6 张 `ai_*` 表原由 seed 511/512/537/541/542 建（`CREATE TABLE IF NOT EXISTS`，无数据），`-skip-seeds` 生成的结构基线因此不含它们。现已改为迁移登记：`register(Migration{...})`，`CheckSQL` 仍是 `to_regclass` 判存在，存量库自动跳过；基线随之 112→118 张表、manifest 177→183 条。判据固定为「纯 DDL 走 Migration，seed 只写数据」。
+- **迁移 SQL 引用时间列必须走「取实际列名」的 DO 块**：201 / 205 会把 `created_at`/`updated_at` 改名为 `create_time`/`update_time`，直接写死任何一种列名，在存量库重跑路径上必红（3.7 第 4 条）。
 - 结构比较依赖 deparse 归一规则。将来 pg_dump 若改变其它表达式的输出形式，验收会报红，需要在 `scripts/baseline-verify.sh` 的 `normalize` 里补规则，**不要放宽成忽略 CHECK**。
 - manifest 必须与注册表同序同集：改迁移就要重生成基线，[public/migrations/baseline_manifest_test.go](../public/migrations/baseline_manifest_test.go) 会拦。
 - `schema/CURRENT.sql`（阶段 1）与基线是两份产物：前者用于回归比对含月分区全量结构，后者用于初始化。改迁移时两者都要更新。

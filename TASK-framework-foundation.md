@@ -862,6 +862,36 @@ pkg/database/{retention,partition}
 - 跨进程策略传播：**已实测**（`pkg/casbin/multi_instance_test.go`）——策略写入只重建本进程的内存 enforcer 与 URL→code 映射，另一实例在 `ReloadPolicy` 或滚动重启前看不到新策略；当前没有 Watcher/TTL 自动刷新，多实例部署必须显式重载。
 - artex 隔离：本仓业务库已切回 `wp`（`config.yaml` 的 `dbname`，与示例一致），运行时无 artex DSN；`artex` 库已剥离本仓 135 张表与 4 个函数，剩余 55 张都是 artex 自有；基线接入被混库检测拒绝，不再接入。
 
+### 第二十一轮：wp 业务库接入基线、CheckSQL 覆盖收紧（2026-11-15）
+
+承接第二十轮的「wp 库仍停在 597」：把业务库补到终态并接入基线。途中发现迁移链两处真实缺陷，一并修掉。
+
+**1. wp 迁移到 761**
+
+- 备份 `tmp/wp-before-761-20261115.dump`（59 MB）。迁移后业务数据一行未变（pages 14 / products 99 / presentation_instances 181 / presentation_publications 724 / content_templates 5 / orders 1），系统数据按增量补齐（`sys_i18n` 13151→13705、`sys_menus` 198→207、`sys_permission` 352→363），表 136→141。
+- 迁移前清掉两张历史遗留表 `analytics_daily_stats` / `plugin_migration_ledger`（均 0 行、0 代码引用、迁移链无 CREATE，前者只在 [215_project_isolation_rls.sql:60](public/migrations/215_project_isolation_rls.sql) 的 RLS 表名数组里出现且 `to_regclass` 为空时跳过）。
+
+**2. 增量没补齐的两处结构漂移**
+
+- `idx_pages_structure_header` / `idx_pages_structure_footer` 在存量库从未创建：[register_i18n_layer.go:374](public/migrations/register_i18n_layer.go) 的 068 `CheckSQL` 只判 `idx_pages_blockref`，命中即整条跳过。改为 `COUNT(*) = 4`。
+- `171` 的 `CheckSQL` 判三个索引，而 [295_build_jobs_lease.sql:66](public/migrations/295_build_jobs_lease.sql) 已 `DROP INDEX idx_build_jobs_running`：判 3 与终态相反，会让存量库每次重跑都重放迁移并重建多余索引。改为只判 `idx_build_jobs_claim` + `uq_build_jobs_pending`。
+- 判定收紧后这两条在存量库重跑，撞 `ERROR: column "updated_at" does not exist (SQLSTATE 42703)` —— 068 用 `updated_at`、171/111 用 `created_at` 建索引，而 201 / 205 已把列改名为 `create_time` / `update_time`。三处改为 DO 块从 `information_schema.columns` 取实际列名再 `EXECUTE format(... %I ...)`。
+
+**3. CheckSQL 覆盖门禁**
+
+- 新增 [check_sql_coverage.go](public/migrations/check_sql_coverage.go)（`coverObjects` / `allChecks`）与 [check_sql_coverage_test.go](public/migrations/check_sql_coverage_test.go) 的 `TestMigrationCheckSQLCoversEveryCreatedObject`：CheckSQL 一旦逐对象判定，就必须覆盖本迁移全部 `CREATE ... IF NOT EXISTS` 对象；被后续迁移 `DROP ... IF EXISTS` 的对象豁免。
+- 首次运行暴露 16 条：068、171、111、135、141、144、147、295、309、627、630 与 ai 五条 511/512/537/541/542。已全部收紧；295 判 6 列、309 判 1 索引这类既有判定用 `allChecks` 与原表达式并列保留，不被替换掉。
+- `go test ./public/migrations/ -run 'TestMigrationCheckSQLCoversEveryCreatedObject|TestEveryCustomCheckSQLRunsLikeMigrator'` 全 PASS（146 条自定义 CheckSQL 按迁移器约定执行）。
+
+**4. wp 接入基线**
+
+- `bash scripts/baseline-adopt.sh --db wp` 两次核验通过（结构一致、114 张系统表行数不少于基线），`--apply` 写入 `adopt-2026-11-15` / `630757da…`，覆盖 183 个历史迁移。
+- 跳过生效的判据不是业务日志（不落 stdout）：接入后再跑一次 `-migrate-only`，`pg_dump --schema-only` 行数 9454 前后不变、`sys_baseline` 仍 1 行、EXIT=0。
+
+**5. 验证**
+
+`go build ./...` OK；`go test ./public/migrations/` 整包绿；`baseline-generate.sh --check` 一致；`baseline-verify.sh` 三条全绿（结构一致 129 张表行数一致 / 幂等 / 哈希不匹配回落重建 `admin_side_effect_tasks`）。
+
 ### 第十七轮实施与验收（2026-11-14）
 
 本轮承接「artex 迁移在 seed 723 处被设计性拒绝……变更你自己裁决吧，完成任务书所有的需要你修尬的内容」。用户明确授权对两组真实数据冲突直接裁决，并按任务书完成剩余项；仍未提交、未 push。
