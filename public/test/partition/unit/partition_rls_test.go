@@ -16,7 +16,7 @@ func runReconcileSQL(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	for _, stmt := range sqlsplit.Split(schema.PartitionOptions().ReconcileRLSSQL()) {
 		if err := db.Exec(stmt).Error; err != nil {
-			t.Fatalf("执行 reconcile_rls.sql 失败: %v", err)
+			t.Fatalf("执行 partition_rls.sql 失败: %v", err)
 		}
 	}
 }
@@ -93,10 +93,10 @@ func TestAuditPartitionRLSCoverage(t *testing.T) {
 		t.Fatalf("巡检失败: %v", err)
 	}
 	if len(gaps) != 0 {
-		t.Fatalf("reconcile_rls.sql 执行后仍有缺口：%v", gaps)
+		t.Fatalf("partition_rls.sql 执行后仍有缺口：%v", gaps)
 	}
 	if en, fo, pol := rlsFlags(t, db, "page_views_2030_01"); !en || !fo || !pol {
-		t.Fatalf("reconcile_rls.sql 执行后 page_views_2030_01 的 RLS 仍不完整：enable=%v force=%v policy=%v", en, fo, pol)
+		t.Fatalf("partition_rls.sql 执行后 page_views_2030_01 的 RLS 仍不完整：enable=%v force=%v policy=%v", en, fo, pol)
 	}
 
 	runReconcileSQL(t, db)
@@ -105,7 +105,7 @@ func TestAuditPartitionRLSCoverage(t *testing.T) {
 		t.Fatalf("巡检失败: %v", err)
 	}
 	if len(gaps) != 0 {
-		t.Fatalf("reconcile_rls.sql 重复执行后出现缺口（幂等性破坏）：%v", gaps)
+		t.Fatalf("partition_rls.sql 重复执行后出现缺口（幂等性破坏）：%v", gaps)
 	}
 
 	assertPredicateEqualsParent(t, db, "page_views", "page_views_2030_01")
@@ -193,7 +193,7 @@ func TestReconcileRLSCopiesArbitraryPolicyShapes(t *testing.T) {
 
 	enabled, forced, hasPolicy := rlsFlags(t, db, "dbtest_part_1")
 	if !enabled || !forced || !hasPolicy {
-		t.Fatalf("reconcile_rls.sql 没有为临时分区补隔离：enable=%v force=%v policy=%v", enabled, forced, hasPolicy)
+		t.Fatalf("partition_rls.sql 没有为临时分区补隔离：enable=%v force=%v policy=%v", enabled, forced, hasPolicy)
 	}
 
 	assertPredicateEqualsParent(t, db, "dbtest_part", "dbtest_part_1")
@@ -214,7 +214,7 @@ func TestReconcileRLSCopiesArbitraryPolicyShapes(t *testing.T) {
 		t.Fatalf("统计分区策略失败: %v", err)
 	}
 	if again != 2 {
-		t.Errorf("重复执行 reconcile_rls.sql 后策略数 = %d，期望仍为 2", again)
+		t.Errorf("重复执行 partition_rls.sql 后策略数 = %d，期望仍为 2", again)
 	}
 	_ = ctx
 }
@@ -319,7 +319,7 @@ func TestEnsureAheadReconcilesArbitraryPolicyShapes(t *testing.T) {
 	enabled, forced, hasPolicy := rlsFlags(t, db, "dbtest_ahead_1")
 	if !enabled || !forced || !hasPolicy {
 		t.Fatalf("EnsureAhead 之后临时分区仍无隔离：enable=%v force=%v policy=%v"+
-			"（EnsureAhead 与reconcile_rls.sql 的判据不同源）", enabled, forced, hasPolicy)
+			"（EnsureAhead 与 partition_rls.sql 的判据不同源）", enabled, forced, hasPolicy)
 	}
 	assertPredicateEqualsParent(t, db, "dbtest_ahead", "dbtest_ahead_1")
 
