@@ -28,7 +28,7 @@ import (
 func failureEngine() *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
-	engine.HTMLRender = templates.NewJetHTMLRender("../templates", true)
+	engine.HTMLRender = templates.NewJetHTMLRender("../../../internal/templates", true)
 	engine.Use(view.FailureMiddleware(view.RenderFailure))
 	engine.Use(templates.FailedRenderMiddleware(func(c *gin.Context, err error) { view.FailScene(c, "template", err) }))
 	return engine

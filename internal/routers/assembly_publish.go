@@ -47,12 +47,13 @@ import (
 	sysconfigcheckout "go_wp/internal/module/sysconfig/outbound/checkoutcountries"
 	userhttp "go_wp/internal/module/user/inbound/http"
 	workbenchhttp "go_wp/internal/module/workbench/inbound/http"
-	"go_wp/internal/partition"
 	"go_wp/internal/pipeline"
 	"go_wp/pkg/builder"
 	"go_wp/pkg/builder/core"
+	pkgpartition "go_wp/pkg/database/partition"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
+	"go_wp/public/schema"
 
 	"gorm.io/gorm"
 )
@@ -317,7 +318,7 @@ func (a *assembly) wirePublishingPorts() {
 	a.stopPatrols = append(a.stopPatrols, buildSvc.StartWorkers(a.bgCtx, 2))
 
 	if config.RunMigrationsEnabled() {
-		a.stopPatrols = append(a.stopPatrols, partition.StartScheduler(a.bgCtx, a.db))
+		a.stopPatrols = append(a.stopPatrols, pkgpartition.StartScheduler(a.bgCtx, a.db, schema.PartitionOptions()))
 	}
 
 	builtin.SetAccessGuardLoginProbe(newVisitorLoginProbe(a.userSvc))

@@ -37,7 +37,7 @@ func uiKeyAllowed(key string) bool {
 }
 
 func TestTemplateTranslateKeysStayInUIDomain(t *testing.T) {
-	root := filepath.Join("..", "templates")
+	root := filepath.Join(repoRoot(t), "internal", "templates")
 
 	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
@@ -98,7 +98,7 @@ func msgKeyIsErrorFact(value ast.Expr) bool {
 }
 
 func TestMsgKeysStayInUIDomain(t *testing.T) {
-	root := filepath.Join("..", "module")
+	root := filepath.Join(repoRoot(t), "internal", "module")
 	remaining := map[string]int{}
 
 	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {

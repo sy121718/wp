@@ -149,7 +149,7 @@ func TestHTMLUIRealBrowser(t *testing.T) {
 	defer server.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "node", "--test", "../templates/testdata/html-ui/browser.cjs")
+	cmd := exec.CommandContext(ctx, "node", "--test", "../../../internal/templates/testdata/html-ui/browser.cjs")
 	cmd.Env = append(os.Environ(), "GOWP_HTML_UI_BASE_URL="+server.URL, "GOWP_PUPPETEER_MODULE="+browserPuppeteerModule())
 	output, err := cmd.CombinedOutput()
 	if err != nil {

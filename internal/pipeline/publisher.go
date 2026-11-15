@@ -54,15 +54,13 @@ func NewPublisher(store publish.Store, pub publish.PublicationStore, opts ...pub
 
 // 以下类型别名供应用侧继续使用短名字；实现都在 pkg/publish。
 type (
-	Publisher          = publish.Publisher
-	BuildInput         = publish.BuildInput
-	CompileFn          = publish.CompileFn
-	CompileUsage       = publish.CompileUsage
-	Draft              = publish.Draft
-	Option             = publish.Option
-	PageRecord         = publish.PageRecord
-	HistoryEntry       = publish.HistoryEntry
-	DependencyProvider = publish.DependencyProvider
+	Publisher    = publish.Publisher
+	BuildInput   = publish.BuildInput
+	CompileUsage = publish.CompileUsage
+	Draft        = publish.Draft
+	Option       = publish.Option
+	PageRecord   = publish.PageRecord
+	HistoryEntry = publish.HistoryEntry
 )
 
 // 状态、错误与动作目标：发布内核的正式名字，应用侧保留短别名。

@@ -7,13 +7,14 @@ import (
 
 	"gorm.io/gorm"
 
-	"go_wp/internal/partition"
+	pkgpartition "go_wp/pkg/database/partition"
 	"go_wp/pkg/sqlsplit"
+	"go_wp/public/schema"
 )
 
 func runReconcileSQL(t *testing.T, db *gorm.DB) {
 	t.Helper()
-	for _, stmt := range sqlsplit.Split(partition.ReconcilePartitionRLSSQL()) {
+	for _, stmt := range sqlsplit.Split(schema.PartitionOptions().ReconcileRLSSQL()) {
 		if err := db.Exec(stmt).Error; err != nil {
 			t.Fatalf("执行 reconcile_rls.sql 失败: %v", err)
 		}
@@ -45,7 +46,7 @@ func rlsFlags(t *testing.T, db *gorm.DB, table string) (enabled, forced, hasPoli
 	return enabled, forced, pol > 0
 }
 
-func gapTables(gaps []partition.RLSGap) map[string]string {
+func gapTables(gaps []pkgpartition.RLSGap) map[string]string {
 	out := make(map[string]string, len(gaps))
 	for _, g := range gaps {
 		out[g.Table] = g.Missing
@@ -57,7 +58,7 @@ func TestAuditPartitionRLSCoverage(t *testing.T) {
 	db := newPartitionFixture(t)
 	ctx := context.Background()
 
-	gaps, checked, err := partition.AuditPartitionRLSCoverage(ctx, db)
+	gaps, checked, err := pkgpartition.AuditPartitionRLSCoverage(ctx, db)
 	if err != nil {
 		t.Fatalf("巡检失败: %v", err)
 	}
@@ -73,7 +74,7 @@ func TestAuditPartitionRLSCoverage(t *testing.T) {
 		" FOR VALUES FROM ('2030-01-01') TO ('2030-02-01')").Error; err != nil {
 		t.Fatalf("构造越界分区失败: %v", err)
 	}
-	gaps, _, err = partition.AuditPartitionRLSCoverage(ctx, db)
+	gaps, _, err = pkgpartition.AuditPartitionRLSCoverage(ctx, db)
 	if err != nil {
 		t.Fatalf("巡检失败: %v", err)
 	}
@@ -87,7 +88,7 @@ func TestAuditPartitionRLSCoverage(t *testing.T) {
 	t.Logf("构造缺口后巡检命中：page_views_2030_01 缺 [%s]", missing)
 
 	runReconcileSQL(t, db)
-	gaps, _, err = partition.AuditPartitionRLSCoverage(ctx, db)
+	gaps, _, err = pkgpartition.AuditPartitionRLSCoverage(ctx, db)
 	if err != nil {
 		t.Fatalf("巡检失败: %v", err)
 	}
@@ -99,7 +100,7 @@ func TestAuditPartitionRLSCoverage(t *testing.T) {
 	}
 
 	runReconcileSQL(t, db)
-	gaps, _, err = partition.AuditPartitionRLSCoverage(ctx, db)
+	gaps, _, err = pkgpartition.AuditPartitionRLSCoverage(ctx, db)
 	if err != nil {
 		t.Fatalf("巡检失败: %v", err)
 	}
@@ -235,7 +236,7 @@ func TestEnsureAheadRestoresDefaultPartitionRLS(t *testing.T) {
 		t.Fatalf("%s 应已被删除，实际 relkind=%q", def, kind)
 	}
 
-	if _, err := partition.EnsureAhead(ctx, db, 3); err != nil {
+	if _, err := pkgpartition.EnsureAhead(ctx, db, schema.PartitionOptions(), 3); err != nil {
 		t.Fatalf("EnsureAhead 失败: %v", err)
 	}
 
@@ -246,7 +247,7 @@ func TestEnsureAheadRestoresDefaultPartitionRLS(t *testing.T) {
 	}
 	assertPredicateEqualsParent(t, db, "page_views", def)
 
-	gaps, _, err := partition.AuditPartitionRLSCoverage(ctx, db)
+	gaps, _, err := pkgpartition.AuditPartitionRLSCoverage(ctx, db)
 	if err != nil {
 		t.Fatalf("巡检失败: %v", err)
 	}
@@ -259,7 +260,7 @@ func TestAuditRLSCoverageWhitelist(t *testing.T) {
 	db := newPartitionFixture(t)
 	ctx := context.Background()
 
-	raw, checked, err := partition.AuditRLSCoverage(ctx, db)
+	raw, checked, err := pkgpartition.AuditRLSCoverage(ctx, db)
 	if err != nil {
 		t.Fatalf("巡检失败: %v", err)
 	}
@@ -273,7 +274,7 @@ func TestAuditRLSCoverageWhitelist(t *testing.T) {
 		}
 	}
 
-	gaps, _, err := partition.AuditRLSCoverage(ctx, db, "build_jobs", "product_outbox_events")
+	gaps, _, err := pkgpartition.AuditRLSCoverage(ctx, db, "build_jobs", "product_outbox_events")
 	if err != nil {
 		t.Fatalf("巡检失败: %v", err)
 	}
@@ -311,7 +312,7 @@ func TestEnsureAheadReconcilesArbitraryPolicyShapes(t *testing.T) {
 		t.Fatal("夹具不成立：临时分区本该没有策略")
 	}
 
-	if _, err := partition.EnsureAhead(ctx, db, 3); err != nil {
+	if _, err := pkgpartition.EnsureAhead(ctx, db, schema.PartitionOptions(), 3); err != nil {
 		t.Fatalf("EnsureAhead 失败: %v", err)
 	}
 
@@ -337,7 +338,7 @@ func TestEnsureAheadReconcilesArbitraryPolicyShapes(t *testing.T) {
 func TestTableTimeColumnsMatchPartitionKeys(t *testing.T) {
 	db := newPartitionFixture(t)
 
-	for _, tb := range partition.Tables {
+	for _, tb := range schema.PartitionOptions().Tables {
 		var partkey string
 		if err := db.Raw("SELECT pg_get_partkeydef(c.oid) FROM pg_class c"+
 			" JOIN pg_namespace n ON n.oid = c.relnamespace"+

@@ -16,7 +16,7 @@ func newSuccessEngine(t *testing.T) *gin.Engine {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
-	engine.HTMLRender = templates.NewJetHTMLRender("../templates", true)
+	engine.HTMLRender = templates.NewJetHTMLRender("../../../internal/templates", true)
 	engine.Use(view.UseSuccess(view.NewSuccessWriter()))
 	engine.POST("/ok", func(c *gin.Context) { view.Success(c) })
 	engine.POST("/msg", func(c *gin.Context) {

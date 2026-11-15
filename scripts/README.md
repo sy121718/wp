@@ -38,6 +38,8 @@ CI 与上线前跑的门禁（改了权限点 / service 层数据访问 / 后台
 | `check-inventory-sku-format.sh` | 库存侧 SKU 的**存量格式**三类问题：空编码 / 带仓码前缀 / 采购行同类（只读巡检，命中即打回给人） | psql + `config.yaml` |
 | `check-htmx-api.sh` | htmx 4 的静默失效面：v2 已删属性（`hx-disabled-elt` 等）、v2 驼峰事件名、v2 扩展 API，以及**反向核对**模板里每个 `hx-*` 是否真在 vendored bundle 里存在 | 无 |
 | `check-js-controls.sh` | 前端控件的 `*.test.cjs` 行为测试（逐文件串行，避免 vm 夹具互相干扰） | node |
+| `check-static-scans.sh` | 两组纯静态 Go 扫描：`public/test/security` 与 `public/test/architecture`（后者含 Controller 形状、分层边界、模板与文案域） | 无 |
+| `check-viewtest.sh` | 真实 Jet 渲染作用域、失败出口与后台公共上下文的集成回归；真实浏览器用例由 `GOWP_HTML_UI_BROWSER=1` 显式开启 | 无（浏览器用例需 node） |
 
 每个门禁怎么跑、失败意味着什么：
 

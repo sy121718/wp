@@ -7,11 +7,12 @@ import (
 	"fmt"
 	"go_wp/config"
 	"go_wp/internal/middleware"
-	"go_wp/internal/partition"
 	"go_wp/internal/routers"
 	"go_wp/pkg/database"
+	pkgpartition "go_wp/pkg/database/partition"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/utils"
+	"go_wp/public/schema"
 	"log"
 	"net/http"
 	"os"
@@ -208,7 +209,7 @@ func runPartitionMaintenance() error {
 	if err != nil {
 		return fmt.Errorf("分区维护前置检查失败: %w", err)
 	}
-	created, err := partition.EnsureAhead(context.Background(), db, partition.AheadMonths)
+	created, err := pkgpartition.EnsureAhead(context.Background(), db, schema.PartitionOptions(), pkgpartition.AheadMonths)
 	if err != nil {
 		return fmt.Errorf("分区维护失败: %w", err)
 	}

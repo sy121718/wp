@@ -12,8 +12,9 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
-	"go_wp/internal/partition"
+	pkgpartition "go_wp/pkg/database/partition"
 	"go_wp/pkg/rls"
+	"go_wp/public/schema"
 	"go_wp/public/test/support"
 )
 
@@ -267,7 +268,7 @@ func TestNonSuperuser_NewPartitionChildCovered(t *testing.T) {
 	support.SeedProjectRow(t, f.admin, pB, "工程 B")
 
 	before := relNames(t, f.admin, "page_views_%")
-	created, err := partition.EnsureAhead(context.Background(), f.admin, 6)
+	created, err := pkgpartition.EnsureAhead(context.Background(), f.admin, schema.PartitionOptions(), 6)
 	if err != nil {
 		t.Fatalf("EnsureAhead 失败：%v", err)
 	}

@@ -8,7 +8,7 @@ import (
 
 	"gorm.io/gorm"
 
-	"go_wp/internal/partition"
+	pkgpartition "go_wp/pkg/database/partition"
 	"go_wp/public/schema"
 	"go_wp/public/test/support"
 )
@@ -38,7 +38,7 @@ func relkind(t *testing.T, db *gorm.DB, name string) string {
 
 func TestThreeTablesArePartitioned(t *testing.T) {
 	db := newPartitionFixture(t)
-	for _, tb := range partition.Tables {
+	for _, tb := range schema.PartitionOptions().Tables {
 		if kind := relkind(t, db, tb.Name); kind != "p" {
 			t.Errorf("%s 应为分区表（relkind=p），实际 %q", tb.Name, kind)
 		}
@@ -52,17 +52,17 @@ func TestEnsureAheadCreatesPartitions(t *testing.T) {
 	db := newPartitionFixture(t)
 	ctx := context.Background()
 
-	if _, err := partition.EnsureAhead(ctx, db, 3); err != nil {
+	if _, err := pkgpartition.EnsureAhead(ctx, db, schema.PartitionOptions(), 3); err != nil {
 		t.Fatalf("补齐分区失败: %v", err)
 	}
-	if _, err := partition.EnsureAhead(ctx, db, 3); err != nil {
+	if _, err := pkgpartition.EnsureAhead(ctx, db, schema.PartitionOptions(), 3); err != nil {
 		t.Fatalf("重复补齐分区应幂等: %v", err)
 	}
 
 	now := time.Now().UTC()
 	thisMonth := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
-	for _, tb := range partition.Tables {
-		parts, err := partition.ListPartitions(ctx, db, tb.Name)
+	for _, tb := range schema.PartitionOptions().Tables {
+		parts, err := pkgpartition.ListPartitions(ctx, db, tb.Name)
 		if err != nil {
 			t.Fatalf("列出 %s 分区失败: %v", tb.Name, err)
 		}
@@ -134,7 +134,7 @@ func TestDetachBeforeKeepsData(t *testing.T) {
 	if err := db.Exec("INSERT INTO page_views (project_id, path, viewed_at) VALUES (gen_random_uuid(), '/archived', '2025-01-15 10:00:00+00')").Error; err != nil {
 		t.Fatalf("写历史数据失败: %v", err)
 	}
-	detached, err := partition.DetachBefore(ctx, db, "page_views", time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
+	detached, err := pkgpartition.DetachBefore(ctx, db, "page_views", time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
 	if err != nil {
 		t.Fatalf("摘除分区失败: %v", err)
 	}
@@ -148,7 +148,7 @@ func TestDetachBeforeKeepsData(t *testing.T) {
 	if n != 1 {
 		t.Fatalf("摘下的分区应保留数据，实际 %d 行", n)
 	}
-	parts, err := partition.ListPartitions(ctx, db, "page_views")
+	parts, err := pkgpartition.ListPartitions(ctx, db, "page_views")
 	if err != nil {
 		t.Fatalf("列出分区失败: %v", err)
 	}

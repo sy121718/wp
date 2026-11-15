@@ -16,7 +16,7 @@ import (
 	"gorm.io/gorm"
 
 	blockmodel "go_wp/internal/module/block/model"
-	"go_wp/internal/partition"
+	pkgpartition "go_wp/pkg/database/partition"
 	"go_wp/pkg/rls"
 	"go_wp/public/schema"
 	"go_wp/public/test/support"
@@ -323,7 +323,7 @@ func TestRLS_EnsureAheadAddsPolicyToNewPartitions(t *testing.T) {
 		t.Fatalf("恢复属主身份失败: %v", err)
 	}
 
-	created, err := partition.EnsureAhead(context.Background(), db, 6)
+	created, err := pkgpartition.EnsureAhead(context.Background(), db, schema.PartitionOptions(), 6)
 	if err != nil {
 		t.Fatalf("EnsureAhead 失败: %v", err)
 	}

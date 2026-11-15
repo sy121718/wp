@@ -1,13 +1,12 @@
 #!/usr/bin/env bash
 # 全量门禁的统一入口（审计 R-02 / R-03）。
 #
-# 为什么需要它：门禁脚本曾散在 scripts/ 下 11 个，Makefile 只跑 3 个、CI 只跑 6 个 ——
-# 「本地全绿 ≠ CI 绿」，而**没人调用的脚本永远不会变红**（其中 4 个连一次都没被自动跑过，
-# 包括迁移 262 的上线只读预检）。入口收敛后，新增脚本只要加进下面的数组就自动纳入。
+# 为什么需要它：门禁脚本曾散在 scripts/ 下 11 个，入口只跑其中一部分 ——
+# 「本地全绿 ≠ CI 绿」，而**没人调用的脚本永远不会变红**。入口收敛后，新增脚本只要加进下面的数组就自动纳入。
 #
 # 用法：
 #   scripts/check-all.sh              # 无外部依赖的门禁（unit 层可跑）
-#   scripts/check-all.sh --db-only    # 只跑需要 PostgreSQL 的门禁（必须排在迁移之后）
+#   scripts/check-all.sh --db-only    # 只跑需要 PostgreSQL 的门禁（必须排在 schema.Apply 之后）
 #   scripts/check-all.sh --with-db    # 两组合并（本地跑全量）
 #
 # 与 CI 的分工：CI 的 unit job 跑无依赖组、integration job 跑 `--db-only` 组 ——
@@ -42,6 +41,7 @@ PLAIN_SCRIPTS=(
   check-dto-immutability.sh
   check-template-presentation.sh
   check-static-scans.sh
+  check-viewtest.sh
   check-go-vet.sh
   check-page-title.sh
   check-help-popover.py
