@@ -101,7 +101,7 @@ bash scripts/check-all.sh    # 门禁全集（--with-db 含需要库的那组）
 
 | 包 | 只准 | 一律禁止 |
 |---|---|---|
-| binding | **请求绑定的唯一入口**：`ParseForm`（只读 body、只接受 urlencoded/multipart、非表单编码直接报错）/ `ParseJSON` / `ParseQuery` 是规范入口；`Query`/`Form`/`JSON` 是返回 bool 的兼容入口（`Form`/`JSON` 不声明唯一协议，契约标 unknown），只准存量使用；`JSONLimited`/`ApplyListQuery`/`ListQuery*`/`Field` 是随调用方收口的辅助实现 | 业务校验、新增 `Form`/`JSON` 调用、表单与 JSON 双轨适配（已登记的双协议端点除外）、绕过入口直接 `ShouldBind` |
+| binding | **请求绑定的唯一入口**，三个入口各自给一份确定协议：`ParseForm`（只读 body、只接受 urlencoded/multipart、非表单编码直接报错）/ `ParseJSON` / `ParseQuery`（只读查询串，按 `listquery` tag 回填 `ListQuery`）。`Field`/`ListQuery`/`WithListQuery` 是辅助实现 | 业务校验、按 Content-Type 猜协议的入口、同一端点两种编码、绕过入口直接 `ShouldBind` |
 | facing | 错误事实（key + 状态码；`facing.Msg` 的兜底是**消息事实**，合法保留） | 取词、日志 |
 | response | JSON 出口取词与状态码（`MessageOf` 产生 message） | 业务语义 |
 | view | 视图结果接口、请求级渲染接线、页面/片段渲染入口、统一成功与失败出口（不含模板引擎） | 模板引擎实现、业务逻辑、按模块定制包装 |

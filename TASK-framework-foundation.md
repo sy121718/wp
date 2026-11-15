@@ -1,6 +1,6 @@
 # 框架基础归一与可视化工具化任务书
 
-当前状态（2026-11-15 第二十二轮收口）：**154 处原生 FormPost 已全部迁移、初始化基线阶段 1、2 均已落地**。契约 362 条：**239 form / 106 json / 8 query / 4 multipart / 3 nobody / 2 raw，unknown 为 0**；`ParseForm` 端点额外声明 `encodings: [urlencoded, multipart]`，`BindForm` 钩子读取的字面量键（remember / pageSize / emailNotify / shipName…）已并入字段表。非表单编码现在直接 400，不再「忽略 JSON 后写默认值」。447 历史 SQL 已恢复原文并归档，现行执行源改为 758b。密码业务链补齐生产布局（`/production`）三视口 × 四输入 12 格。`go test ./...` **283 包 ok（rls 188 秒）**；`check-all.sh --with-db` 39/39；`go build ./...`、`go vet ./...`、`write-contracts -check` 通过。第十七轮改动分五批提交（`e466ac95` / `db4ba666` / `e95c7ce7` / `5e9e3842` / `ee1c3391`），第十八轮改动分五批提交（`2edc91ea` / `ff6b9730` / `63d347fe` / `f5625910` / `87960150`），第十九轮改动分六批提交（`f8bed43c` / `2854dc40` / `52142147` / `a95c86ef` / `e5ac0333` / `74c840f9`），另 `c1cfc5dd` 修分区列名回退。最新范围与证据边界以[当前收口任务](#当前收口任务)为准；历轮记录保留为历史，不据其旧缺口重复实施。第二十轮改动分两批提交（`c0610ea0` 观测列迁 761、`4be9537d` 浏览器矩阵），并已推送 `origin/main`（`c6b4a178..4be9537d`，321 个提交）；第二十一轮分两批（`e0f36f69` CheckSQL 覆盖与存量库列名、`a529aea3` wp 接入基线）；第二十二轮分两批（`048273f9` 两段 manifest / 内容摘要 / 拒绝重放、文档本提交）。第二十二轮复跑：`go build ./...` 绿、`go test ./public/migrations/` 94.170s ok、`go test ./pkg/binding/` ok、`bash scripts/check-all.sh` 31 脚本全过、`baseline-generate.sh --check` 与 `schema-snapshot.sh --check` 绿。
+当前状态（2026-11-15 第二十三轮收口）：**154 处原生 FormPost 已全部迁移、初始化基线阶段 1、2 均已落地**。契约 362 条：**239 form / 106 json / 8 query / 4 multipart / 3 nobody / 2 raw，unknown 为 0**；`ParseForm` 端点额外声明 `encodings: [urlencoded, multipart]`，`BindForm` 钩子读取的字面量键（remember / pageSize / emailNotify / shipName…）已并入字段表。非表单编码现在直接 400，不再「忽略 JSON 后写默认值」。447 历史 SQL 已恢复原文并归档，现行执行源改为 758b。密码业务链补齐生产布局（`/production`）三视口 × 四输入 12 格。`go test ./...` **283 包 ok（rls 188 秒）**；`check-all.sh --with-db` 39/39；`go build ./...`、`go vet ./...`、`write-contracts -check` 通过。第十七轮改动分五批提交（`e466ac95` / `db4ba666` / `e95c7ce7` / `5e9e3842` / `ee1c3391`），第十八轮改动分五批提交（`2edc91ea` / `ff6b9730` / `63d347fe` / `f5625910` / `87960150`），第十九轮改动分六批提交（`f8bed43c` / `2854dc40` / `52142147` / `a95c86ef` / `e5ac0333` / `74c840f9`），另 `c1cfc5dd` 修分区列名回退。最新范围与证据边界以[当前收口任务](#当前收口任务)为准；历轮记录保留为历史，不据其旧缺口重复实施。第二十轮改动分两批提交（`c0610ea0` 观测列迁 761、`4be9537d` 浏览器矩阵），并已推送 `origin/main`（`c6b4a178..4be9537d`，321 个提交）；第二十一轮分两批（`e0f36f69` CheckSQL 覆盖与存量库列名、`a529aea3` wp 接入基线）；第二十二轮分两批（`048273f9` 两段 manifest / 内容摘要 / 拒绝重放、文档本提交）。第二十二轮复跑：`go build ./...` 绿、`go test ./public/migrations/` 94.170s ok、`go test ./pkg/binding/` ok、`bash scripts/check-all.sh` 31 脚本全过、`baseline-generate.sh --check` 与 `schema-snapshot.sh --check` 绿。第二十三轮删除 `pkg/binding` 的 `Query` / `Form` / `JSON` / `JSONLimited` 四个兼容入口（140 处调用迁到 `ParseQuery`）并去掉导航译文封套的表单半边：61 个文件 +621 / −974（净 −353 行），新增包装与门禁均为 0。
 
 本任务书是本次重构的唯一实施清单，不是第二份架构规范；规范仍以 [AGENTS.md](AGENTS.md) 为准。原 [商品后台通用写反馈任务书](TASK-html-feedback.md) 保留为背景和原始用例索引，其实施安排由本文接替：不再由 `internal/adminui` 承担成功渲染，不分开交付第二套反馈，不按旧任务书默认运行全量门禁。
 
@@ -903,7 +903,7 @@ pkg/database/{retention,partition}
 
 **2. `pkg/binding` 正名为规范入口**
 
-[AGENTS.md](AGENTS.md) 原判 `pkg/binding` 待清退、禁止新增调用，与第十九轮把 154 处迁进 `binding.ParseForm` 相冲突。现按职责三档写明：`ParseForm` / `ParseJSON` / `ParseQuery` 是规范入口（内部仍用 Gin 原生 `FormPost` / `FormMultipart` / `ShouldBindQuery`）；`Query` / `Form` / `JSON` 是返回 bool 的兼容入口（`Form` / `JSON` 不声明唯一协议，契约标 unknown），只准存量、禁止新增；`JSONLimited` / `ApplyListQuery` / `ListQuery*` / `Field` 随调用方逐步收口。[pkg/CLAUDE.md](pkg/CLAUDE.md) 同步。存量：`ParseForm[` 198、`binding.Query[` 132、`ParseJSON[` 14、`binding.Form[` 11、`ListQuery` 9。
+[AGENTS.md](AGENTS.md) 原判 `pkg/binding` 待清退、禁止新增调用，与第十九轮把 154 处迁进 `binding.ParseForm` 相冲突。现按职责三档写明：`ParseForm` / `ParseJSON` / `ParseQuery` 是规范入口（内部仍用 Gin 原生 `FormPost` / `FormMultipart` / `ShouldBindQuery`）；`Query` / `Form` / `JSON` 是返回 bool 的兼容入口（`Form` / `JSON` 不声明唯一协议，契约标 unknown），只准存量、禁止新增；`JSONLimited` / `ApplyListQuery` / `ListQuery*` / `Field` 随调用方逐步收口。[pkg/CLAUDE.md](pkg/CLAUDE.md) 同步。存量（当时）：`ParseForm[` 198、`binding.Query[` 132、`ParseJSON[` 14、`binding.Form[` 11、`ListQuery` 9。其中 `Query` / `Form` / `JSON` / `JSONLimited` 已在第二十三轮整体删除，见该轮记录。
 
 **3. 基线要覆盖 seed 段，且必须导 seed 后终态**
 
@@ -943,6 +943,51 @@ pkg/database/{retention,partition}
 - `schema-snapshot.sh --check`：绿（终态结构未变，仅生成时间戳）。
 - `wp` 用 `--refresh --apply` 刷新水位；随后 `GOWP_DATABASE_DBNAME=wp go run ./cmd -migrate-only` 业务日志实测 `{"message":"基线已覆盖，跳过种子","skipped":440,"total":440}` 与 `{"message":"基线已覆盖，跳过迁移","skipped":186,"total":186}`，EXIT=0。
 - [docs/initial-baseline.md](docs/initial-baseline.md) 整份重写（含「维护动作清单」：新增迁移不用重生成 / 改已有迁移要重生成 + `--refresh` / 改结构另加 snapshot）；[scripts/README.md](scripts/README.md) 三脚本说明同步。
+
+### 第二十三轮：兼容入口清退与「替换并删除」（2026-11-15）
+
+本轮不再新增治理层。起因是审核指出：最近一轮净增 12,115 行里 81% 是生成产物（基线 SQL / 快照 / 清单），但三件事成立 —— 新增统一入口却没让旧链路退出、为旧形状补识别能力比清退更积极、把「公共化」误当统一完成。处置原则改为「唯一实现在哪里、哪些旧入口退出、调用链缩短了什么」。
+
+**1. `pkg/binding` 只剩三个入口**
+
+删除 `Query` / `Form` / `JSON`（返回 bool、按 Content-Type 猜协议）与 `JSONLimited`；`ApplyListQuery` / `ListQueryTag` 私有化为 `applyListQuery` / `listQueryTag`，`isFormBody` 随唯一调用方删除。保留 `ParseForm` / `ParseJSON` / `ParseQuery` 与辅助实现 `Field` / `ListQuery` / `WithListQuery`。`binding.go` 295 → 189 行（−106）。
+
+140 处调用点全部迁到 `binding.ParseQuery[T]`（135 处 `Query` + 5 处 `Form`）：admin 19、mail 10、product 与 masterdata 35（11 文件）、order / purchase / cart / membership 35（10 文件）、inventory / page / content / contenttemplate / navigation / presentation / blueprint / media / plugin / project / workbench 36（16 文件）、analytics / block / build / comment / webhook 5。失败分支统一 `response.ParamError(c)` + return，读到 400 后不再继续解引用。生产代码 `binding.Query[/Form[/JSON[` 归零。
+
+**2. 导航译文封套去掉表单半边**
+
+`/api/navigation/translations` 契约声明就是 json，而 `UpdateEnvelope` 同时带 `UnmarshalJSON` 与 `BindForm`：删除 `BindForm` / `form` 字段 / `formErr` / `IsForm` / `updateFormRaw` / `updateIsEmptyQuery` / `updateLegacyPayload` 的表单分支 / `updateFormRawValues` / `updateFormScalar` 与 `form:` tag，`navigation_update_req.go` 499 → 372 行（−127）。对应测试从「同一封套两种编码」改为单一 JSON 协议（`navigation_update_req_test.go` 506 → 344，`navigation_update_binding_test.go` 293 → 193 改用 `binding.ParseJSON` 复刻生产端点；1 MiB 上限用例随 `JSONLimited` 一起删除 —— 请求体上限归全局 `RequestBodyLimitMiddleware`，端点级包装并不在生产路径上）。
+
+**3. 契约生成器删掉兼容入口分支**
+
+`bindingGenericDTO` 只认 `ParseForm` / `ParseJSON` / `ParseQuery`，`isPkgBindingGeneric` 同步，`Form` / `JSON` 的 unknown 分支删除（`cmd/write-contracts/main.go` −21 行）。重生成 [write-contracts.json](internal/templates/static/js/ui/write-contracts.json) 与改前**逐条相同**：362 条，unknown 0 —— 证明被删的分支只在服务即将下线的入口。
+
+**4. 门禁与判定同步**
+
+- [controller_objects_test.go](internal/architecture/controller_objects_test.go)：对象查询管线判据改认 `binding.ParseQuery`，调用白名单加 `response.ParamError`（`requestJSON:` 形态不再需要）。
+- [controller_orchestration_test.go](internal/architecture/controller_orchestration_test.go)：mail 台账 10 条 / 峰值 20 降为 8 / 19（`ParseQuery` 的「绑定 + 失败 return」被 `bindPreamble` 整体排除，每个 handler 少一条业务语句）。
+- 删除 [pkg/binding/json_limited_test.go](pkg/binding/json_limited_test.go)；[pkg/binding/binding_test.go](pkg/binding/binding_test.go) 重写为三个入口 + `Field` + `ListQuery` 回填（173 → 145）。
+- `pkg/casbin/multi_instance_test.go` 注释不再指向已删除的 `docs/rls-role-cutover.md`，`docs_pointer_test.go` 死指针预算回到 0。
+
+**5. 唯一实现 / 旧入口退出 / 调用链**
+
+| 能力 | 唯一实现 | 退出的旧入口 | 调用链变化 |
+|---|---|---|---|
+| 读请求绑定 | `binding.ParseQuery[T]` | `binding.Query[T]`、`binding.Form[T]`（140 处） | 不再依赖「binder 内部写 400、调用方 return」的隐式约定；错误显式判、显式回 400 |
+| 写请求绑定 | `binding.ParseForm[T]` | `binding.JSON[T]`、`binding.JSONLimited[T]` | 同一端点不再可能接受两种编码 |
+| 导航译文 | `binding.ParseJSON[UpdateEnvelope]` | `UpdateEnvelope.BindForm` 与整条表单解析路径 | 表单写入只剩 `/api/navigation/update`（`UpdateReq`） |
+| 契约协议来源 | 入口函数名 | 生成器对兼容入口的识别分支 | 生成器不再需要理解「按 Content-Type 自适应」的写法 |
+
+**6. 实测**
+
+- `git diff --shortstat`：61 个文件 **+621 / −974**（净 −353），生产代码删 353 行；新增包装 0、新增门禁 0。
+- `go build ./...` 与 `go vet ./...` 干净；`go test ./pkg/binding/`、`go test ./internal/architecture/`（36s）、涉及模块的 `go test ./internal/module/...` 全绿。
+- `go run ./cmd/write-contracts -check` 通过；`scripts/write-fields-scan.py` 报「306 个提交入口，契约 362 条」。
+
+**未做（如实登记）**
+
+- 440 条 seed 的历史检查与重放仍在：存量库升级需要它们，收敛成「基线 + 增量」的单一路径要先解决「存量库如何判定水位」，见 [docs/initial-baseline.md](docs/initial-baseline.md)。
+- `binding.Field` 的三个调用方（登录后跳转、找回密码）仍靠 `c.PostForm` 读单个隐藏字段；它是辅助实现而非第二个绑定入口，尚未合并进 DTO。
 
 ### 第十七轮实施与验收（2026-11-14）
 
