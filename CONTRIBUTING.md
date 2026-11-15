@@ -51,24 +51,19 @@ go mod download
 - 数据库连接默认读 `database` 段；`GOWP_DATABASE_*` 环境变量会覆盖同名字段。
 - 生产口令不要写进 YAML：`database.password` 推荐用 `GOWP_DATABASE_PASSWORD` 注入，`auth.session_secret` 走 `GOWP_AUTH_SESSION_SECRET`。
 
-### 2.3 迁移与 seed
+### 2.3 结构与系统数据
 
 ```bash
-make migrate
+go run ./cmd -migrate-only
 ```
 
-这一条目标同时做「结构迁移」与「业务 seed」，可重复执行。它做的事：用 `pg_isready` 轮询等待本机 PostgreSQL（30 次 × 2 秒），然后把 `PGHOST` / `PGPORT` / `PGUSER` / `PGPASSWORD` / `PGDATABASE` 映射成 `GOWP_DATABASE_*` 并执行 `go run ./cmd -migrate-only`。
+数据库结构的唯一来源是 [`public/schema/`](public/schema/)：一表一文件 `tables/<表>.sql`，外加 `base.sql`（扩展、schema、函数）与 `order.txt`（系统数据装载顺序）。表文件按 `-- @phase pre|ddl|constr|idx|fk|comment|data` 分段，改结构、改系统初始数据都直接改对应段，不再追加逐版本迁移。
 
-`-migrate-only` 是显式的迁移命令，**不受 `database.run_migrations` 约束**；那个开关只管「服务启动时是否自动迁移」。迁移完成后立即退出，不监听端口。
-
-迁移的真实入口：
-
-- SQL 放在 [`public/migrations/`](public/migrations/)，版本化命名 `NNN_名称.sql`；整个目录经 `//go:embed *.sql` 一次嵌入。
-- Go 侧注册体按主题拆在 `public/migrations/register*.go`，入口是 `register.go` 的 `init()`：新增一条迁移 = 新增一个 `.sql` + 在对应主题文件里加一条 `register(Migration{...})`。
-- seed 用 `registerSeed(Seed{Version, TableName, ConditionSQL, SQL})`，`ConditionSQL` 是幂等判据（「本批对象是否已存在」，**不要**写成宽泛的前缀判断）。
-- `TestEmbeddedSQLFilesAllRegistered` 对磁盘 `.sql` 与注册台账做双向一一对应校验 —— 写了 SQL 却忘了注册会被测试抓住。
-
-> 迁移编号取 `public/migrations/` 里现有最大数字之后的号（不要在本文件记具体数字，会过期）。命名与判据写法见 [`AGENTS.md`](AGENTS.md) 的数据库一节。
+- `schema.Apply` 是唯一装载入口：空库一次事务内建完并写 `sys_baseline` 水位；已有同摘要水位直接返回；摘要不符**拒绝重放**（历史结构无法可靠回退）。
+- `go run ./cmd -migrate-only` 走同一入口，并补齐月分区；完成后立即退出，不监听端口。它**不受 `database.run_migrations` 约束**，那个开关只管服务启动时是否自动载入。
+- 现有库接入用 `bash scripts/schema-adopt.sh --db <库> [--refresh] --apply`：默认只核验结构、混库与必需业务键，核验通过才写水位。
+- 系统数据只放词条、权限、菜单、字典与默认配置；业务数据不进 `public/schema`。
+- 测试不跑迁移链：`support.NewMigratedPGTestDB` 克隆的模板库由 `public/schema` 建好；要加表或改约束就改表文件。
 
 ### 2.4 起服务
 
@@ -92,7 +87,7 @@ make run     # 直接编译并运行，无热重载
 | `make check-all` | `bash scripts/check-all.sh --with-db` | 上两组全跑 | 是 |
 | `make test-race` | `go test -race -p 4 ...` | 五个核心域的竞态检测（`pkg/`、`pipeline`、`builder`、`publication`、`presentation`），超时 20 分钟 | 否 |
 | `make test` | `go test -p $(nproc) ./... -count=1` | 全量（feature + unit），可用 `TEST_PARALLEL=8` 覆盖并发 | 部分用例 |
-| `make test-short` | `go test ./pkg/... ./internal/... ./cmd/... ./config/... ./public/migrations/... -count=1` | 不依赖数据库的包 | 否 |
+| `make test-short` | `go test ./pkg/... ./internal/... ./cmd/... ./config/... ./public/schema/... -count=1` | 不依赖数据库的包 | 否 |
 | `make lint` | `gofmt -l internal/ pkg/ public/ cmd/ config/` + `go vet ./...` | 格式与静态检查 | 否 |
 
 统一入口脚本是 [`scripts/check-all.sh`](scripts/check-all.sh)，模式为默认（无依赖组）/ `--db-only` / `--with-db`，末尾打印「✓ 全部门禁通过（模式，共 N 个脚本）」。

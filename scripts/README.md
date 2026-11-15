@@ -34,7 +34,7 @@ CI 与上线前跑的门禁（改了权限点 / service 层数据访问 / 后台
 | `check-i18n-coverage.sh` | 后台模板里的硬编码中文超出基线（基线数值在 `i18n-coverage-baseline.txt`） | 无 |
 | `check-multidevice-css.sh` | 组件产出里的裸 `:hover`、写死宽度等违反多端硬规则的写法（`SKY_CSS_GUARD=error` 时是硬门禁） | 无 |
 | `check-no-internal-error-leak.sh` | 后台 handler 把 `err.Error()` 直出——响应写入 / 重定向 query / 模板数据**三种形态一起判**（豁免按文件 + 形态记账） | 无 |
-| `check-stock-sku-prefix-collisions.sh` | 迁移 262 剥掉仓库 SKU 的前缀后会撞成同一 `(warehouse_id, sku_code)` 的存量行（迁移会在启动时 RAISE，脚本把它提前） | psql + `config.yaml` |
+| `check-stock-sku-prefix-collisions.sh` | 仓库 SKU 带前缀时，剥前缀会撞成同一 `(warehouse_id, sku_code)` 的存量行；脚本提前把冲突列出来 | psql + `config.yaml` |
 | `check-inventory-sku-format.sh` | 库存侧 SKU 的**存量格式**三类问题：空编码 / 带仓码前缀 / 采购行同类（只读巡检，命中即打回给人） | psql + `config.yaml` |
 | `check-htmx-api.sh` | htmx 4 的静默失效面：v2 已删属性（`hx-disabled-elt` 等）、v2 驼峰事件名、v2 扩展 API，以及**反向核对**模板里每个 `hx-*` 是否真在 vendored bundle 里存在 | 无 |
 | `check-js-controls.sh` | 前端控件的 `*.test.cjs` 行为测试（逐文件串行，避免 vm 夹具互相干扰） | node |
@@ -49,16 +49,12 @@ CI 与上线前跑的门禁（改了权限点 / service 层数据访问 / 后台
 运维脚本：
 
 - `rls-role-setup.sh <角色> <密码>` —— 建非超级角色并授权（含 `ALTER DEFAULT PRIVILEGES`，让将来新建的表也自动授权）。这是 DB-009 把 `config.yaml` 的 `database.user` 换成非超级用户之前的准备步骤；**顺序不能反**，先换角色会让未包工程作用域的路径静默返回 0 行。
-### 初始化基线
+### 结构与现有库接入
 
-新环境初始化不再重演全部历史迁移，而是「载入基线 + 只跑基线之后的增量」。判据见 [docs/initial-baseline.md](../docs/initial-baseline.md)。
+数据库结构以 [`public/schema/`](../public/schema/) 为唯一来源：一表一文件，改结构直接改表文件；`schema.Apply` 载入后写 `sys_baseline` 水位，同摘要跳过、摘要不符拒绝重放。
 
-- `baseline-generate.sh` —— 生成 `schema/baseline/{structure.sql,system_data.sql,manifest.txt,init.sql}`。默认自建临时库跑 `-migrate-only`（含 seed，导 seed 后终态），结束即删库；`--check` 分三档：①`manifest.txt` 两段必须是当前注册表的**前缀**（`cmd/baseline-manifest -check-prefix`，段外新增版本不算过期）；②`init.sql` 登记的摘要/版本与产物内容自洽（手改 SQL 不重生成会被抓）；③仅当注册表等于冻结清单时才重跑全量逐份比对。「基线＋增量 == 历史全量」的终态等价归 `baseline-verify.sh`，不要求每加一条迁移就重生成基线。`--check --static` 只做①②，不需要数据库；比较时归一头部「生成时间」与系统数据里的时间字面量，否则换一天都会误报。
-- `check-baseline-artifacts.sh` —— 上面 `--check --static` 的门禁入口，已进 `check-all.sh` 无依赖组：前缀错位、已冻结条目被改写、手改产物不重生成，都会在这里变红。
-- `baseline-verify.sh` —— 五条验收：①结构与系统数据**内容**等价（逐表行数 + 行级 md5 聚合，时间字面量归一）；②重复迁移幂等；③匹配哈希时被覆盖的迁移**确实不执行**（删掉基线内迁移建的表再跑，它不能被重建）；④哈希不匹配时**拒绝重放**并保持库不变；⑤`init.sql` 记录的摘要与 `cmd/baseline-digest` 同源。建两个临时库，约 4 分钟；`--keep` 保留库与 `/tmp/wp-baseline-verify-*` 日志。
-- `baseline-adopt.sh --db DBNAME [--apply | --refresh --apply]` —— 现有库接入：混库检测（现有库多出的表直接判「不是本仓迁移产物库」并点名）→ 与「重放 `init.sql` 再跑 `-migrate-only` 的临时库」对称比较结构 → 系统表行数 → **必需业务键 anti-join**（词条 `(item_key, lang)` / 权限 / 菜单非空 `permission_code`，行数相等掩盖不了缺键）。水位摘要取自 `cmd/baseline-digest`，与迁移器同源，脚本不自己算。`--refresh` 用于基线产物变更后更新既有水位；默认只核验不写库。核验期间的 SQL 错误一律拒绝接入（必需键两次查询曾用 `|| true` 调用、失败被吞后仍报「键全部存在」；回归用例 `tests/test_baseline_adopt_guard.py` 用替身 `psql`/`pg_dump`/`go` 锁住五种结果）。
-
-结构比较必须归一 pg_dump 的两种 deparse（同一 CHECK 表达式在「一阶库」与「重放基线后的库」里文本不同，语义相同），脚本内已处理。
+- `schema-adopt.sh --db DBNAME [--apply | --refresh --apply]` —— 现有库接入：混库检测（现有库多出的表直接判「不是本仓结构产物库」并点名）→ 与「空库载入 `public/schema` 再跑 `-migrate-only` 的临时库」对称比较结构（月分区与 pg_dump deparse 差异已归一）→ **必需业务键 anti-join**（词条 `(item_key, lang)` / 权限 / 菜单非空 `permission_code`）。水位摘要取自 `cmd/schema-digest`，与 `schema.Apply` 同源。默认只核验不写库；核验期间的 SQL 错误一律拒绝接入，回归用例 `tests/test_schema_adopt_guard.py` 用替身 `psql`/`pg_dump`/`go` 锁住失败面。
+- `tests/test_schema_package.sh` —— `public/schema` 的静态门禁：包内测试（段序 / 切分 / `order.txt` 覆盖）与摘要稳定性，已进 `check-all.sh` 无依赖组。
 
 ### 环境清理
 

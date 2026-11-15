@@ -77,7 +77,7 @@ make dev       # 开发模式，air 热重载
 | `internal/module/` | CMS、页面、发布、后台及业务模块；跨模块经契约协作 |
 | `internal/templates/` | 后台与工作台模板、公共控件和静态资产 |
 | `pkg/` | 基础设施能力 |
-| `public/migrations/` | 数据迁移 |
+| `public/schema/` | 数据库结构与系统初始数据（一表一文件） |
 | `public/test/` | 功能、集成测试与测试支撑 |
 
 组件模板与样式、部分构建输入通过 `go:embed` 打入二进制。后台模板和 `/static` 当前仍从文件系统提供；部署不能只复制一个二进制后假定后台资产齐全。

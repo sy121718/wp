@@ -38,7 +38,7 @@
 
 **落地**：`internal/module/product/service/product.go` 的 `fillProductStock`；
 模板 `internal/templates/admin/product/products.html`；`inbound/mcp/product_tools.go`；
-词条 `public/migrations/698_product_stock_unknown_i18n.sql`（zh-CN / en-US）。
+词条 `public/schema/tables/sys_i18n.sql` 的 data 段（原 698 迁移，zh-CN / en-US）。
 
 **验证**：`product_stock_failure_test.go`、`product_warehouse_multi_stock_test.go`
 （页面故障显示）、MCP `product_tools_test.go`。
@@ -158,7 +158,7 @@
 3. 两个域不得互相穿插：主 key 与明细 key 的兜底表必须不相交。
 
 **落地**：`enums/product_err_detail.go`（明细）、`enums/product_err_fallbacks.go`（主键）、
-`public/migrations/697b_product_error_detail_keys.sql`。
+`public/schema/tables/sys_i18n.sql` 的 data 段（原 697b 迁移）。
 
 **验证**：`TestErrorDetailKeysStayInProductDomain`（Detail 常量域前缀 + 兜底一一对应）、
 `TestFallbackTablesAreDisjoint`（两表不相交）、`TestEveryErrorKeyHasFallback`。

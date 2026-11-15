@@ -115,8 +115,8 @@ bash scripts/check-all.sh    # 门禁全集（--with-db 含需要库的那组）
 |---|---|---|
 | internal/templates/** | 模板资产：结构、样式、标题/菜单、徽标分档、空态、时间/金额显示格式、分页按钮窗口、取词、表单初值；同目录的 Go 只做渲染基础设施（引擎适配、模板函数、嵌入） | 业务规则的第二份实现、金额求和与库存合计、后端口径的聚合、**业务 Go 代码** |
 | public/static/** | JS/CSS（HTMX 基座、`write-base.js`） | 业务计算 |
-| cmd/** | 进程入口、装配、迁移命令 | 业务逻辑 |
-| public/migrations | 版本化幂等 SQL + seed 注册 | Go 业务逻辑 |
+| cmd/** | 进程入口、装配、结构与系统数据装载命令 | 业务逻辑 |
+| public/schema | **结构唯一来源**：一表一文件（建表 / 约束 / 索引 / 外键 / 系统数据分段）+ base.sql 全局对象 + defaults.sql 启动期补齐 | Go 业务逻辑、逐版本迁移链 |
 | public/test/** | feature 链路测试 | 被生产代码 import |
 
 - **后端**做数据库分页筛选 / count / limit / offset，交总数、当前页、每页条数等事实；**前端**做分页按钮与链接窗口、空态、徽标、显示格式。页码窗口与链接（`pagination.Window`/`Derive`/`PageBase`/`QueryURL`）与金额显示（`money.*`）由模板调用；`pagination.ClampPage`/`Slice` 属后端分页工具，归 service/model。
@@ -161,7 +161,8 @@ bash scripts/check-all.sh    # 门禁全集（--with-db 含需要库的那组）
     - 公开商品目录（`internal/module/product/model/product_public_catalog.go`）只读关联 `presentation_instances` / `presentation_publications` 两表，用于在一条语句内收敛「有有效发布的商品」候选并分页。
     - 发布记录页（`internal/module/product/model/publish_record_page.go`）只读关联 `presentation_instances` / `presentation_publications` / `presentation_artifacts` 三表，用于在一条语句内完成「商品级筛选 + 精确 total + 越界夹页 + 本页多实例多语言明细」，让 total 与本页行出自同一份语句快照。
 - 时间列：新表用 `create_time`/`update_time`；业务时刻沿用 `*_at`；`timestamptz` + `time.Time`；对外 JSON 只给时刻（`utils.JSONTime` 输出 unix 毫秒；**显示格式由模板决定**）。软删除统一 `deleted_at`。
-- 迁移：版本化幂等 SQL + `register.go`；seed 门槛逐条枚举本批对象（禁用 LIKE/全库总量）；改列名同步触发器与 seed SQL；新 SQL 上线前 PREPARE 校验；Migrations 台账先跑、Seeds 后跑。
+- 结构：`public/schema` 一表一文件，文件内按 `-- @phase pre|ddl|constr|idx|fk|comment|data` 分段；段序由 `schema.Apply` 固定，改结构直接改表文件。空库在一次事务内建完并写 `sys_baseline` 水位；已有同摘要水位跳过，摘要不符**拒绝重放**。现有库接入用 `scripts/schema-adopt.sh`（默认只核验）。
+- 系统数据（词条 / 权限 / 菜单 / 字典 / 默认配置）写在各表的 `data` 段，是终态快照；装载期关闭用户触发器，避免插入再触发业务写入。工程级默认内容模板由 `defaults.sql` 在每次 `schema.Apply` 末尾按工程补齐（等价旧 seed 085/159），不是表数据段。业务数据不进 `public/schema`。
 - 裸 SQL 只减不增（`raw_sql_boundary_test.go`）；唯一 JSON 入口 `pkg/jsonx`（`json_import_boundary_test.go`）。
 - 主键：对外实体 uuid（应用层生成）；纯内部流水与字典 bigint identity；只增分区流水用 UUIDv7。
 - 权限点：一条 API 路由一个独立权限点（常量按操作属主声明在各模块 `enums/permission_codes.go`，注册处用 `middleware.RouteGroup`/`DeclareRoute` 声明），页面路由可复用。权限名称与启停只来自数据库；启动期只核对、不反写。
@@ -188,7 +189,7 @@ bash scripts/check-all.sh    # 门禁全集（--with-db 含需要库的那组）
 
 - **需求决定实现，测试验证需求**：不为旧断言改变业务、不保留错误架构。
 - 分层：模块内 unit 测纯逻辑；接口链路走 `public/test/<mod>/feature`（真实 PG）；组件测试在组件包内。
-- 表结构一律来自生产迁移（`support.NewMigratedPGTestDB`）；禁止手抄 `CREATE TABLE`。
+- 表结构一律来自 `public/schema`（`support.NewMigratedPGTestDB` 克隆已载入 schema 的模板库）；测试**不跑迁移链、不重放 seed**；禁止手抄 `CREATE TABLE`。
 - 断言等式而非各自的值；错误断言状态码 + 对外文案且不含内部原文；页面断言真实 HTML 片段。
 - 计数与命名不是判据：`rg -c` 只是筛查起点，结论前回读语义；门禁绿不等于没问题。
 - 构建 / 权限 / 工程隔离 / 事务等**事实校验**仍然有意义，不能用「门禁计数」替代交付。
@@ -221,4 +222,4 @@ bash scripts/check-all.sh    # 门禁全集（--with-db 含需要库的那组）
 
 ## 指针
 
-[README.md](README.md)（产品与快速开始）· [CONTRIBUTING.md](CONTRIBUTING.md)（本地起步、门禁、测试执行、提交）· [architecture.md](architecture.md)（拓扑、核心概念、部署形态）· [TODO.md](TODO.md)（**待核实**的存量整改项，不是规范、不产生判据）· [goal-and-requirements.md](goal-and-requirements.md)（产品目标与范围）· [SECURITY.md](SECURITY.md)（漏洞报告）· [internal/module/CLAUDE.md](internal/module/CLAUDE.md)（模块目录与分层细则）· [internal/templates/CLAUDE.md](internal/templates/CLAUDE.md)（模板契约、取词、HTMX、写基座、多端）· [pkg/CLAUDE.md](pkg/CLAUDE.md)（基础设施）· [public/CLAUDE.md](public/CLAUDE.md)（迁移与静态资源）· [public/test/CLAUDE.md](public/test/CLAUDE.md)（feature 测试）· [scripts/README.md](scripts/README.md)（脚本清单）。
+[README.md](README.md)（产品与快速开始）· [CONTRIBUTING.md](CONTRIBUTING.md)（本地起步、门禁、测试执行、提交）· [architecture.md](architecture.md)（拓扑、核心概念、部署形态）· [TODO.md](TODO.md)（**待核实**的存量整改项，不是规范、不产生判据）· [goal-and-requirements.md](goal-and-requirements.md)（产品目标与范围）· [SECURITY.md](SECURITY.md)（漏洞报告）· [internal/module/CLAUDE.md](internal/module/CLAUDE.md)（模块目录与分层细则）· [internal/templates/CLAUDE.md](internal/templates/CLAUDE.md)（模板契约、取词、HTMX、写基座、多端）· [pkg/CLAUDE.md](pkg/CLAUDE.md)（基础设施）· [public/CLAUDE.md](public/CLAUDE.md)（结构与静态资源）· [public/test/CLAUDE.md](public/test/CLAUDE.md)（feature 测试）· [scripts/README.md](scripts/README.md)（脚本清单）。

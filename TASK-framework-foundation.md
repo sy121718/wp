@@ -1,6 +1,6 @@
 # 框架基础归一与可视化工具化任务书
 
-当前状态（2026-11-15 第二十四轮收口）：**154 处原生 FormPost 已全部迁移、初始化基线阶段 1、2 均已落地**。契约 362 条：**239 form / 106 json / 8 query / 4 multipart / 3 nobody / 2 raw，unknown 为 0**；`ParseForm` 端点额外声明 `encodings: [urlencoded, multipart]`，`BindForm` 钩子读取的字面量键（remember / pageSize / emailNotify / shipName…）已并入字段表。非表单编码现在直接 400，不再「忽略 JSON 后写默认值」。447 历史 SQL 已恢复原文并归档，现行执行源改为 758b。密码业务链补齐生产布局（`/production`）三视口 × 四输入 12 格。`go test ./...` **283 包 ok（rls 188 秒）**；`check-all.sh --with-db` 39/39；`go build ./...`、`go vet ./...`、`write-contracts -check` 通过。第十七轮改动分五批提交（`e466ac95` / `db4ba666` / `e95c7ce7` / `5e9e3842` / `ee1c3391`），第十八轮改动分五批提交（`2edc91ea` / `ff6b9730` / `63d347fe` / `f5625910` / `87960150`），第十九轮改动分六批提交（`f8bed43c` / `2854dc40` / `52142147` / `a95c86ef` / `e5ac0333` / `74c840f9`），另 `c1cfc5dd` 修分区列名回退。最新范围与证据边界以[当前收口任务](#当前收口任务)为准；历轮记录保留为历史，不据其旧缺口重复实施。第二十轮改动分两批提交（`c0610ea0` 观测列迁 761、`4be9537d` 浏览器矩阵），并已推送 `origin/main`（`c6b4a178..4be9537d`，321 个提交）；第二十一轮分两批（`e0f36f69` CheckSQL 覆盖与存量库列名、`a529aea3` wp 接入基线）；第二十二轮分两批（`048273f9` 两段 manifest / 内容摘要 / 拒绝重放、文档本提交）。第二十二轮复跑：`go build ./...` 绿、`go test ./public/migrations/` 94.170s ok、`go test ./pkg/binding/` ok、`bash scripts/check-all.sh` 31 脚本全过、`baseline-generate.sh --check` 与 `schema-snapshot.sh --check` 绿。第二十三轮删除 `pkg/binding` 的 `Query` / `Form` / `JSON` / `JSONLimited` 四个兼容入口（140 处调用迁到 `ParseQuery`）并去掉导航译文封套的表单半边：61 个文件 +621 / −974（净 −353 行），新增包装与门禁均为 0；分两批提交（`927e254a` 代码、`2c75d34a` 文档）并推送。
+当前状态（2026-11-15 第二十五轮）：**迁移整合完成并已全量验收 —— `public/schema` 成为数据库结构的唯一来源（一表一文件，按段装载并写 `sys_baseline` 水位）；`public/migrations`、`schema/baseline`、`schema/CURRENT.sql` 与 baseline-*/schema-snapshot 脚本全部删除；测试模板库改由 `schema.Apply` 建，不再重放迁移链**。空库建库实测与旧链终态等价：表清单一致、逐表行数与内容指纹一致，仅 9 处 pg_dump deparse 文本差异（语义等价）。契约 362 条（**239 form / 106 json / 8 query / 4 multipart / 3 nobody / 2 raw，unknown 0**）；请求入口统一为 `ParseForm` / `ParseJSON` / `ParseQuery`，文件上传是 `ginbinding.FormMultipart` 显式例外。历轮记录保留为历史，不据其旧缺口重复实施。
 
 本任务书是本次重构的唯一实施清单，不是第二份架构规范；规范仍以 [AGENTS.md](AGENTS.md) 为准。原 [商品后台通用写反馈任务书](TASK-html-feedback.md) 保留为背景和原始用例索引，其实施安排由本文接替：不再由 `internal/adminui` 承担成功渲染，不分开交付第二套反馈，不按旧任务书默认运行全量门禁。
 
@@ -790,7 +790,7 @@ pkg/database/{retention,partition}
 
 ### 初始化基线收敛（阶段 1、阶段 2 均已落地）
 
-设计与判据见 [docs/initial-baseline.md](docs/initial-baseline.md)，此处只记进度：
+设计与判据见 迁移整合前的基线设计文档（已随迁移链删除，见 git 历史），此处只记进度：
 
 - 阶段 1（已完成）：[schema/CURRENT.sql](schema/CURRENT.sql) 改为「迁移终态库」生成（132 张表 / 10375 行，含 759 的 `sys_baseline`），不再混入 artex 的外来表；[scripts/schema-snapshot.sh](scripts/schema-snapshot.sh) 默认自建临时库跑全量迁移再比对，`--check` 实测绿，`GOWP_SNAPSHOT_DB` 可复用已有终态库；`--check` 分支 trap 覆盖导致临时库残留的 bug 已修（默认路径重跑确认无残留）。
 - 阶段 2（已完成，2026-11-15）：`schema/baseline/` 四件产物（structure / system_data / manifest / init）+ 迁移 `759-sys-baseline` 台账表 + `baselineState` 基线跳过（两段前缀 + 内容摘要；哈希不匹配时**拒绝重放**，不再回落全量 —— 历史迁移假定从空库开始，在终态结构上重放必然半途报错，见第二十二轮）。`scripts/baseline-generate.sh` 生成、`--check` 实测绿；`scripts/baseline-verify.sh` 五条验收实测全绿（结构+系统数据内容等价、重复执行幂等、匹配哈希时不执行被覆盖的迁移、哈希不匹配时拒绝重放、摘要口径与生成器一致）；`scripts/baseline-adopt.sh` 供现有库接入（默认只核验）。验收中发现并修复既有漂移 `760-inventory-movement-fk-restore`：173 重建 `inventory_stock_movements` 分区表时丢了 134 的 `fk_inventory_movements_product`，存量库有、新库无。`public/migrations/baseline_manifest_test.go` 钉住两段都是注册表前缀、段内无重复、init.sql 摘要与 `ContentSHA256` 同源。`scripts/baseline-adopt.sh` 的结构核验改为与「重放 `init.sql` 再跑 `-migrate-only` 的临时库」对称比较，并前置混库检测：现有库多出的表直接判「不是本仓迁移产物库」并点名。实测 `artex` 被拒 —— 多出 60+ 张其他项目的表（`conversations` / `findings` / `tools` / `tasks` / `assets` / `llm_profiles` / `mcp_servers` 等）与 `pgcrypto` / `vector` 扩展、`sync_task_asset_links` 等外来函数；该库不接入基线，需要基线环境请新建库载入 `schema/baseline/init.sql`。另：6 张 `ai_*` 表（seed 511/512/537/541/542，纯 DDL、无数据）已改为迁移登记，结构基线 112→118 张表、manifest 177→182 条，`baseline-verify.sh` 三条验收复跑全绿（129 张表行数一致）。2026-11-15 已把本仓在 `artex` 库的对象全部剥离（135 张表 + 4 个函数，事务内 `DROP ... CASCADE`），artex 恢复为 55 张自有表、`conversations`/`findings`/`assets`/`server_logs` 等行数与剥离前一致、服务 `HTTP 200`；剥离前整库备份在 `tmp/artex-before-cleanup-20261115.dump`，本仓 `config.yaml` 的 `dbname` 改回 `wp`。
@@ -817,7 +817,7 @@ pkg/database/{retention,partition}
 
 - [schema/CURRENT.sql](schema/CURRENT.sql) 由只跑过本仓迁移的隔离库生成（132 张表 / 10375 行，含 759 的 `sys_baseline`），不再混入 artex 的 `plugin_migration_ledger` / `analytics_daily_stats` / `tools` 等外来对象。
 - [scripts/schema-snapshot.sh](scripts/schema-snapshot.sh) 增加 `SNAPSHOT_DB` / `ADMIN_DB`，默认自建 `wp_schema_probe_$$` 跑 `go run ./cmd -migrate-only` 再比对；修 `--check` 分支 trap 覆盖 `cleanup_probe` 造成临时库残留的 bug。
-- 设计与阶段 2 清单：[docs/initial-baseline.md](docs/initial-baseline.md)。
+- 设计与阶段 2 清单：迁移整合前的基线设计文档（已随迁移链删除，见 git 历史）。
 
 **4. 全量验证（本轮实际执行）**
 
@@ -942,7 +942,7 @@ pkg/database/{retention,partition}
 - `baseline-verify.sh`：五步全绿，摘要 `8a6d0f78…`，259 张表内容指纹一致。
 - `schema-snapshot.sh --check`：绿（终态结构未变，仅生成时间戳）。
 - `wp` 用 `--refresh --apply` 刷新水位；随后 `GOWP_DATABASE_DBNAME=wp go run ./cmd -migrate-only` 业务日志实测 `{"message":"基线已覆盖，跳过种子","skipped":440,"total":440}` 与 `{"message":"基线已覆盖，跳过迁移","skipped":186,"total":186}`，EXIT=0。
-- [docs/initial-baseline.md](docs/initial-baseline.md) 整份重写（含「维护动作清单」：新增迁移不用重生成 / 改已有迁移要重生成 + `--refresh` / 改结构另加 snapshot）；[scripts/README.md](scripts/README.md) 三脚本说明同步。
+- 迁移整合前的基线设计文档（已随迁移链删除，见 git 历史） 整份重写（含「维护动作清单」：新增迁移不用重生成 / 改已有迁移要重生成 + `--refresh` / 改结构另加 snapshot）；[scripts/README.md](scripts/README.md) 三脚本说明同步。
 
 ### 第二十三轮：兼容入口清退与「替换并删除」（2026-11-15）
 
@@ -986,8 +986,48 @@ pkg/database/{retention,partition}
 
 **未做（如实登记）**
 
-- 440 条 seed 的历史检查与重放仍在：存量库升级需要它们，收敛成「基线 + 增量」的单一路径要先解决「存量库如何判定水位」，见 [docs/initial-baseline.md](docs/initial-baseline.md)。
+- 440 条 seed 的历史检查与重放仍在：存量库升级需要它们，收敛成「基线 + 增量」的单一路径要先解决「存量库如何判定水位」，见 迁移整合前的基线设计文档（已随迁移链删除，见 git 历史）。
 - ~~`binding.Field` 的三个调用方（登录后跳转、找回密码）仍靠 `c.PostForm` 读单个隐藏字段~~ —— 这一条登记有误，已于第二十四轮更正：真实消费者是 AI 的三个 GET（模型列表 / 会话详情 / 会话事件）经 [internal/module/ai/inbound/http/ai_handle.go](internal/module/ai/inbound/http/ai_handle.go) 的 `bindID` 读单个 id 参数；三个 handler 都不收表单体，`PostForm` 回退永远读不到值。改为 `aidto.IDQuery` + `binding.ParseQuery` 后 `Field` 已删除。
+
+### 第二十五轮：迁移整合为 public/schema 一表一文件（2026-11-15）
+
+用户指令：把 702 个迁移整合成「建表 + 系统初始数据，一表一文件」，保留全部 key，全删旧链；测试不再跑任何迁移；用真实数据测试库验证，发现问题回补表文件，再接入主库。
+
+**结构来源**
+- 新增 `cmd/schema-split`：从迁移终态库（`wp_schema_src`）逐表导出 DDL 与数据，生成 `public/schema/base.sql`、`public/schema/tables/<表>.sql`、`public/schema/order.txt`。表文件按 `-- @phase pre|ddl|constr|idx|fk|comment|data` 分段，复现 pg_dump 依赖顺序；`ALTER INDEX ... ATTACH PARTITION` 归 idx，所有 `COMMENT ON` 最后执行，否则分区子表会在 ATTACH 时自动补主键、索引注释指向尚未创建的索引。
+- `public/schema/schema.go`：`Apply` 在空库一次事务内按 pre → 全部表 ddl → constr → idx → fk → comment → 按 order.txt 装系统数据，再执行 `defaults.sql` 补齐工程级默认内容模板，最后写 `sys_baseline(version, manifest_sha256, note)`。系统数据装载前 `SET LOCAL session_replication_role = replica`，否则 `sys_menus` 触发器会抢显式 id 的主键并空推序列。已有同摘要水位时仍执行 `defaults.sql`（新工程要补模板）；有表无水位或摘要不符**拒绝重放**，错误提示走 `scripts/schema-adopt.sh`。
+- `order.txt` 必须覆盖所有有 data 段的表；切分器重跑时复用已有 order.txt，不再从已删除的基线产物推导。`sys_menus` 必须排在 `sys_menu_permission` 之前。
+- 生产接线：`config/register.go` 的 migrations 组件改调 `schema.Apply`；`cmd/main.go` 的 `-migrate-only` 只保留分区维护；`internal/routers/assembly.go` 与 `public/test/support/{pgtest.go,component_config.go}` 删除 `RunSeeds`；`pkg/sqlsplit` 承接插件 SQL 切分；`internal/partition` 自带 `reconcile_rls.sql`。
+
+**等价性实测（wp_schema_build vs wp_schema_src）**
+- 表清单完全一致（116 个表文件：113 张普通表 + 3 个分区父表，含 `sys_baseline` 与 3 张 `_default`）；逐表 `count(*)` 与行级 md5 聚合一致；唯一序列差异是源库 `sys_baseline_id_seq` 已被接入写过。
+- 结构目录 3439 行仅 20 行 diff，全部是 9 处已知 pg_dump deparse（8 个 CHECK 约束 + `idx_mail_automation_runs_active` 部分索引），语义等价。
+- 幂等重跑 EXIT=0，`sys_baseline` 仍 1 行；删掉旧台账 `sys_migration_marker`、清理空表的 `setval` 数据段与词条来源标注后，当前摘要为 `schema-fda0662c`（加入 `defaults.sql` 之后），wp 已按新摘要刷新水位。
+
+**删除**
+- `public/migrations` 整包（702 个 SQL、394 个 register 文件、69 个测试文件）、`schema/baseline`、`schema/CURRENT.sql`、`cmd/baseline-manifest`、`cmd/baseline-digest`、`public/test/pkg/migrations`、`scripts/{baseline-generate,baseline-verify,baseline-adopt,check-baseline-artifacts,schema-snapshot}.sh`、`scripts/tests/test_baseline_adopt_guard.py`、迁移整合前的基线设计文档；另删旧台账 `sys_migration_marker`（`scripts/backup.sh` 的水印改读 `sys_baseline.version`）。
+
+**测试改造（不再跑迁移）**
+- 81 个测试文件 import 过 `go_wp/public/migrations`；56 个机械替换交三个子代理（internal 10 + public/test 71 去掉注册表断言后的机械面），Lead 处理 25 个注册表内部断言文件。
+- 迁移语义测试删除（seed 幂等、历史回填、改名映射、迁移形状）：ai/mail/media/page/pkg-i18n 各 seed 测试、058/228b/707 重放、195/196/670/173/295/244/261/262/411/721-722 等；保留的行为断言改为终态事实。
+- `public/test/support/admin_session.go` 的 `SeedTestAdmin` 改为复用系统数据里的既有超管：查到 `is_admin=1` 就更新其用户名与口令，只有不存在超管时才新建（`BeforeCreate` 会拒绝第二个超管；先前写死 `ID: 1` 会与系统数据的 `admin` 撞主键）。
+- 词条门禁解析器同时支持「显式列名 INSERT」与「位置参数 INSERT INTO public.sys_i18n VALUES」，`check-i18n-keys-seeded.sh` 实测未 seed 0；架构门禁夹具、`internal/templates/admin_group_f_i18n_test.go` 与 project 词条测试改读 `public/schema/tables/sys_i18n.sql`。
+
+**脚本与 CI**
+- 新增 `cmd/schema-digest`、`scripts/schema-adopt.sh`（混库检测 + 与空库重放对称比较 + 必需键 anti-join + `--refresh`）、`scripts/tests/test_schema_package.sh`、`scripts/tests/test_schema_adopt_guard.py`。
+- `check-all.sh` 去掉 baseline/snapshot 条目，加入 schema 包自检与接入 fail-closed 回归；CI 的包清单、race 命令与快照步骤同步改为 `public/schema`。
+
+**已知边界**
+- 系统数据是终态快照，只保留 14 张表：`sys_*`（词条 / 权限 / 菜单 / 字典 / 配置 / 地区 / 角色规则）、`inventory_change_reasons`、`mail_templates`（4 套系统邮件模板）与 showcase `blueprints` / `blueprint_versions`（各 6 条初始内容）。新增词条/菜单/权限直接改对应表的 data 段，不再有「升级补种」路径；存量库由 `schema-adopt --refresh` 重写水位，跨结构变更仍按「拒绝重放、先核验」处理。
+- 业务表（订单 / 商品 / 会员 / 邮件联系人 / 访问流水等）不装载数据；原先由 `pg_dump` 带出的 49 个空表 `setval` 段已删除，序列从 1 开始。
+- 月分区由 `partition.EnsureAhead` 在初始化末尾补齐，不进 schema 文件。
+- 业务数据不进 `public/schema`；新库只有结构与系统数据。`defaults.sql` 是启动期补齐脚本而非表数据段：给每个工程补 product / article 两套默认内容模板，等价于旧 seed 085/159，新工程由下一次 `schema.Apply` 自动补齐。
+- 词条集合核对：新库 canonical 13662 条；wp 接入后 **0 条缺失**、多出 37 条历史退役键（早期 seed 条件跳过留下的旧键，属既有业务数据，未清理）。
+
+**全量验收（2026-11-15 收尾）**
+- `GOWP_REQUIRE_PG=1 go test ./public/test/... -count=1 -p 4`：64 个包全部 ok、EXIT=0；`GOWP_REQUIRE_PG=1 go test ./internal/... ./pkg/... -count=1`：213 个包 ok、EXIT=0；`bash scripts/check-all.sh`：plain 33 个脚本全过、EXIT=0。
+- 全量首轮暴露并修复的迁移整合副作用：admin 测试自建超管与系统数据冲突（改复用既有 admin、权限计数改独立 module）、enums 词条断言扫 `public/schema/tables/*.sql`、mail 模板页需先清空系统模板、partition RLS 测试改重放 `partition.ReconcilePartitionRLSSQL()`、商品/文章默认模板缺口由 `defaults.sql` 按工程补齐、RLS 库存流水夹具不再写不存在的商品外键、sysconfig 乐观锁夹具先清系统配置行。
+- wp 已用 `scripts/schema-adopt.sh --db wp --refresh --apply` 接入摘要 `schema-fda0662c`；随后 `go run ./cmd -migrate-only` EXIT=0，业务库里 product / article 模板未被重复插入。
 
 ### 第二十四轮：审核八条收口、基线安全与入口归一（2026-11-15）
 
