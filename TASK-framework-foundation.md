@@ -1022,6 +1022,10 @@ pkg/database/{retention,partition}
 
 **未做**：440 条 seed 的跳过只在接入过基线的库生效，未接入的旧库升级仍走全量；cmd/builder 的内部 JSON 回调与四个上传端点是显式例外，不属「未收口」；浏览器矩阵本轮未重跑（未改模板、JS、样式）。
 
+**验证**：go build ./... 绿；go test ./internal/architecture/ 整包 ok 42.8s；bash scripts/check-all.sh plain 33 个脚本全过；go test ./pkg/binding/ ./cmd/... ./public/migrations/ -run TestBaseline 绿；18 个受影响 feature 包（admin / ai / block / build / content / contenttemplate / inventory / mail / media / navigation / order / page / presentation / product / project / purchase / sysconfig / webhook）以 GOWP_REQUIRE_PG=1 -p 4 全 ok（product 290s、order 187s、inventory 151s 为最慢三个）；bash scripts/baseline-generate.sh --check 输出 prefix_ok=1 … extras=0。
+
+**提交**：9b7e6158（binding）、08a381d4（baseline）、605bdc2e（docs），已推送 origin/main（9ef15e2d..605bdc2e）。
+
 ### 第十七轮实施与验收（2026-11-14）
 
 本轮承接「artex 迁移在 seed 723 处被设计性拒绝……变更你自己裁决吧，完成任务书所有的需要你修尬的内容」。用户明确授权对两组真实数据冲突直接裁决，并按任务书完成剩余项；仍未提交、未 push。
