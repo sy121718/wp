@@ -31,4 +31,4 @@ parent: go-wp-modules
 
 ## 未登记越界
 
-`service/presentation_instance.go` 直接 import `contenttemplate/model`，绕过「跨模块只经 contract」的判据，登记在 `internal/architecture/module_boundary_test.go` 的债务清单里。
+`service/presentation_instance.go` 直接 import `contenttemplate/model`，绕过「跨模块只经 contract」的判据，登记在 `public/test/architecture/module_boundary_test.go` 的债务清单里。

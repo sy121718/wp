@@ -2,10 +2,11 @@
 
 ## 结构
 - 一个模块一个目录：`<mod>/feature/*_test.go`；跨模块链路放 `feature/`；基建放 `support/`。
+- `architecture/` 是纯静态架构门禁（Controller 形状、分层边界、SQL/JSON/模板判据）；`viewtest/` 是真实 Jet 渲染作用域与失败出口的集成测试。
 - 用例名说清「谁在什么条件下应当怎样」；一个函数一个断言主题。
 
 ## 表结构来源
-- 需要真实 schema：`support.NewMigratedPGTestDB(t)`（复制模板库，含生产迁移）。
+- 需要真实 schema：`support.NewMigratedPGTestDB(t)`（复制已载入 `public/schema` 的模板库）。
 - 空库自建表 / 故意构造旧 schema：`support.NewPGTestDB(t)`。
 - 禁止手抄 `CREATE TABLE` 伪造生产表；`AutoMigrate` 不等于简化版建表（列型会分叉）。
 
@@ -16,5 +17,5 @@
 - 计数类断言要写清口径（哪批行、哪个时间窗）。
 
 ## 执行
-- 全量并发：`make test`（`-p $(nproc)`）；并发敏感的包加 `-race`。
+- 全量并发：`go test -p $(nproc) ./...`；并发敏感的包加 `-race`。
 - PG/Redis 不可用时 `t.Skip`；不要用 mock 掩盖缺失的依赖。

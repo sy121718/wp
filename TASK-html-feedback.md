@@ -22,6 +22,6 @@
 - [翻译保存](public/test/product/feature/product_translation_test.go)
 - [翻译失败与回滚](public/test/product/feature/product_translation_failure_test.go)
 - [商品浏览器链路](public/test/product/feature/product_html_browser_test.go)
-- [写表单协议门禁](internal/architecture/write_form_protocol_test.go)
+- [写表单协议门禁](public/test/architecture/write_form_protocol_test.go)
 
 不再执行旧方案中的“模板引擎不得进 pkg”“成功渲染留 adminui”或默认运行 `check-all.sh` 等安排。规范仍唯一来自 [AGENTS.md](AGENTS.md)；本次只修订任务文档，不修改规范、代码、迁移或目录，也不运行构建、测试、门禁或提交。

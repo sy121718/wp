@@ -1,6 +1,6 @@
 # 框架基础归一与可视化工具化任务书
 
-当前状态（2026-11-15 第二十五轮）：**迁移整合完成并已全量验收 —— `public/schema` 成为数据库结构的唯一来源（一表一文件，按段装载并写 `sys_baseline` 水位）；`public/migrations`、`schema/baseline`、`schema/CURRENT.sql` 与 baseline-*/schema-snapshot 脚本全部删除；测试模板库改由 `schema.Apply` 建，不再重放迁移链**。空库建库实测与旧链终态等价：表清单一致、逐表行数与内容指纹一致，仅 9 处 pg_dump deparse 文本差异（语义等价）。契约 362 条（**239 form / 106 json / 8 query / 4 multipart / 3 nobody / 2 raw，unknown 0**）；请求入口统一为 `ParseForm` / `ParseJSON` / `ParseQuery`，文件上传是 `ginbinding.FormMultipart` 显式例外。历轮记录保留为历史，不据其旧缺口重复实施。
+当前状态（2026-11-15 第二十六轮）：**迁移整合完成并已全量验收 —— `public/schema` 成为数据库结构的唯一来源（一表一文件，按段装载并写 `sys_baseline` 水位）；`public/migrations`、`schema/baseline`、`schema/CURRENT.sql` 与 baseline-*/schema-snapshot 脚本全部删除；测试模板库改由 `schema.Apply` 建，不再重放迁移链**。第二十六轮完成目录归拢：架构门禁与视图集成测试迁入 `public/test`，分区薄接线并入 `public/schema`，pipeline 定位为发布适配层。空库建库实测与旧链终态等价：表清单一致、逐表行数与内容指纹一致，仅 9 处 pg_dump deparse 文本差异（语义等价）。契约 362 条（**239 form / 106 json / 8 query / 4 multipart / 3 nobody / 2 raw，unknown 0**）；请求入口统一为 `ParseForm` / `ParseJSON` / `ParseQuery`，文件上传是 `ginbinding.FormMultipart` 显式例外。历轮记录保留为历史，不据其旧缺口重复实施。
 
 本任务书是本次重构的唯一实施清单，不是第二份架构规范；规范仍以 [AGENTS.md](AGENTS.md) 为准。原 [商品后台通用写反馈任务书](TASK-html-feedback.md) 保留为背景和原始用例索引，其实施安排由本文接替：不再由 `internal/adminui` 承担成功渲染，不分开交付第二套反馈，不按旧任务书默认运行全量门禁。
 
@@ -41,11 +41,11 @@
 | internal/mcp | 执行、注册、参数处理、幂等机制入 pkg/mcp；公有权限参数/返回值统一用 `string`，删除对 `permission.Perm` 的类型依赖，不为字符串再造一个权限类型包。各业务工具仍明确绑定本模块操作标识 |
 | internal/seo、internal/uispec | 分别入 pkg/seo、pkg/uispec；业务审核调用与数据源留应用 |
 | config/runtime.go 的生命周期执行 | pkg/lifecycle；env、组件清单、启停策略、迁移/seed、具体 provider 装配仍在 config/cmd |
-| internal/retention、internal/partition | 批次清理/月分区机制入 pkg/database/retention、pkg/database/partition；表清单、保留策略、生产迁移及 RLS 对账接线留应用 |
+| internal/retention、public/schema | 批次清理/月分区机制入 pkg/database/retention、pkg/database/partition；表清单、保留策略、生产迁移及 RLS 对账接线留应用 |
 | internal/siteurl | 商品/博客等种类、默认模式、工程适配留应用；可复用纯路径处理归既有 pkg/pathkit，保持原路径语义 |
 | internal/module/common/captcha | 通用 HTTP handler 入 pkg/captcha；路由、豁免与限流归应用装配，不维持伪业务模块 |
 | internal/module/plugin/scaffold | 开发脚手架工具入 pkg/scaffold；cmd/plugin 调用，生成物遵守本次新边界 |
-| internal/architecture、cmd、routers、config、public/migrations、public/test、scripts | 分别仍为门禁、入口、装配、配置、生产迁移与应用测试；只同步必要调用和判据 |
+| public/test/architecture、cmd、routers、config、public/migrations、public/test、scripts | 分别仍为门禁、入口、装配、配置、生产迁移与应用测试；只同步必要调用和判据 |
 | internal/siteservices | 按用户要求列为待删除项：删除仅存的 SPEC.md，随后移除空目录；清理实际文档引用，不创建对应 pkg、占位包或替代服务。本轮只记录，不执行删除 |
 | 各业务模块其余代码 | 留业务；同名 Err、StatusOf、truncate 等只是排查线索，不足以合并或删除 |
 
@@ -94,7 +94,7 @@ pkg/database/{retention,partition}
 - **P0 release 模板打包完整性**：现 [admin_embed.go](internal/templates/admin_embed.go) 只声明 admin 树，而 [后台布局](internal/templates/admin/layout.html) 引用根 partials，workbench 与 HTML fragments 也有真实入口。第三方已报告 release 探测失败，本轮只核对源码，没有重复执行探测。第一阶段先补回归使缺陷明确报红，再最小补齐现行 embed 覆盖使其回绿；不能等第二阶段搬包后才发现。
 - 判据分两层：遍历实际入口及 include/extends/import 的静态依赖，按当前模板逻辑路径用 **release 的真实 loader** 打开并编译；动态模板/插件依赖由实际注册清单和定向样例覆盖，不能静态检查不到就默认通过。后台完整布局、根 partials、workbench 布局、HTML fragments 必须各有真实渲染回归，不只测一个独立分页 partial。另验证缺依赖明确失败、模板二次失败安全，不能用错误页 500 代替目标页面渲染成功。
 - 开发磁盘与生产 embed 的应用入口/依赖逻辑键必须相符，测试从非源码工作目录只用 embed 运行，禁止悄悄回退磁盘。物理迁移后第二阶段重复同一判据；构建组件/插件集合另按其注册与作用域测试，不把所有文件盲塞进一个 Set。
-- **P1 路径预算/台账**：核对 [HTML 边界](internal/architecture/html_boundary_test.go)、[取词域](internal/architecture/text_domain_test.go)、[keep-empty](internal/architecture/write_binding_keep_empty_test.go)、[表单 tag](internal/architecture/write_binding_form_tag_test.go) 的扫描范围、路径键、预算及真实豁免。已存在的非零预算反查保留；补路径实际存在/进入扫描范围、过期豁免反查与扫描错误处理，避免包移动后旧键永久失效。
+- **P1 路径预算/台账**：核对 [HTML 边界](public/test/architecture/html_boundary_test.go)、[取词域](public/test/architecture/text_domain_test.go)、[keep-empty](public/test/architecture/write_binding_keep_empty_test.go)、[表单 tag](public/test/architecture/write_binding_form_tag_test.go) 的扫描范围、路径键、预算及真实豁免。已存在的非零预算反查保留；补路径实际存在/进入扫描范围、过期豁免反查与扫描错误处理，避免包移动后旧键永久失效。
 - 明确区分“源文件/字段扫描为零”和“违规命中为零”：前者在预期应有输入时失败，后者应当通过。零预算项如用于禁止恢复，只要求目标仍在扫描范围且违规仍为零；空债务表不要求制造违规。旧 binding.JSON 等模式退役后更新检测对象，不能强制过时包装仍有调用来证明门禁有效。
 - **P1 脚本空扫**：[组件颜色检查](scripts/check-component-colors.sh) 先加根存在、CSS 语料非空与遍历错误检查；[前端命名](scripts/check-frontend-naming.sh) 除根路径更新外补注册名提取为空时失败。[JS 控件检查](scripts/check-js-controls.sh) 当前已有空数组报错，保留并迁新扫描根，不能重复称它缺少空扫防护。所有检查报告实际根与输入数；不硬编码旧文件数当成功标准。
 - [页面 GET 鉴权检查](scripts/check-page-get-authz.sh) 更新 codes.go 文本依赖并确认路由快照新鲜度；[工作台检查](scripts/check-workbench.sh) 更新正式包路径和定向入口，缺失目标必须明确报错。不能以 setup failed、glob 零结果或吞掉 AST/遍历错误假装完成。
@@ -274,11 +274,11 @@ pkg/database/{retention,partition}
 
 | 门禁/台账 | 处理要求 |
 |---|---|
-| [Controller 出口](internal/architecture/controller_shape_test.go)、[页面扫描](scripts/page-view-scan.py)、[页面视图台账](scripts/page-view-dto-allow.txt) | 改实际渲染入口及禁用的私有 UI 依赖；去除已迁台账项，保留业务事实与分层断言 |
-| [HTML 路径预算](internal/architecture/html_boundary_test.go)、[取词域预算](internal/architecture/text_domain_test.go)、[keep-empty](internal/architecture/write_binding_keep_empty_test.go)、[表单 tag](internal/architecture/write_binding_form_tag_test.go) | 第一阶段先补实际缺失的范围/失效条目/遍历错误护栏；保留已有非零预算反查，不把违规为零误判为空扫；第二阶段随模板/调用方迁移更新真实根与已使用豁免，第三阶段核对工具与扩展覆盖 |
+| [Controller 出口](public/test/architecture/controller_shape_test.go)、[页面扫描](scripts/page-view-scan.py)、[页面视图台账](scripts/page-view-dto-allow.txt) | 改实际渲染入口及禁用的私有 UI 依赖；去除已迁台账项，保留业务事实与分层断言 |
+| [HTML 路径预算](public/test/architecture/html_boundary_test.go)、[取词域预算](public/test/architecture/text_domain_test.go)、[keep-empty](public/test/architecture/write_binding_keep_empty_test.go)、[表单 tag](public/test/architecture/write_binding_form_tag_test.go) | 第一阶段先补实际缺失的范围/失效条目/遍历错误护栏；保留已有非零预算反查，不把违规为零误判为空扫；第二阶段随模板/调用方迁移更新真实根与已使用豁免，第三阶段核对工具与扩展覆盖 |
 | [页面 GET 鉴权](scripts/check-page-get-authz.sh)、[前端命名](scripts/check-frontend-naming.sh)、[组件颜色](scripts/check-component-colors.sh)、[JS 控件](scripts/check-js-controls.sh) | 根/必要语料缺失明确失败；保留 JS 控件现有空数组拒绝，补实际缺失的组件 CSS 与命名空提取检查。同步正式路径、路由快照新鲜度和实际消费点，不硬编码旧文件数；不得只改聚合入口而漏掉脚本自身 |
-| [表单绑定](internal/architecture/write_binding_form_tag_test.go)、[模板展示](scripts/check-template-presentation.sh)、HTMX/写属性/字段/取词检查 | 同时扫 pkg 公共模板资产、工具模板资产与应用模板；不能只把旧 internal 路径替换成 pkg 后漏扫应用 |
-| [发布 SEO 边界](internal/architecture/publication_seo_audit_boundary_test.go)、[契约依赖](scripts/check-contract-deps.sh)、组件 CSS/资源测试 | 改正式包路径并保留传递依赖与职责断言；扫通用组件与业务扩展两个真实属主 |
+| [表单绑定](public/test/architecture/write_binding_form_tag_test.go)、[模板展示](scripts/check-template-presentation.sh)、HTMX/写属性/字段/取词检查 | 同时扫 pkg 公共模板资产、工具模板资产与应用模板；不能只把旧 internal 路径替换成 pkg 后漏扫应用 |
+| [发布 SEO 边界](public/test/architecture/publication_seo_audit_boundary_test.go)、[契约依赖](scripts/check-contract-deps.sh)、组件 CSS/资源测试 | 改正式包路径并保留传递依赖与职责断言；扫通用组件与业务扩展两个真实属主 |
 | [shell 迁移脚本](scripts/check-shell-migration.sh) | 已完成：旧包删除后脚本改为终局断言，14 行计数基线 `shell-migration-allow.txt` 已删除；无旧包/无后端写后导航的断言保留 |
 | [权限缺口](scripts/check-permission-gaps.sh)、路由导出与对账测试 | 同步真实注册数据源和 DECLARED/EXEMPT 导出格式；依赖已迁移的测试 PostgreSQL 与 psql，在第五阶段的 DB 出口验证，不能只跑静态文本扫描 |
 | UI 资产/旧执行器白名单、workbench 契约 | 门禁检查唯一图标生成源、实际 `/static` 注册、框架及应用资源两侧；同步 embed、测试 fixture 与生成脚本路径，保留“不得加载已退役执行器”的断言 |
@@ -368,7 +368,7 @@ pkg/database/{retention,partition}
 
 当时已按依赖顺序推进以下内容，记录以 `go build ./...` 通过为准；未提交、未 push，未 reset/clean。
 
-- 阶段 1：依赖方向门禁（`internal/architecture/pkg_dependency_test.go`）、CSRF 原语前移 `pkg/middleware`、release 模板 embed 覆盖修复（admin/partials/workbench/fragments）、台账与脚本空扫防护（`ledger_freshness_test.go`、`check-component-colors.sh`、`check-frontend-naming.sh`、`check-workbench.sh` 定向入口）。
+- 阶段 1：依赖方向门禁（`public/test/architecture/pkg_dependency_test.go`）、CSRF 原语前移 `pkg/middleware`、release 模板 embed 覆盖修复（admin/partials/workbench/fragments）、台账与脚本空扫防护（`ledger_freshness_test.go`、`check-component-colors.sh`、`check-frontend-naming.sh`、`check-workbench.sh` 定向入口）。
 - 阶段 2：显示宽度迁 `pkg/utils`；图标单一源迁 `pkg/view/ui/icons` 并新增受控模板入口 `icon(name)`；Jet 引擎/作用域/显示函数/失败接线迁 `pkg/view/jet`；`internal/text` 直连 `pkg/view/jet`；统一成功出口 `view.Success/SuccessMessage` + `adminui.NewSuccessWriter`，52 处直写成功提示收敛；`shell.RenderJump` 改为成功走共享提示、失败走共享失败出口，业务视图（导航新建面板块）改模板声明 `data-write-nav`；`pkg/view/redirect.go` 旧跳转入口清退；`backref`/`shell` 安全回跳统一到 `pkg/backpath.FromRequest`。
 - 阶段 3：`builder/source`、`builder/core`、`richdoc`、`style`、`plugincomp` 迁 `pkg/builder`；33 个通用组件迁 `pkg/builder/components`、13 个业务组件迁 `internal/builder/extensions`；`nodeViewOf` 硬编码分发改为注册表可选 `ViewBuilder` 入口（`core.NodeView`）；构建器不再依赖业务模块契约（中立 `ProductDataSource`/`ContentDataSource`/`AssetVariant`）；组件门禁同时扫 `pkg` 与 `extensions` 两个属主。
 - 阶段 4：`Store`/`PublicationStore`/`Artifact`/`Manifest`/`Publisher`/路径锁/预压缩/发布计划迁 `pkg/publish`；`builder.Degrade` 转为中立 `Diagnostic`；`internal/pipeline` 保留应用编译适配并转发正式实现。
@@ -400,7 +400,7 @@ pkg/database/{retention,partition}
 - ~~**`internal/permission/codes.go` 的 363 个常量未按属主拆分**~~ —— **已在本轮完成并删除整个包**：常量直连各模块 `enums/permission_codes.go`；登记机制只在 `pkg/middleware`；`Known`/`Label` 改为 admin 数据库目录；新增 743 目录补齐种子与 744 路径漂移修正；启动反写 `SyncToDB` 删除，改为启动核对 + `/readyz` 不就绪。
 - **`shell.TranslateFor` 的其余消费者未迁模板**。采购选项已迁；内容/库存的预取词涉及 JSON 消费者与 HTML 选项的逐点区分，需按域核对，不批量盲改。
 
-最终验证状态：`go build ./...` 通过；`go test ./pkg/...`、`./internal/templates/ ./internal/adminui/ ./internal/shell/ ./internal/text/ ./internal/pipeline/ ./internal/permission/ ./internal/partition/ ./internal/middleware/... ./internal/builder/...` 全绿；`internal/architecture` 里因本轮搬包失效的路径已同步（重命名 props 台账、HTML 字面量台账、关键帧/组件 CSS 扫描根、公共 partial 属主路径），剩余 19 条红项均已逐条核对为**工作区既有未提交改动**所致（未跟踪的控制器文件、`enums` 去兜底、`catalog_pagination.html` 的 key、`grant_menu_tree.html` 的 style 算术、`ai_page_resp.go` 展示字段、被删除的 `workbench/error.html` 等），不是本轮引入。
+最终验证状态：`go build ./...` 通过；`go test ./pkg/...`、`./internal/templates/ ./internal/adminui/ ./internal/shell/ ./internal/text/ ./internal/pipeline/ ./internal/permission/ ./public/schema/ ./internal/middleware/... ./internal/builder/...` 全绿；`public/test/architecture` 里因本轮搬包失效的路径已同步（重命名 props 台账、HTML 字面量台账、关键帧/组件 CSS 扫描根、公共 partial 属主路径），剩余 19 条红项均已逐条核对为**工作区既有未提交改动**所致（未跟踪的控制器文件、`enums` 去兜底、`catalog_pagination.html` 的 key、`grant_menu_tree.html` 的 style 算术、`ai_page_resp.go` 展示字段、被删除的 `workbench/error.html` 等），不是本轮引入。
 
 未验证：真实浏览器三视口、PG feature、`go run ./cmd/write-contracts -check`；工作区既有的未提交改动导致的架构门禁红项（未跟踪控制器文件、enums 去兜底、`catalog_pagination.html` 的 key、`grant_menu_tree.html` 的 style 算术、`ai_page_resp.go` 展示字段）未处理。
 
@@ -438,16 +438,16 @@ pkg/database/{retention,partition}
 - `go test ./internal/module/ai/... ./public/test/ai/...` 全绿（含签发令牌 scope 校验与 MCP 页面）。
 - `go test ./pkg/middleware/ ./internal/module/mail|block|order|admin|publication/inbound/http/ ./internal/routers/ -run ...` 相关用例全绿。
 - `bash scripts/check-page-get-authz.sh`、`python3 scripts/check-page-endpoint-authz.py`、`bash scripts/check-permission-gaps.sh` 全绿（363 权限点 / 393 路由 / 33 豁免，双向同源）。
-- `go test ./internal/architecture/ -run 'TestPkgDoesNotImportInternal|TestPkgStructuralBoundaries'` 通过。
+- `go test ./public/test/architecture/ -run 'TestPkgDoesNotImportInternal|TestPkgStructuralBoundaries'` 通过。
 
-仍有既有红项（与本轮无关，已在 HEAD 复现）：`internal/routers` 的 `SetRequestUserID` 台账缺项与写端点扫码漂移、`internal/architecture` 的控制器语句上限台账、analytics/build/contenttemplate/navigation/product-enums 的部分用例。
+仍有既有红项（与本轮无关，已在 HEAD 复现）：`internal/routers` 的 `SetRequestUserID` 台账缺项与写端点扫码漂移、`public/test/architecture` 的控制器语句上限台账、analytics/build/contenttemplate/navigation/product-enums 的部分用例。
 
 
 第四轮（剩余六项全部执行完成）：
 
 - **058 seed 退役 key**：删除 11 行已改名 key（`MsgInternalError`/`ErrInvalidParams`/`ErrPermissionDenied`/`ErrRequestEntityTooLarge`/`msg_operation_success`/`msg_delete_confirm`），剩 189 key / 263 行；`ConditionSQL` 从「全库 zh-CN ≥199」改为逐条核对本批 263 行并要求退役 key 不存在（否则清理后总数下降会把 seed 重播）；新增 745 精确清理迁移，不依赖 738 重跑。
 - **internal/mcp 删除**：56 个消费者直连 `pkg/mcp`（包名相同、调用点零改动），删 `aliases.go`。
-- **captcha / siteurl 小项**：删 `captcha/handle` 纯转发；`siteurl.Normalize` 迁 `pkg/pathkit.NormalizeSitePath`（站点 kinds/默认模式/工程读取仍留应用）。`internal/partition` 经核对属应用事实（表目录 + RLS 注入），保留。
+- **captcha / siteurl 小项**：删 `captcha/handle` 纯转发；`siteurl.Normalize` 迁 `pkg/pathkit.NormalizeSitePath`（站点 kinds/默认模式/工程读取仍留应用）。`public/schema` 经核对属应用事实（表目录 + RLS 注入），保留。
 - **pipeline 发布转发清退**：`publish_aliases.go` 的 87 个别名整体删除；89 个外部文件 520 处改直连 `pkg/publish`。
 - **Publisher 中立化**：`Publisher`/`BuildInput`/`CompileUsage`/`Draft`/`PageRecord` 迁 `pkg/publish`；`Diagnostics` 改为中立收集器、`ActionTargets` 用字符串类别、页面守卫解析改为注入的 `PageGuardFunc`；未注入编译或守卫时构建显式失败。`DefaultCompile`、`PageGuardFunc`、`NewPublisher` 留 `internal/pipeline`；`ActionUsage` 适配构建器的 `core.ActionKind`；stage/activate 用例随迁。
 - **静态 UI 资产**：被公共模板引用的 41 个 `js/ui/*.js` 与 `ui.css`/`theme.css` 迁 `pkg/view/ui/assets`；新增 `AssetsFS`/`AssetFile`/`CompositeFS`（逻辑键重名即报错，实现 `ReadDir`/`Stat`）；`/static` 与 `EmbeddedStaticFS` 同源，开发/生产不再两套来源；`StaticJS`/`UICSS` 签名不变。
@@ -513,12 +513,12 @@ pkg/database/{retention,partition}
    - 新增 4 条最小反例单测（按方法落定、未知委托分支、双类型参数、显式入口）。
 4. **字段扫描器**：表单外祖先的 `hx-include` / `hx-vals` / `hx-encoding` 一律报未检查（不再因可解析就冒充已对账）；表单内祖先沿用字面量判据。回归 25 用例全绿（此前 1 红）。
 5. **Controller 门禁**：`bindingMethodNames` 拆成两档 —— 禁自动合并入口（`ShouldBind`/`Bind`），允许原生显式绑定与 `ParseForm`/`BindForm`/`ParseJSON`/`Query`；手工逐字段读表单改为按文件棘轮（4 个存量文件，只减不增）。台账 `project_page.go` max 50 → 46、超限函数 11 → 10。
-6. **content contract 传递依赖**：富文本白名单清洗下沉到中立 `pkg/richtext`（`SanitizeRichHTML`/`RichTextHTML`/`StripRichTags`/`HasRichMarkup`/`MaxRichLen`/`IsSafeRichHref`/`StripHrefNoise`）；`content/dto` 不再 import `builder/core`，`core` 保留同名转发。`check-contract-deps.sh` 转绿（28 契约包 / 0 豁免）；新增 `internal/architecture/contract_transitive_deps_test.go` 用 `go list -deps` 守传递闭包。
+6. **content contract 传递依赖**：富文本白名单清洗下沉到中立 `pkg/richtext`（`SanitizeRichHTML`/`RichTextHTML`/`StripRichTags`/`HasRichMarkup`/`MaxRichLen`/`IsSafeRichHref`/`StripHrefNoise`）；`content/dto` 不再 import `builder/core`，`core` 保留同名转发。`check-contract-deps.sh` 转绿（28 契约包 / 0 豁免）；新增 `public/test/architecture/contract_transitive_deps_test.go` 用 `go list -deps` 守传递闭包。
 7. **文章写出口**：`ArticleUpdate` 改走共享 HTML 出口（`view.SuccessMessage` / `FailMessage`），路由声明 `HTMLFragment`；`article_edit.html` 更新表单改用 `data-write` 写基座。`ArticleImportCreate` 去掉 302，渲染带 `data-write-nav` 的结论片段（新增 `admin/content/article_imported.html`），导入表单改为 HTMX 提交。
 
 ### 门禁与验证
 
-- `go build ./...` 通过；`internal/architecture`（Controller、pkg 依赖/结构、公共 UI 属主、契约传递依赖）全绿。
+- `go build ./...` 通过；`public/test/architecture`（Controller、pkg 依赖/结构、公共 UI 属主、契约传递依赖）全绿。
 - `pkg/binding`、`pkg/richtext`、`cmd/write-contracts`、content/page/purchase/comment/product/navigation(dto)/ai(http)/order/contenttemplate/project 定向单测全绿。
 - `scripts/check-contract-deps.sh` 绿；`scripts/check-write-attributes.sh` 绿（180 模板）；`scripts/tests/test_write_fields_scan.py` 25/25 绿。
 - `check-write-fields.sh` 从基线 53 项降到 43 项（去重后 29 条，含 23 条 JSON 对象提供器边界）。
@@ -616,7 +616,7 @@ pkg/database/{retention,partition}
    - `scripts/write-object-keys.js` 从「只调用 provider」改为「provider → 真实 METHOD+PATH → 契约 DTO 字段表 → 产出键 ⊆ DTO」；空契约、缺 DTO、字段表为空、键不匹配、端点未登记一律失败；通过结果写成台账 `write-object-providers.json`。
    - 字段扫描读取台账，仅当台账 DTO 与当前契约一致才摘出该端点；台账含已退役端点直接失败。
    - 扫描根从单一 `internal/templates` 扩到 `internal/templates` + `pkg/view/ui/templates` + `pkg/builder`；`testdata/` 夹具排除；空契约/缺根显式失败。
-   - 新增 `internal/architecture` 的 `TestWriteContractArtifactPresent`（生成物存在且非空）、`TestWriteContractDTOsExist`（契约 DTO 必须仍在源码里）、扫描根存在与最小输入量（公共 UI、工具模板）。
+   - 新增 `public/test/architecture` 的 `TestWriteContractArtifactPresent`（生成物存在且非空）、`TestWriteContractDTOsExist`（契约 DTO 必须仍在源码里）、扫描根存在与最小输入量（公共 UI、工具模板）。
    - `check-write-attributes.sh` / `check-htmx-api.sh` / `check-write-combinations.sh` 同步扫三个属主；`scripts/tests/run_write_object_providers.sh` 纳入 `check-all.sh`。
    - `scripts/tests/test_write_attributes_scan.py` 的夹具仍指向已搬迁的 `internal/templates/static/js/ui/write-base.js`（HEAD 即红），改指 `pkg/view/ui/assets/js/ui/write-base.js`，并为新扫描根补目录镜像。
    - `page-authz` 门禁的声明判据只认 `mw.DeclareRoute`，真实注册处的 `reg.DeclareRoute` / `rg.Registry().DeclareRoute` 被判成缺失；已放宽接收者并补 3 条自检。
@@ -632,7 +632,7 @@ pkg/database/{retention,partition}
 ### 验证
 
 - `go build ./...`、`go vet ./...` 通过。
-- `go test ./internal/architecture/` 全绿（含新增契约新鲜度、扫描根、Controller 语句上限/编排）。
+- `go test ./public/test/architecture/` 全绿（含新增契约新鲜度、扫描根、Controller 语句上限/编排）。
 - 定向单测全绿：`internal/routers`、`internal/module/{media,plugin}/{service}`、comment/purchase/page/product/navigation/inventory/inventory/order/content、`pkg/binding`、`cmd/write-contracts`。
 - 真实 PG（`artex_mig2`，生产迁移库）：`go run ./cmd/write-contracts` 重新生成契约、`-check` 通过；`check-permission-gaps.sh`（393 路由 / 363 权限点 / 33 豁免双向同源）、`check-page-get-authz.sh`（56 绑定行 / 76 鉴权三元组，19 条自检）全绿；路由快照 629 条一致。
 - 门禁：`check-write-fields.sh`（328 个提交入口已对账；剩余 5 项见下）、`check-write-attributes.sh`（255 模板）、`check-htmx-api.sh`（255 模板 / 84 JS）、`check-write-combinations.sh`（255 模板）、`check-js-controls.sh`（189 用例）、`check-contract-deps.sh`、`check-i18n-*`、`check-no-internal-error-leak.sh`、`check-service-db-boundary.sh`、`check-static-scans.sh`、`check-template-presentation.sh`、`check-shell-migration.sh` 全绿。
@@ -716,7 +716,7 @@ pkg/database/{retention,partition}
 
 ### 验证
 
-- `go build ./...`、`go vet ./...` 通过；`internal/architecture`、`internal/routers`、
+- `go build ./...`、`go vet ./...` 通过；`public/test/architecture`、`internal/routers`、
   `pkg/middleware`、`pkg/binding`、`cmd/write-contracts` 全绿。
 - 受影响模块单测全绿（comment/purchase/page/product/navigation/inventory/media/build/plugin/admin/project/ai）。
 - 真实 PG（`artex_mig2`）：契约重新生成且 `-check` 一致；权限缺口 393 路由 / 363 权限点 / 33 豁免；
@@ -771,7 +771,7 @@ pkg/database/{retention,partition}
 
 **6. 外部复核订正（2026-11-15，只读核查 + 一处修复）**
 
-- 复核结论：四项主体成立、可复现。复核实跑：`go build ./...`、`go vet ./...`、`go test ./pkg/binding/`、`go run ./cmd/write-contracts -check`、字段门禁（306 入口 / 362 契约）、扫描器 43 项单测、`go test ./public/migrations/`（117.8s）、`go test ./internal/architecture/`（15.2s）、`public/test/user/feature -run TestSitePreferenceRejectsJSONAndKeepsStoredValues` 全部通过。
+- 复核结论：四项主体成立、可复现。复核实跑：`go build ./...`、`go vet ./...`、`go test ./pkg/binding/`、`go run ./cmd/write-contracts -check`、字段门禁（306 入口 / 362 契约）、扫描器 43 项单测、`go test ./public/migrations/`（117.8s）、`go test ./public/test/architecture/`（15.2s）、`public/test/user/feature -run TestSitePreferenceRejectsJSONAndKeepsStoredValues` 全部通过。
 - 一处真实残留（已修）：workbench 三个处理器丢弃绑定错误 —— [canvas_bridge_handle.go](internal/module/workbench/inbound/http/canvas_bridge_handle.go) 的 `PreviewDraft`、[inspector_handle.go](internal/module/workbench/inbound/http/inspector_handle.go) 的 `OutlineTree`、[canvas_preview_handle.go](internal/module/workbench/inbound/http/canvas_preview_handle.go) 的 `TemplatePreviewDraft`。此前 `POST /workbench/outline` 带 `application/json` 返回 200 与空树；三处现在绑定失败即 `response.ParamError(c)` 返回，[form_encoding_guard_test.go](internal/module/workbench/inbound/http/form_encoding_guard_test.go) 对三条路径钉住 400。
 - 一处表述过度：「原生 FormPost 端点仍拒绝 multipart」只在模板与契约声明意义上成立。gin v1.12.0 的 `formPostBinding.Bind` 只做 `req.ParseForm()` + `mapForm(req.PostForm)`；实测 multipart、JSON、无 Content-Type 三种请求都返回 `nil` error 与零值。这些端点运行时未强制编码，靠 service 必填校验兜底；契约也没有给它们声明 `encodings`，两处口径一致。
 - 数字订正：生产 `binding.ParseForm` 40 处（含测试 53 处）；GET 读端点 8 处调用点；迁移文件 699 个。
@@ -841,7 +841,7 @@ pkg/database/{retention,partition}
 
 | 用例 | 结果 |
 |---|---|
-| `internal/viewtest` 共享表单/抽屉（三视口 + 并发语言隔离） | 5/5 |
+| `public/test/viewtest` 共享表单/抽屉（三视口 + 并发语言隔离） | 5/5 |
 | `public/test/product` 商品创建→编辑→删除（三视口 × 四输入 12 格 + 4 项链路） | 16/16 |
 | `internal/module/workbench` 编辑器四宿主 × 三视口 | 12 格 |
 | `internal/module/project` 工作台面板闭环 / 主题落库 | 6/6、2/2 |
@@ -964,8 +964,8 @@ pkg/database/{retention,partition}
 
 **4. 门禁与判定同步**
 
-- [controller_objects_test.go](internal/architecture/controller_objects_test.go)：对象查询管线判据改认 `binding.ParseQuery`，调用白名单加 `response.ParamError`（`requestJSON:` 形态不再需要）。
-- [controller_orchestration_test.go](internal/architecture/controller_orchestration_test.go)：mail 台账 10 条 / 峰值 20 降为 8 / 19（`ParseQuery` 的「绑定 + 失败 return」被 `bindPreamble` 整体排除，每个 handler 少一条业务语句）。
+- [controller_objects_test.go](public/test/architecture/controller_objects_test.go)：对象查询管线判据改认 `binding.ParseQuery`，调用白名单加 `response.ParamError`（`requestJSON:` 形态不再需要）。
+- [controller_orchestration_test.go](public/test/architecture/controller_orchestration_test.go)：mail 台账 10 条 / 峰值 20 降为 8 / 19（`ParseQuery` 的「绑定 + 失败 return」被 `bindPreamble` 整体排除，每个 handler 少一条业务语句）。
 - 删除 [pkg/binding/json_limited_test.go](pkg/binding/json_limited_test.go)；[pkg/binding/binding_test.go](pkg/binding/binding_test.go) 重写为三个入口 + `Field` + `ListQuery` 回填（173 → 145；`Field` 相关用例已于第二十四轮删除）。
 - `pkg/casbin/multi_instance_test.go` 注释不再指向此前已删除的那份 RLS 角色切换文档（去掉路径引用），`docs_pointer_test.go` 死指针预算回到 0。
 
@@ -980,14 +980,31 @@ pkg/database/{retention,partition}
 
 **6. 实测**
 
-- `git diff --shortstat`：61 个文件 **+621 / −974**（净 −353），生产代码删 353 行；新增包装 0、新增门禁 0。
-- `go build ./...` 与 `go vet ./...` 干净；`go test ./pkg/binding/`、`go test ./internal/architecture/`（36s）、涉及模块的 `go test ./internal/module/...` 全绿。
+- 净行数按 `69fd5aa7..9ef15e2d` 分类：impl 51 文件 +496/−559（净 −63）、tests 9 文件 +123/−479（净 −356）、docs 3 文件 +49/−4（净 +45），合计 **−374**；新增包装 0、新增门禁 0。
+- `go build ./...` 与 `go vet ./...` 干净；`go test ./pkg/binding/`、`go test ./public/test/architecture/`（36s）、涉及模块的 `go test ./internal/module/...` 全绿。
 - `go run ./cmd/write-contracts -check` 通过；`scripts/write-fields-scan.py` 报「306 个提交入口，契约 362 条」。
 
 **未做（如实登记）**
 
-- 440 条 seed 的历史检查与重放仍在：存量库升级需要它们，收敛成「基线 + 增量」的单一路径要先解决「存量库如何判定水位」，见 迁移整合前的基线设计文档（已随迁移链删除，见 git 历史）。
+- ~~440 条 seed 的历史检查与重放仍在~~ —— 第二十五轮已随迁移链一并删除，结构与系统数据改由 `public/schema` 承担。
 - ~~`binding.Field` 的三个调用方（登录后跳转、找回密码）仍靠 `c.PostForm` 读单个隐藏字段~~ —— 这一条登记有误，已于第二十四轮更正：真实消费者是 AI 的三个 GET（模型列表 / 会话详情 / 会话事件）经 [internal/module/ai/inbound/http/ai_handle.go](internal/module/ai/inbound/http/ai_handle.go) 的 `bindID` 读单个 id 参数；三个 handler 都不收表单体，`PostForm` 回退永远读不到值。改为 `aidto.IDQuery` + `binding.ParseQuery` 后 `Field` 已删除。
+
+### 第二十六轮：目录归拢与薄接线（2026-11-15）
+
+用户决定（m06871 / m06931）：可以整理目录，但不能把顶层目录当“工具包”一股脑合并；测试目录归拢到测试区、分区薄接线并入启动装配、siteurl/builder/pipeline 保留职责；事件/队列只整理已有能力，不建空目录。批准第 1 档：迁两个测试目录 + partition 并入 public/schema，pipeline 只清理零调用转发。
+
+**落地**
+- `internal/architecture` → `public/test/architecture`（迁入 28 个文件、58 个 Test；与既有 3 个文件合并后共 31 个文件、62 个 Test）；`text_domain_test.go` 的 `../templates`、`../module` 相对路径改为按仓库根定位。架构门禁路径由 `check-static-scans.sh` 继续覆盖。
+- `internal/viewtest` → `public/test/viewtest`（10 个文件、25 个 Test）；Jet 模板路径改为 `../../../internal/templates`，浏览器 cjs 同步；新增 `scripts/check-viewtest.sh` 并登记 `check-all.sh` 的 plain 组。
+- 删除 `internal/partition` 的包装（`partition.go`、`reconcile_rls.go`），内核仍在 `pkg/database/partition`；新增 `public/schema/partition.go` 提供 `PartitionOptions()`（3 张分区表与 RLS SQL，SQL 不参与 `schema.Digest`），`cmd/main.go` 与 `internal/routers/assembly_publish.go` 改调 `pkgpartition.EnsureAhead` / `StartScheduler`，测试同步改用 `schema.PartitionOptions()`。
+- `internal/pipeline` 删除零调用别名 `CompileFn` / `DependencyProvider`；`SPEC.md` 改写为“发布适配层”，明确状态机、产物存储、发布存储与路径规则在 `pkg/publish`，本包只注入 `DefaultCompile` / `PageGuardFunc` / `NewPublisher`。
+- 文档同步：AGENTS.md 平台表与门禁路径、architecture.md、TASK-html-feedback.md、`internal/module/presentation/SPEC.md`、`public/test/CLAUDE.md`；scripts/README.md 补 `check-static-scans.sh` 与 `check-viewtest.sh`。
+
+**验证**
+- `go build ./...` 干净；`go test ./internal/pipeline/` ok。
+- `go test ./public/test/architecture/` ok 40.390s（含文档指针检查）；`go test ./public/test/viewtest/` ok 0.369s。
+- `GOWP_REQUIRE_PG=1 go test ./public/test/partition/... ./public/test/rls/...`：unit 16.426s、rls 90.738s、nonsuperuser 5.049s，EXIT=0。
+- `bash scripts/check-all.sh`：plain 组 34 个脚本全过，EXIT=0（含新增 `check-viewtest.sh`）。
 
 ### 第二十五轮：迁移整合为 public/schema 一表一文件（2026-11-15）
 
@@ -997,7 +1014,7 @@ pkg/database/{retention,partition}
 - 新增 `cmd/schema-split`：从迁移终态库（`wp_schema_src`）逐表导出 DDL 与数据，生成 `public/schema/base.sql`、`public/schema/tables/<表>.sql`、`public/schema/order.txt`。表文件按 `-- @phase pre|ddl|constr|idx|fk|comment|data` 分段，复现 pg_dump 依赖顺序；`ALTER INDEX ... ATTACH PARTITION` 归 idx，所有 `COMMENT ON` 最后执行，否则分区子表会在 ATTACH 时自动补主键、索引注释指向尚未创建的索引。
 - `public/schema/schema.go`：`Apply` 在空库一次事务内按 pre → 全部表 ddl → constr → idx → fk → comment → 按 order.txt 装系统数据，再执行 `defaults.sql` 补齐工程级默认内容模板，最后写 `sys_baseline(version, manifest_sha256, note)`。系统数据装载前 `SET LOCAL session_replication_role = replica`，否则 `sys_menus` 触发器会抢显式 id 的主键并空推序列。已有同摘要水位时仍执行 `defaults.sql`（新工程要补模板）；有表无水位或摘要不符**拒绝重放**，错误提示走 `scripts/schema-adopt.sh`。
 - `order.txt` 必须覆盖所有有 data 段的表；切分器重跑时复用已有 order.txt，不再从已删除的基线产物推导。`sys_menus` 必须排在 `sys_menu_permission` 之前。
-- 生产接线：`config/register.go` 的 migrations 组件改调 `schema.Apply`；`cmd/main.go` 的 `-migrate-only` 只保留分区维护；`internal/routers/assembly.go` 与 `public/test/support/{pgtest.go,component_config.go}` 删除 `RunSeeds`；`pkg/sqlsplit` 承接插件 SQL 切分；`internal/partition` 自带 `reconcile_rls.sql`。
+- 生产接线：`config/register.go` 的 migrations 组件改调 `schema.Apply`；`cmd/main.go` 的 `-migrate-only` 只保留分区维护；`internal/routers/assembly.go` 与 `public/test/support/{pgtest.go,component_config.go}` 删除 `RunSeeds`；`pkg/sqlsplit` 承接插件 SQL 切分；`public/schema` 自带 `partition_rls.sql`。
 
 **等价性实测（wp_schema_build vs wp_schema_src）**
 - 表清单完全一致（116 个表文件：113 张普通表 + 3 个分区父表，含 `sys_baseline` 与 3 张 `_default`）；逐表 `count(*)` 与行级 md5 聚合一致；唯一序列差异是源库 `sys_baseline_id_seq` 已被接入写过。
@@ -1056,13 +1073,13 @@ pkg/database/{retention,partition}
 
 #### 4. 门禁与登记
 
-- [internal/architecture/controller_orchestration_test.go](internal/architecture/controller_orchestration_test.go)：台账减条——admin_handle 超限函数 5→3（AdminLogin=7 / AdminLogout=13 / AdminProfile=7）、admin_page 15→14、pages_handle 5→4（buildPagesData=14 / CreatePage=9 / HistoryPanel=9 / HistoryRestore=17）。
+- [public/test/architecture/controller_orchestration_test.go](public/test/architecture/controller_orchestration_test.go)：台账减条——admin_handle 超限函数 5→3（AdminLogin=7 / AdminLogout=13 / AdminProfile=7）、admin_page 15→14、pages_handle 5→4（buildPagesData=14 / CreatePage=9 / HistoryPanel=9 / HistoryRestore=17）。
 - 第二十三轮章节第 970 行指向已删文档的路径改写为不带路径的表述，死指针预算回到 0。
 - 本轮未提交改动（不含三个新文件、不含 testdata 等既有删除）：+596 / −416 tracked。
 
 **未做**：440 条 seed 的跳过只在接入过基线的库生效，未接入的旧库升级仍走全量；cmd/builder 的内部 JSON 回调与四个上传端点是显式例外，不属「未收口」；浏览器矩阵本轮未重跑（未改模板、JS、样式）。
 
-**验证**：go build ./... 绿；go test ./internal/architecture/ 整包 ok 42.8s；bash scripts/check-all.sh plain 33 个脚本全过；go test ./pkg/binding/ ./cmd/... ./public/migrations/ -run TestBaseline 绿；18 个受影响 feature 包（admin / ai / block / build / content / contenttemplate / inventory / mail / media / navigation / order / page / presentation / product / project / purchase / sysconfig / webhook）以 GOWP_REQUIRE_PG=1 -p 4 全 ok（product 290s、order 187s、inventory 151s 为最慢三个）；bash scripts/baseline-generate.sh --check 输出 prefix_ok=1 … extras=0。
+**验证**：go build ./... 绿；go test ./public/test/architecture/ 整包 ok 42.8s；bash scripts/check-all.sh plain 33 个脚本全过；go test ./pkg/binding/ ./cmd/... ./public/migrations/ -run TestBaseline 绿；18 个受影响 feature 包（admin / ai / block / build / content / contenttemplate / inventory / mail / media / navigation / order / page / presentation / product / project / purchase / sysconfig / webhook）以 GOWP_REQUIRE_PG=1 -p 4 全 ok（product 290s、order 187s、inventory 151s 为最慢三个）；bash scripts/baseline-generate.sh --check 输出 prefix_ok=1 … extras=0。
 
 **提交**：9b7e6158（binding）、08a381d4（baseline）、605bdc2e（docs），已推送 origin/main（9ef15e2d..605bdc2e）。
 
@@ -1302,7 +1319,7 @@ pkg/database/{retention,partition}
 
 - 前五组按各自能力面改完代码、统一更新测试后集中定向验收，失败下探具体用例；不“改一处就整包 PG”。相关 unit/Node/扫描器反例先跑，再跑确受影响的迁移 PG 用例，最后浏览器。
 - [插件 feature](public/test/plugin/feature/plugin_json_write_test.go) 的 HTML 契约/本地化/JSON 服务链，与 [页面翻译 feature](public/test/page/feature/page_translations_test.go) 的实际提交/保存/非法输入/清空语义需按新契约收口。第八轮称改前已红仅说明归因，不能豁免本次受影响行为；区分过期 fixture 与真实缺陷，不删业务断言求绿，也不再 stash 用户工作区复现。
-- 复用 [共享表单浏览器](internal/viewtest/admin_html_browser_test.go)、[商品浏览器](public/test/product/feature/product_html_browser_test.go)、[编辑器宿主浏览器](internal/module/workbench/inbound/http/editor_host_browser_test.go)，在本地测试应用记录 1440/768/375 与鼠标/滚轮/触摸/键盘矩阵。逐格记录适用交互与结果；不适用说明理由，未执行不得写通过。
+- 复用 [共享表单浏览器](public/test/viewtest/admin_html_browser_test.go)、[商品浏览器](public/test/product/feature/product_html_browser_test.go)、[编辑器宿主浏览器](internal/module/workbench/inbound/http/editor_host_browser_test.go)，在本地测试应用记录 1440/768/375 与鼠标/滚轮/触摸/键盘矩阵。逐格记录适用交互与结果；不适用说明理由，未执行不得写通过。
 - 表单/抽屉覆盖成功、失败、早期 CSRF/鉴权拒绝、并发/迟到、非法响应与输入/文件/焦点保留；商品覆盖创建到真实编辑入口、翻译拒绝行定位；编辑器覆盖选择/画布树联动/属性、撤销重做、预览、保存冲突、发布失败和未保存输入。浏览器夹具通过与真实装配登录授权链验证分开记录，不能互相代替。
 - 实施后的 `go build ./...`、相关定向 unit/feature/Node、契约新鲜度、字段/权限/取词等本次相关门禁须通过。命令前确认副作用和测试配置；数据库仅用真实配置确认的隔离测试库与生产迁移支持。
 - **不默认运行** `go test ./...`、全仓 `go vet ./...`、`scripts/check-all.sh` 或 PG feature 全量；这些只在用户另行明确要求时执行。未执行的整仓验收不是恢复旧实现、增加白名单或隐瞒相关红项的理由。
@@ -1353,7 +1370,7 @@ pkg/database/{retention,partition}
 
 ### 6. 定向验收
 
-- `go build ./...`、`go vet ./...`、`internal/architecture`、`pkg/...` 全绿。
+- `go build ./...`、`go vet ./...`、`public/test/architecture`、`pkg/...` 全绿。
 - 定向 PG feature：plugin、page、navigation、admin、mail 全部通过。
 - 门禁：字段（296 入口，剩 2 项动态槽位循环名）、对象提供器、写属性/htmx/写组合、JS 控件、契约依赖、权限缺口、页面鉴权、i18n seed 全部通过。
 - 浏览器三视口/四输入矩阵未执行。
@@ -1457,7 +1474,7 @@ pkg/database/{retention,partition}
 ### 6. 定向验收（已执行）
 
 - `go build ./...` 干净；`go vet` 覆盖所有改动包。
-- `internal/architecture` 全绿（其中控制器语句台账按实际下降同步下调：content 12→11，
+- `public/test/architecture` 全绿（其中控制器语句台账按实际下降同步下调：content 12→11，
   contenttemplate 31→19/2 个超限，ai 28→27；mail 路由抽出 `startMailBackgroundTasks` 降到 60 行内）。
 - 相关 unit 全绿：content/order/ai/project/mail/plugin/media/membership/routers/pkg/cmd、`internal/templates`。
 - 定向 PG feature：`public/test/feature`（MailSplit 全组）、`contenttemplate/feature`、
@@ -1536,7 +1553,7 @@ pkg/database/{retention,partition}
 ### 4. 范围与验收
 
 - 139 条 `unknown` 已按真实消费者分类（见下节），只处理与本次链路重叠的部分。
-- 定向验收：`go build ./...`、`go vet ./...`、`internal/architecture`、`internal/templates`、
+- 定向验收：`go build ./...`、`go vet ./...`、`public/test/architecture`、`internal/templates`、
   `public/migrations`、`routers`、`pkg/middleware`、`cmd` 全绿；字段/对象/写属性/htmx/写组合/
   控制器词条/页面鉴权/权限缺口全绿；扫描器回归 78 条（直接执行与 discovery 均一致）。
 - 受影响 PG feature：mail split、plugin 写契约、workbench、navigation 译文，全部通过。
@@ -1689,7 +1706,7 @@ pkg/database/{retention,partition}
 ### 本轮验证
 
 - `go build ./...` 通过。
-- 定向：`./cmd/`、`project/...`、`order/...`、`admin/...`、`ai/...`、`routers/`、`internal/architecture`
+- 定向：`./cmd/`、`project/...`、`order/...`、`admin/...`、`ai/...`、`routers/`、`public/test/architecture`
   全绿；`public/test/ai/feature`、`public/test/admin/feature` 全绿。
 - 门禁：字段静态对账通过（300 提交入口 / 362 条契约）；权限脚本 3/3 绿（隔离库）。
 - 未运行全仓 `go test ./...`、`check-all.sh` 与 PG 全量；未提交、未 push。
@@ -1756,7 +1773,7 @@ pkg/database/{retention,partition}
 ### 本轮验证
 
 - `go build ./...` 通过。
-- 定向：`internal/module/{project,page,workbench,admin}`、`internal/routers`、`internal/architecture`、
+- 定向：`internal/module/{project,page,workbench,admin}`、`internal/routers`、`public/test/architecture`、
   `public/test/{ai,admin,workbench}/feature` 全绿。
 - 门禁：字段静态对账通过（306 个提交入口 / 362 条契约）；写属性 255 模板通过；
   htmx 属性（255 模板 / 85 JS）通过；i18n seed 门禁 0 未 seed（含新增迁移 756）。

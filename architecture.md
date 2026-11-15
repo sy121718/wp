@@ -73,4 +73,4 @@ cmd/                    进程入口
 - 待核对：前端模板统一封装的完成度，见 [internal/templates/CLAUDE.md](internal/templates/CLAUDE.md) 的「待实施」清单。
 - 已确认的现状：`internal/templates` 里同时有模板资产与渲染基础设施 Go（引擎适配、模板函数、嵌入）；`pkg/view` 只做接线与失败出口。
 
-判据见 [AGENTS.md](AGENTS.md)；架构门禁在 `internal/architecture/`。
+判据见 [AGENTS.md](AGENTS.md)；架构门禁在 `public/test/architecture/`。

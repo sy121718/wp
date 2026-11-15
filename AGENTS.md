@@ -91,9 +91,8 @@ bash scripts/check-all.sh    # 门禁全集（--with-db 含需要库的那组）
 | view（`pkg/view`） | 视图结果、成功/失败出口、页面/局部渲染与公共上下文注入、Jet 失败出口 | 业务语义、数据派生、Go 拼界面 HTML |
 | text | 按请求语言注入 `t`/`tf`/`tn` 与语言上下文（**共享渲染基础设施**）、`FactOf` 判定 | 业务语义、读模型、替业务拼成品句 |
 | builder/** | 构建期编译与组件 | 控制面 DB 写、访客请求处理 |
-| pipeline | 发布内核（编译→产物→激活） | 反向 import build/artifact 实现 |
-| permission middleware mcp seo shell siteurl uispec backref retention partition | 各自横切能力 | 业务规则、跨模块写 |
-| architecture | 门禁断言 | 被生产代码 import |
+| pipeline | 发布适配层：把应用编译与守卫解析注入 `pkg/publish` | 发布内核实现、反向 import build/artifact |
+| permission middleware mcp seo shell siteurl uispec backref retention | 各自横切能力 | 业务规则、跨模块写 |
 | templates/** | **模板资产 = 前端层**（HTML/Jet 模板、静态资源）；**代码 = 共享渲染基础设施**（Jet 引擎适配、模板函数、嵌入，现状即在本目录，见 [internal/templates/CLAUDE.md](internal/templates/CLAUDE.md)） | 业务规则、业务计算、controller/service 语义；不放业务 Go |
 | 模板渲染调用 | 页面、局部界面与错误响应；Controller 选真实模板并传业务事实 | Go 拼标签、属性、界面 URL 或浏览器 UI 配置 |
 
@@ -117,7 +116,7 @@ bash scripts/check-all.sh    # 门禁全集（--with-db 含需要库的那组）
 | public/static/** | JS/CSS（HTMX 基座、`write-base.js`） | 业务计算 |
 | cmd/** | 进程入口、装配、结构与系统数据装载命令 | 业务逻辑 |
 | public/schema | **结构唯一来源**：一表一文件（建表 / 约束 / 索引 / 外键 / 系统数据分段）+ base.sql 全局对象 + defaults.sql 启动期补齐 | Go 业务逻辑、逐版本迁移链 |
-| public/test/** | feature 链路测试 | 被生产代码 import |
+| public/test/** | feature 链路测试与架构门禁（`architecture/` 纯扫描、`viewtest/` 真实渲染集成） | 被生产代码 import |
 
 - **后端**做数据库分页筛选 / count / limit / offset，交总数、当前页、每页条数等事实；**前端**做分页按钮与链接窗口、空态、徽标、显示格式。页码窗口与链接（`pagination.Window`/`Derive`/`PageBase`/`QueryURL`）与金额显示（`money.*`）由模板调用；`pagination.ClampPage`/`Slice` 属后端分页工具，归 service/model。
 
@@ -156,7 +155,7 @@ bash scripts/check-all.sh    # 门禁全集（--with-db 含需要库的那组）
 
 ## 数据库
 
-- 表只被一个模块读写；跨模块走 `contract`。model 不声明列型（`internal/architecture/model_gorm_tag_test.go`）。
+- 表只被一个模块读写；跨模块走 `contract`。model 不声明列型（`public/test/architecture/model_gorm_tag_test.go`）。
   - 已批准例外只有两处，都是商品模块的**只读**读模型，只服务各自的列表页，不写、不改归属，也不给其他模块开同类口子：
     - 公开商品目录（`internal/module/product/model/product_public_catalog.go`）只读关联 `presentation_instances` / `presentation_publications` 两表，用于在一条语句内收敛「有有效发布的商品」候选并分页。
     - 发布记录页（`internal/module/product/model/publish_record_page.go`）只读关联 `presentation_instances` / `presentation_publications` / `presentation_artifacts` 三表，用于在一条语句内完成「商品级筛选 + 精确 total + 越界夹页 + 本页多实例多语言明细」，让 total 与本页行出自同一份语句快照。
@@ -217,7 +216,7 @@ bash scripts/check-all.sh    # 门禁全集（--with-db 含需要库的那组）
 
 **判据先于实现**：新边界先落一条判据让现状变红，再逐条修到绿；台账类判据双向登记（新增与清理未同步都判失败）。判据要指向修复方向，不能只报「违规」。门禁绿不等于没问题——启发式与台账式判据结论前要回读语义。
 
-- `internal/architecture/`：`controller_shape_test.go`、`controller_objects_test.go`、`controller_orchestration_test.go`、`text_domain_test.go`、`html_boundary_test.go`、`template_logic_test.go`、`module_boundary_test.go`、`raw_sql_boundary_test.go`、`json_import_boundary_test.go`、`model_gorm_tag_test.go`、`dto_shape_test.go`、`docs_pointer_test.go`。
+- `public/test/architecture/`：`controller_shape_test.go`、`controller_objects_test.go`、`controller_orchestration_test.go`、`text_domain_test.go`、`html_boundary_test.go`、`template_logic_test.go`、`module_boundary_test.go`、`raw_sql_boundary_test.go`、`json_import_boundary_test.go`、`model_gorm_tag_test.go`、`dto_shape_test.go`、`docs_pointer_test.go`。
 - `scripts/`：`check-all.sh`、`check-no-internal-error-leak.sh`、`check-service-db-boundary.sh`、`check-contract-deps.sh`、`check-controller-i18n-literals.sh`、`check-permission-gaps.sh`、`check-i18n-*`、`check-empty-state-table-head.sh`、`check-shell-migration.sh`、`check-write-attributes.sh`、`check-htmx-api.sh`。
 
 ## 指针
