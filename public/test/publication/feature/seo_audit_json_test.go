@@ -486,7 +486,7 @@ func TestSEOAuditAcceptsFormTransportsAndReturnsFragment(t *testing.T) {
 }
 
 // TestSEOAuditJSONBodyIsRejected 钉子：收窄成标准表单后，JSON 提交必须 400 而不是被静默接受。
-// 页面表单发的是 formdata；JSON 是历史兼容入口，随 binding.JSON 一起退役。
+// 页面表单发的是 formdata；JSON 体在这里被显式拒绝。
 func TestSEOAuditJSONBodyIsRejected(t *testing.T) {
 	chain := newSEOAuditChain(t)
 
@@ -503,7 +503,7 @@ func TestSEOAuditJSONBodyIsRejected(t *testing.T) {
 }
 
 // TestSEOAuditProjectComesFromFormOnly 证明工程只从表单 body 取：
-// query 不再补 body（binding.Form 的旧行为已随收窄消失）。
+// query 不再补 body（表单入口只读 body，不合并查询串）。
 func TestSEOAuditProjectComesFromFormOnly(t *testing.T) {
 	chain := newSEOAuditChain(t)
 

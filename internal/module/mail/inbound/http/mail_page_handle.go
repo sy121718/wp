@@ -83,7 +83,11 @@ type nodeTypeOption struct {
 
 func (h *mailPageHandle) MailAutomationPage(c *gin.Context) {
 	ctx := c.Request.Context()
-	pq, _ := binding.Query[maildto.PageQuery](c)
+	pq, err := binding.ParseQuery[maildto.PageQuery](c)
+	if err != nil {
+		response.ParamError(c)
+		return
+	}
 	page := mailPageNumber(pq.Page)
 	automations, err := h.mail.ListAutomations(ctx, &maildto.AutomationListReq{Page: page, PageSize: mailAutomationPageSize})
 	view := &AutomationListPageResp{
@@ -256,7 +260,11 @@ const mailAutomationRunsPageSize = 50
 func (h *mailPageHandle) MailAutomationRunsPage(c *gin.Context) {
 	ctx := c.Request.Context()
 	tr := mailTranslate(c)
-	rq, _ := binding.Query[maildto.AutomationRunQuery](c)
+	rq, err := binding.ParseQuery[maildto.AutomationRunQuery](c)
+	if err != nil {
+		response.ParamError(c)
+		return
+	}
 	page := mailPageNumber(rq.Page)
 	automationID, runStatus := rq.AutomationID, rq.RunStatus
 
@@ -323,7 +331,11 @@ func mailCampaignsClampPage(page int, total int64) int {
 
 func (h *mailPageHandle) MailCampaignsPage(c *gin.Context) {
 	ctx := c.Request.Context()
-	cq, _ := binding.Query[maildto.PageQuery](c)
+	cq, err := binding.ParseQuery[maildto.PageQuery](c)
+	if err != nil {
+		response.ParamError(c)
+		return
+	}
 	page := mailPageNumber(cq.Page)
 
 	campaigns, err := h.mail.ListCampaigns(ctx, &maildto.CampaignListReq{Page: page, PageSize: mailCampaignsPageSize})
@@ -427,7 +439,11 @@ func (h *mailPageHandle) MailCampaignPage(c *gin.Context) {
 		mailJump(c, false, mailCampaignIDRequiredMsg, mailCampaignsPath, mailCampaignsBackMsg)
 		return
 	}
-	crq, _ := binding.Query[maildto.PageQuery](c)
+	crq, err := binding.ParseQuery[maildto.PageQuery](c)
+	if err != nil {
+		response.ParamError(c)
+		return
+	}
 	page := mailPageNumber(crq.Page)
 	report, err := h.mail.CampaignReport(ctx, id, page, mailCampaignsPageSize)
 	if err != nil {
@@ -458,7 +474,11 @@ func (h *mailPageHandle) MailCampaignPage(c *gin.Context) {
 }
 
 func (h *mailPageHandle) MailCampaignReportJSON(c *gin.Context) {
-	cq, _ := binding.Query[maildto.CampaignReportQuery](c)
+	cq, err := binding.ParseQuery[maildto.CampaignReportQuery](c)
+	if err != nil {
+		response.ParamError(c)
+		return
+	}
 	page := mailPageNumber(cq.Page)
 	report, err := h.mail.CampaignReport(c.Request.Context(), reqparams.ParseUint(cq.ID), page, mailCampaignsPageSize)
 	if err != nil {
@@ -508,7 +528,11 @@ func mailContactsClampPage(page int, total int64) int {
 
 func (h *mailPageHandle) MailContactsPage(c *gin.Context) {
 	ctx := c.Request.Context()
-	lq, _ := binding.Query[maildto.ContactListQuery](c)
+	lq, err := binding.ParseQuery[maildto.ContactListQuery](c)
+	if err != nil {
+		response.ParamError(c)
+		return
+	}
 	page := mailPageNumber(lq.Page)
 	keyword, status, tags := lq.Keyword, lq.Status, lq.Tags
 	tagList := splitTagInput(tags)
@@ -696,7 +720,11 @@ func NewMailPageHandle(mail mailcontract.MailService) *mailPageHandle {
 func (h *mailPageHandle) MailPage(c *gin.Context) {
 	ctx := c.Request.Context()
 
-	aq, _ := binding.Query[maildto.MailAccountQuery](c)
+	aq, err := binding.ParseQuery[maildto.MailAccountQuery](c)
+	if err != nil {
+		response.ParamError(c)
+		return
+	}
 	accountRows, accountTotal, accountPage, err := h.mail.ListAccountsPage(ctx, "", mailPageNumber(aq.AccountPage), mailListPageSize)
 	if err != nil {
 		pageview.RenderTemplate(c, AccountsPageTemplate, mailPageErrData(c, err))
@@ -848,7 +876,11 @@ func (h *mailPageHandle) MailTemplateDelete(c *gin.Context) {
 
 func (h *mailPageHandle) MailMarketingRedirect(c *gin.Context) {
 	// 查询参数经 DTO 绑定：键名与列表页链接一致，不手工逐个读查询串。
-	lq, _ := binding.Query[maildto.ContactListQuery](c)
+	lq, err := binding.ParseQuery[maildto.ContactListQuery](c)
+	if err != nil {
+		response.ParamError(c)
+		return
+	}
 	query := url.Values{}
 	for key, value := range map[string]string{
 		"keyword": lq.Keyword, "status": lq.Status, "page": lq.Page,
@@ -902,7 +934,11 @@ func (h *mailPageHandle) MailTemplatesBulkDelete(c *gin.Context) {
 
 func (h *mailPageHandle) MailTemplatesPage(c *gin.Context) {
 	ctx := c.Request.Context()
-	tq, _ := binding.Query[maildto.MailTemplateQuery](c)
+	tq, err := binding.ParseQuery[maildto.MailTemplateQuery](c)
+	if err != nil {
+		response.ParamError(c)
+		return
+	}
 	rows, total, page, err := h.mail.ListTemplatesPage(ctx, "", mailPageNumber(tq.Page), mailListPageSize)
 	if err != nil {
 
@@ -1152,7 +1188,11 @@ func (h *mailPageHandle) emailNodeDisabled(c *gin.Context) (bool, string) {
 }
 
 func (h *mailPageHandle) MailTemplateEditor(c *gin.Context) {
-	tq, _ := binding.Query[maildto.MailTemplateQuery](c)
+	tq, err := binding.ParseQuery[maildto.MailTemplateQuery](c)
+	if err != nil {
+		response.ParamError(c)
+		return
+	}
 	item := h.templateForEditor(c.Request.Context(),
 		strings.TrimSpace(tq.TemplateKey), strings.TrimSpace(tq.Locale))
 	metaJSON, _ := json.Marshal(map[string]any{

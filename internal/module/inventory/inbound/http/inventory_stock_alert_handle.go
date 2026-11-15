@@ -9,8 +9,9 @@ import (
 )
 
 func (h *Handle) StockAlert(c *gin.Context) {
-	query, ok := binding.Query[inventorydto.StockAlertQueryReq](c)
-	if !ok {
+	query, err := binding.ParseQuery[inventorydto.StockAlertQueryReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	res, err := h.svc.StockAlert(c.Request.Context(), query.ProjectID)

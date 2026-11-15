@@ -46,8 +46,9 @@ func (h *Handle) Upload(c *gin.Context) {
 }
 
 func (h *Handle) List(c *gin.Context) {
-	req, ok := binding.Query[mediadto.ListReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[mediadto.ListReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 
@@ -60,8 +61,9 @@ func (h *Handle) List(c *gin.Context) {
 }
 
 func (h *Handle) Detail(c *gin.Context) {
-	req, ok := binding.Query[mediadto.DetailReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[mediadto.DetailReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 

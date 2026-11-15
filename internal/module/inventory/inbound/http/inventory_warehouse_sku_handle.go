@@ -12,6 +12,7 @@ import (
 	"go_wp/pkg/binding"
 	"go_wp/pkg/pagination"
 	"go_wp/pkg/reqparams"
+	"go_wp/pkg/response"
 	pageview "go_wp/pkg/view"
 )
 
@@ -23,8 +24,9 @@ const (
 )
 
 func (h *inventoryPageHandle) InventoryStockSKUsPage(c *gin.Context) {
-	query, ok := binding.Query[inventorydto.StockSKUPageReq](c)
-	if !ok {
+	query, err := binding.ParseQuery[inventorydto.StockSKUPageReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	data, err := h.stockSKUsData(c, query)

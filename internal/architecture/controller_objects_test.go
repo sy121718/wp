@@ -50,7 +50,7 @@ func isObjectQueryPipeline(body *ast.BlockStmt) bool {
 				if call, ok := x.Rhs[0].(*ast.CallExpr); ok {
 					if generic, ok := call.Fun.(*ast.IndexExpr); ok {
 						if sel, ok := generic.X.(*ast.SelectorExpr); ok {
-							if pkg, ok := sel.X.(*ast.Ident); ok && pkg.Name == "binding" && sel.Sel.Name == "Query" {
+							if pkg, ok := sel.X.(*ast.Ident); ok && pkg.Name == "binding" && sel.Sel.Name == "ParseQuery" {
 								if id, ok := x.Lhs[0].(*ast.Ident); ok {
 									bound[id.Name] = true
 								}
@@ -78,7 +78,7 @@ func isObjectQueryPipeline(body *ast.BlockStmt) bool {
 			}
 			if pkg, ok := sel.X.(*ast.Ident); ok {
 				switch pkg.Name + "." + sel.Sel.Name {
-				case "binding.Query":
+				case "binding.ParseQuery":
 					binding = true
 				case "pageview.Objects":
 					objects = true
@@ -109,7 +109,7 @@ func isObjectQueryPipeline(body *ast.BlockStmt) bool {
 					default:
 						valid = false
 					}
-				case "pageview.Render", "pageview.Fail":
+				case "pageview.Render", "pageview.Fail", "response.ParamError":
 				default:
 					valid = false
 				}
@@ -144,7 +144,7 @@ func isObjectQueryPipeline(body *ast.BlockStmt) bool {
 }
 
 func TestObjectQueryPipelineRejectsDerivedShapes(t *testing.T) {
-	base := `package sample; func page(c *gin.Context) { req, ok := binding.Query[dto.Req](c); if !ok { return }; scope, err := h.svc.ResolveScope(c.Request.Context(), req.ProjectID); if err != nil { pageview.Fail(c, err); return }; result, err := h.svc.Query(c.Request.Context(), req); if err != nil { pageview.Fail(c, err); return }; PLACEHOLDER; pageview.Render(c, pageview.Objects(pageview.Object("Scope", scope), pageview.Object("Result", result))) }`
+	base := `package sample; func page(c *gin.Context) { req, bindErr := binding.ParseQuery[dto.Req](c); if bindErr != nil { return }; scope, err := h.svc.ResolveScope(c.Request.Context(), req.ProjectID); if err != nil { pageview.Fail(c, err); return }; result, err := h.svc.Query(c.Request.Context(), req); if err != nil { pageview.Fail(c, err); return }; PLACEHOLDER; pageview.Render(c, pageview.Objects(pageview.Object("Scope", scope), pageview.Object("Result", result))) }`
 	for _, tc := range []struct {
 		code string
 		want bool

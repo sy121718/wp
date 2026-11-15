@@ -14,8 +14,9 @@ type PublicHandle struct {
 }
 
 func (h *PublicHandle) VisitorList(c *gin.Context) {
-	req, ok := binding.Query[orderdto.VisitorOrderListReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[orderdto.VisitorOrderListReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	req.UserID = visitorOrderUserID(c)
@@ -27,8 +28,9 @@ func (h *PublicHandle) VisitorList(c *gin.Context) {
 	response.Success(c, data)
 }
 func (h *PublicHandle) VisitorDetail(c *gin.Context) {
-	req, ok := binding.Query[orderdto.VisitorOrderDetailReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[orderdto.VisitorOrderDetailReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	req.UserID = visitorOrderUserID(c)
@@ -40,8 +42,9 @@ func (h *PublicHandle) VisitorDetail(c *gin.Context) {
 	response.Success(c, data)
 }
 func (h *PublicHandle) VisitorReturnable(c *gin.Context) {
-	req, ok := binding.Query[orderdto.VisitorOrderDetailReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[orderdto.VisitorOrderDetailReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	req.UserID = visitorOrderUserID(c)
@@ -53,8 +56,9 @@ func (h *PublicHandle) VisitorReturnable(c *gin.Context) {
 	response.Success(c, data)
 }
 func (h *PublicHandle) VisitorReturns(c *gin.Context) {
-	req, ok := binding.Query[orderdto.VisitorReturnListReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[orderdto.VisitorReturnListReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	req.UserID = visitorOrderUserID(c)

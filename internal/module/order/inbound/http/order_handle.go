@@ -63,8 +63,9 @@ func (h *Handle) CreateOrder(c *gin.Context) {
 }
 
 func (h *Handle) GetOrder(c *gin.Context) {
-	req, ok := binding.Query[orderdto.GetOrderReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[orderdto.GetOrderReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	if req.OrderID == 0 {
@@ -80,8 +81,9 @@ func (h *Handle) GetOrder(c *gin.Context) {
 }
 
 func (h *Handle) ListOrders(c *gin.Context) {
-	req, ok := binding.Query[orderdto.ListOrderReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[orderdto.ListOrderReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	res, err := h.svc.ListOrders(c.Request.Context(), req)
@@ -172,8 +174,9 @@ func (h *Handle) RefundOrder(c *gin.Context) {
 }
 
 func (h *Handle) ListItems(c *gin.Context) {
-	req, ok := binding.Query[orderdto.GetOrderReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[orderdto.GetOrderReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	if req.OrderID == 0 {
@@ -189,8 +192,9 @@ func (h *Handle) ListItems(c *gin.Context) {
 }
 
 func (h *Handle) ListLogs(c *gin.Context) {
-	req, ok := binding.Query[orderdto.GetOrderReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[orderdto.GetOrderReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	if req.OrderID == 0 {
@@ -206,8 +210,9 @@ func (h *Handle) ListLogs(c *gin.Context) {
 }
 
 func (h *Handle) ListCoupons(c *gin.Context) {
-	req, ok := binding.Query[orderdto.CouponListReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[orderdto.CouponListReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	res, err := h.svc.ListCoupons(c.Request.Context(), req)
@@ -297,8 +302,9 @@ func (h *Handle) DeleteCoupon(c *gin.Context) {
 }
 
 func (h *Handle) ValidateCoupon(c *gin.Context) {
-	req, ok := binding.Query[orderdto.CouponValidateReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[orderdto.CouponValidateReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	res, err := h.svc.ValidateCoupon(c.Request.Context(), req)
@@ -310,8 +316,9 @@ func (h *Handle) ValidateCoupon(c *gin.Context) {
 }
 
 func (h *Handle) ListCouponRedemptions(c *gin.Context) {
-	req, ok := binding.Query[orderdto.CouponRedemptionListReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[orderdto.CouponRedemptionListReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	res, err := h.svc.ListCouponRedemptions(c.Request.Context(), req)
@@ -323,8 +330,9 @@ func (h *Handle) ListCouponRedemptions(c *gin.Context) {
 }
 
 func (h *Handle) AuditCouponCounts(c *gin.Context) {
-	req, ok := binding.Query[orderdto.CouponCountAuditReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[orderdto.CouponCountAuditReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	res, err := h.svc.AuditCouponCounts(c.Request.Context(), req)
@@ -350,8 +358,9 @@ func localizeReturnLabels(c *gin.Context, resps ...*orderdto.ReturnResp) {
 }
 
 func (h *Handle) ListReturns(c *gin.Context) {
-	req, ok := binding.Query[orderdto.ReturnListReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[orderdto.ReturnListReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	res, err := h.svc.ListReturns(c.Request.Context(), req)

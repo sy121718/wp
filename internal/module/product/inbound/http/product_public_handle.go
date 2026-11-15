@@ -17,8 +17,9 @@ func NewProductPublicHandle(svc productcontract.PublicVariantReader) *ProductPub
 }
 
 func (h *ProductPublicHandle) Variants(c *gin.Context) {
-	req, ok := binding.Query[productdto.PublicVariantsReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[productdto.PublicVariantsReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	data, err := h.svc.PublicVariants(c.Request.Context(), req)
@@ -37,8 +38,9 @@ func NewProductCatalogHandle(svc productcontract.PublicCatalogReader) *ProductCa
 	return &ProductCatalogHandle{svc: svc}
 }
 func (h *ProductCatalogHandle) List(c *gin.Context) {
-	req, ok := binding.Query[productdto.PublicCatalogReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[productdto.PublicCatalogReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	data, err := h.svc.PublicCatalog(c.Request.Context(), req)

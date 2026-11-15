@@ -5,11 +5,13 @@ import (
 	workbenchdto "go_wp/internal/module/workbench/dto"
 	"go_wp/pkg/binding"
 	"go_wp/pkg/builder/source"
+	"go_wp/pkg/response"
 )
 
 func previewContext(c *gin.Context) {
-	req, ok := binding.Query[workbenchdto.PreviewStateReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[workbenchdto.PreviewStateReq](c)
+	if err != nil {
+		response.ParamError(c)
 		c.Abort()
 		return
 	}

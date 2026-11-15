@@ -26,8 +26,9 @@ func (h *ProductHandle) UpdateTag(c *gin.Context) {
 }
 
 func (h *ProductHandle) GetTag(c *gin.Context) {
-	req, ok := binding.Query[productdto.GetTagReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[productdto.GetTagReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	res, err := h.svc.GetTag(c.Request.Context(), req)
@@ -39,8 +40,9 @@ func (h *ProductHandle) GetTag(c *gin.Context) {
 }
 
 func (h *ProductHandle) ListTags(c *gin.Context) {
-	req, ok := binding.Query[productdto.ListTagReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[productdto.ListTagReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	list, err := h.svc.ListTags(c.Request.Context(), req)
@@ -52,8 +54,9 @@ func (h *ProductHandle) ListTags(c *gin.Context) {
 }
 
 func (h *ProductHandle) ListTagProducts(c *gin.Context) {
-	req, ok := binding.Query[productdto.ListTagProductsReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[productdto.ListTagProductsReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	list, err := h.svc.ListTagProducts(c.Request.Context(), req)
@@ -91,8 +94,9 @@ func (h *ProductHandle) BulkDeleteTags(c *gin.Context) {
 }
 
 func (h *ProductPageHandle) ProductTagsPage(c *gin.Context) {
-	req, ok := binding.Query[productdto.CatalogTaxonomyReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[productdto.CatalogTaxonomyReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	scope, err := h.products.ResolveCatalogScope(c.Request.Context(), req.ProjectID)

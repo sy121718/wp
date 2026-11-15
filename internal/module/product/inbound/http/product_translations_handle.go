@@ -9,6 +9,7 @@ import (
 	productdto "go_wp/internal/module/product/dto"
 	productservice "go_wp/internal/module/product/service"
 	"go_wp/pkg/binding"
+	"go_wp/pkg/response"
 	pageview "go_wp/pkg/view"
 
 	"github.com/gin-gonic/gin"
@@ -55,8 +56,9 @@ func (h *ProductTranslationHandle) translationsReader() (productcontract.Product
 }
 
 func (h *ProductTranslationHandle) ProductTranslations(c *gin.Context) {
-	req, ok := binding.Query[productdto.ProductTranslationsPageReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[productdto.ProductTranslationsPageReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	view, err := h.page(c, req)

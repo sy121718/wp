@@ -50,8 +50,9 @@ func (h *Handle) Rebuild(c *gin.Context) {
 // 用 ParseForm 会把 GET 绑成零值（带 required 的 400、列表静默空集），
 // 这里用显式查询入口声明唯一输入协议。
 func (h *Handle) GetByEntity(c *gin.Context) {
-	req, ok := binding.Query[presentationdto.GetByEntityReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[presentationdto.GetByEntityReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	res, err := h.svc.GetByEntity(c.Request.Context(), req)
@@ -91,8 +92,9 @@ func (h *Handle) UpdateURL(c *gin.Context) {
 }
 
 func (h *Handle) Get(c *gin.Context) {
-	req, ok := binding.Query[presentationdto.GetReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[presentationdto.GetReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	res, err := h.svc.Get(c.Request.Context(), req)
@@ -104,8 +106,9 @@ func (h *Handle) Get(c *gin.Context) {
 }
 
 func (h *Handle) List(c *gin.Context) {
-	req, ok := binding.Query[presentationdto.ListReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[presentationdto.ListReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	list, err := h.svc.List(c.Request.Context(), req)

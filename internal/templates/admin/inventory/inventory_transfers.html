@@ -14,7 +14,7 @@
      in_transit → 签收
 
    写表单全部走标准表单 + HTMX（data-write + hx-post + data-write-result）：
-   binding.JSON 按 Content-Type 自适应，表单体与 JSON 都能进同一个 handler。
+   写端点只接受表单编码（binding.ParseForm 只读 body），JSON 体被显式拒绝。
 
    明细行是 lines[i].stockId / lines[i].quantity：表单没有嵌套数组语法，DTO 的
    BindForm 收这个形状（见 inventory_transfer_req.go）。 *}

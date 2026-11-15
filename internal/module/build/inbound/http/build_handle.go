@@ -29,8 +29,9 @@ func (h *Handle) Queue(c *gin.Context) {
 }
 
 func (h *Handle) List(c *gin.Context) {
-	req, ok := binding.Query[builddto.ListReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[builddto.ListReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	list, err := h.svc.List(c.Request.Context(), req)

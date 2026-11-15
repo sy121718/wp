@@ -128,8 +128,9 @@ func (h *Handle) updateTranslations(c *gin.Context, env *navigationdto.UpdateEnv
 }
 
 func (h *Handle) Get(c *gin.Context) {
-	req, ok := binding.Form[navigationdto.GetReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[navigationdto.GetReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	res, err := h.svc.Get(c.Request.Context(), req)
@@ -141,8 +142,9 @@ func (h *Handle) Get(c *gin.Context) {
 }
 
 func (h *Handle) List(c *gin.Context) {
-	req, ok := binding.Form[navigationdto.ListReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[navigationdto.ListReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	list, err := h.svc.List(c.Request.Context(), req)

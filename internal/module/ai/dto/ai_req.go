@@ -11,7 +11,7 @@ import (
 // ProviderDeleteReq 是「删除供应商」这一个普通写 API 的请求体。
 //
 // 为什么要一个类型而不是直接读 id：写端点的字段契约由 DTO 生成（cmd/write-contracts
-// 扫 binding.JSON[T] 的参数类型），只从 query/form 里 bindID 的端点在契约里没有权威
+// 扫 binding.ParseJSON[T] / ParseForm[T] 的参数类型），只从 query/form 里 bindID 的端点在契约里没有权威
 // 字段来源 —— 于是要么缺条目、要么逼生成器硬写一个 id。这里让 JSON 与字段契约共用
 // 同一个类型源。
 type ProviderDeleteReq struct {

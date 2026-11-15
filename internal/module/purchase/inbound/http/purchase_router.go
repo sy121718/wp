@@ -56,8 +56,9 @@ func (h *Handle) UpdateSource(c *gin.Context) {
 }
 
 func (h *Handle) GetSource(c *gin.Context) {
-	req, ok := binding.Query[purchasedto.GetSourceReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[purchasedto.GetSourceReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	res, err := h.svc.GetSource(c.Request.Context(), req)
@@ -69,8 +70,9 @@ func (h *Handle) GetSource(c *gin.Context) {
 }
 
 func (h *Handle) ListSources(c *gin.Context) {
-	req, ok := binding.Query[purchasedto.ListSourceReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[purchasedto.ListSourceReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	list, err := h.svc.ListSources(c.Request.Context(), req)
@@ -96,8 +98,9 @@ func (h *Handle) DeleteSource(c *gin.Context) {
 }
 
 func (h *Handle) SourceSummary(c *gin.Context) {
-	req, ok := binding.Query[purchasedto.SourceSummaryReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[purchasedto.SourceSummaryReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	res, err := h.svc.SourceSummary(c.Request.Context(), req)
@@ -137,8 +140,9 @@ func (h *Handle) UpdatePurchaseOrder(c *gin.Context) {
 }
 
 func (h *Handle) GetPurchaseOrder(c *gin.Context) {
-	req, ok := binding.Query[purchasedto.GetPurchaseOrderReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[purchasedto.GetPurchaseOrderReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	res, err := h.svc.GetPurchaseOrder(c.Request.Context(), req)
@@ -150,8 +154,9 @@ func (h *Handle) GetPurchaseOrder(c *gin.Context) {
 }
 
 func (h *Handle) ListPurchaseOrders(c *gin.Context) {
-	req, ok := binding.Query[purchasedto.ListPurchaseOrderReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[purchasedto.ListPurchaseOrderReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	list, err := h.svc.ListPurchaseOrders(c.Request.Context(), req)
@@ -191,8 +196,9 @@ func (h *Handle) RegisterProductionInbound(c *gin.Context) {
 }
 
 func (h *Handle) ListPurchaseHistory(c *gin.Context) {
-	req, ok := binding.Query[purchasedto.ListPurchaseHistoryReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[purchasedto.ListPurchaseHistoryReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	list, err := h.svc.ListPurchaseHistory(c.Request.Context(), req)

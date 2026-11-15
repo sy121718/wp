@@ -20,8 +20,9 @@ import (
 const inventoryTransfersPath = "/admin/inventory/transfers"
 
 func (h *inventoryTransferPageHandle) InventoryTransfersPage(c *gin.Context) {
-	query, ok := binding.Query[inventorydto.ListTransferReq](c)
-	if !ok {
+	query, err := binding.ParseQuery[inventorydto.ListTransferReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	data, err := h.transfersData(c, query)
@@ -87,11 +88,12 @@ func (h *inventoryTransferPageHandle) transfersData(c *gin.Context,
 }
 
 func (h *inventoryTransferPageHandle) InventoryTransferDetail(c *gin.Context) {
-	req, ok := binding.Query[inventorydto.GetTransferReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[inventorydto.GetTransferReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
-	_, err := h.transfers.GetTransfer(c.Request.Context(), req)
+	_, err = h.transfers.GetTransfer(c.Request.Context(), req)
 	if err != nil {
 		pageview.FailScene(c, inventoryErrScene, err)
 		return
@@ -124,8 +126,9 @@ func (h *inventoryTransferPageHandle) ReceiveTransfer(c *gin.Context) {
 }
 
 func (h *inventoryTransferPageHandle) InventoryTransferStockOptions(c *gin.Context) {
-	req, ok := binding.Query[inventorydto.TransferStockOptionReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[inventorydto.TransferStockOptionReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	list, err := h.transfers.ListTransferStockOptions(c.Request.Context(), req)
@@ -201,8 +204,9 @@ type inventoryTransferContract interface {
 }
 
 func (h *inventoryTransferPageHandle) InventoryTransferListJSON(c *gin.Context) {
-	req, ok := binding.Query[inventorydto.ListTransferReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[inventorydto.ListTransferReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	list, err := h.transfers.ListTransfers(c.Request.Context(), req)

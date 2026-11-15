@@ -50,7 +50,7 @@ func TestWriteDTOsHaveFormTag(t *testing.T) {
 				// 表单协议的唯一来源已是显式表单入口：
 				//   binding.ParseForm[T](c)      —— 泛型显式表单
 				//   c.ShouldBindWith(&req, FormPost) —— 原生表单
-				// 兼容入口 binding.JSON / binding.Form 已从写路由清退（只剩 GET 读端点）。
+				// 兼容入口 binding.Query / Form / JSON 已删除，写入口只剩 ParseForm 与原生 FormPost。
 				// 只看兼容入口会让本判据在迁移完成后空转，因此按真实表单入口收面。
 				call, okCall := n.(*ast.CallExpr)
 				if okCall {
@@ -212,7 +212,7 @@ func recvTypeName(expr ast.Expr) string {
 //	binding.ParseForm[T](c)                     → "T"
 //	c.ShouldBindWith(&req, ginbinding.FormPost)  → req 的声明类型名
 //
-// 只认这两种：兼容入口 binding.JSON/Form 已从写路由清退，不该再作为判据来源。
+// 只认这两种：兼容入口已删除，判据只从显式表单入口取。
 func formEntryTypeOf(call *ast.CallExpr) string {
 	if call == nil {
 		return ""

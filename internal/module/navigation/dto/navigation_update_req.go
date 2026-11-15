@@ -3,9 +3,7 @@ package navigationdto
 import (
 	"bytes"
 	"errors"
-	"net/url"
 	"slices"
-	"strconv"
 	"strings"
 
 	ginbinding "github.com/gin-gonic/gin/binding"
@@ -55,31 +53,34 @@ var ErrUpdateEnvelopeShape = errors.New("navigationdto: update envelope shape re
 
 var ErrUpdateEnvelopeBody = errors.New("navigationdto: update envelope body unusable")
 
+// UpdateEnvelope 是 /api/navigation/translations 的 JSON 输入封套。
+//
+// 它只解 JSON：表单写入走 /api/navigation/update（UpdateReq），两条路由各有
+// 一份确定协议，不存在「同一端点两种编码」的形状。
 type UpdateEnvelope struct {
-	Action    string `json:"action" form:"action"`
-	HasAction bool   `json:"-" form:"-"`
+	Action    string `json:"action"`
+	HasAction bool   `json:"-"`
 
 	// Project / Lang 只在 translations 分支出现，值来自 raw 里已白名单的顶层键。
 	// 显式声明成字段（而不是只留在 raw 里）是为了让线上形状对契约生成器可见：
 	// 写基座提交的就是 action/project/lang/rows 四个顶层键。
-	Project string `json:"project" form:"project"`
-	Lang    string `json:"lang" form:"lang"`
+	Project string `json:"project"`
+	Lang    string `json:"lang"`
 
-	Rows []TranslationWriteRow `json:"rows" form:"-"`
+	Rows []TranslationWriteRow `json:"rows"`
 
-	LegacyBody []byte `json:"-" form:"-"`
+	LegacyBody []byte `json:"-"`
 
 	raw     map[string]json.RawMessage
-	form    bool
 	shapeOK bool
 
-	formErr error
+	parseErr error
 }
 
 type TranslationWriteRow struct {
-	Context string `json:"context" form:"context"`
-	Hash    string `json:"hash" form:"hash"`
-	Target  string `json:"target" form:"target"`
+	Context string `json:"context"`
+	Hash    string `json:"hash"`
+	Target  string `json:"target"`
 }
 
 type TranslationUpdateReq struct {
@@ -96,78 +97,40 @@ type MoveUpdateReq struct {
 
 func (e *UpdateEnvelope) UnmarshalJSON(body []byte) error {
 	e.LegacyBody = body
-	return e.parse(body, false)
+	return e.parse(body)
 }
 
-func (e *UpdateEnvelope) BindForm(values url.Values) error {
-	e.Action = ""
-	e.HasAction = false
-	e.Rows = nil
-	e.raw = nil
-	e.form = false
-	e.shapeOK = false
-	e.formErr = nil
-	if values == nil {
-		e.formErr = ErrUpdateEnvelopeBody
-		return e.formErr
-	}
-
-	if encoded := values.Encode(); encoded != "" {
-		e.LegacyBody = []byte(encoded)
-	}
-	raw, err := updateFormRaw(values)
-	if err != nil {
-		e.formErr = err
-		return err
-	}
-	e.applyRaw(raw, true)
-	return e.formErr
-}
-
-func (e *UpdateEnvelope) parse(body []byte, form bool) error {
+func (e *UpdateEnvelope) parse(body []byte) error {
 	e.Action = ""
 	e.HasAction = false
 	e.Project = ""
 	e.Lang = ""
 	e.Rows = nil
 	e.raw = nil
-	e.form = false
 	e.shapeOK = false
-	e.formErr = nil
+	e.parseErr = nil
 	raw, err := updateJSONRaw(body)
 	if err != nil {
-		e.formErr = err
+		e.parseErr = err
 		return err
 	}
-	e.applyRaw(raw, form)
-	return e.formErr
+	e.applyRaw(raw)
+	return e.parseErr
 }
 
-func updateRowsCell(value json.RawMessage, form bool) json.RawMessage {
-	if !form || value == nil {
-		return value
-	}
-	var text string
-	if err := json.Unmarshal(value, &text); err != nil {
-		return value
-	}
-	return json.RawMessage(text)
-}
-
-func (e *UpdateEnvelope) applyRaw(raw map[string]json.RawMessage, form bool) {
+func (e *UpdateEnvelope) applyRaw(raw map[string]json.RawMessage) {
 	e.raw = raw
-	e.form = form
 	e.Action, e.HasAction, e.shapeOK = updateActionOf(raw[updateActionKey])
 
 	switch e.Action {
 	case updateActionTranslations:
 		if !updateTranslationTopAllowed(raw) {
-			e.formErr = ErrUpdateEnvelopeShape
+			e.parseErr = ErrUpdateEnvelopeShape
 			return
 		}
 	case updateActionMove:
 		if !updateMoveTopAllowed(raw) {
-			e.formErr = ErrUpdateEnvelopeShape
+			e.parseErr = ErrUpdateEnvelopeShape
 			return
 		}
 	}
@@ -178,9 +141,9 @@ func (e *UpdateEnvelope) applyRaw(raw map[string]json.RawMessage, form bool) {
 	e.Project, _ = updateRequiredString(raw[updateTranslationProjectKey])
 	e.Lang, _ = updateRequiredString(raw[updateTranslationLangKey])
 
-	rows, ok := updateTranslationRows(updateRowsCell(raw[updateRowsKey], form))
+	rows, ok := updateTranslationRows(raw[updateRowsKey])
 	if !ok {
-		e.formErr = ErrUpdateEnvelopeShape
+		e.parseErr = ErrUpdateEnvelopeShape
 		return
 	}
 	e.Rows = rows
@@ -227,8 +190,8 @@ func (e *UpdateEnvelope) Validate() error {
 	if e == nil {
 		return ErrUpdateEnvelopeBody
 	}
-	if e.formErr != nil {
-		return e.formErr
+	if e.parseErr != nil {
+		return e.parseErr
 	}
 	if e.Route() != RouteLegacy {
 		return nil
@@ -248,12 +211,8 @@ func (e *UpdateEnvelope) DecodeLegacy() (*UpdateReq, error) {
 	if e.Route() != RouteLegacy {
 		return nil, ErrUpdateEnvelopeShape
 	}
-	payload, err := updateLegacyPayload(e.LegacyBody, e.form)
-	if err != nil {
-		return nil, err
-	}
 	req := &UpdateReq{}
-	if err := ginbinding.JSON.BindBody(payload, req); err != nil {
+	if err := ginbinding.JSON.BindBody(e.LegacyBody, req); err != nil {
 		return nil, ErrUpdateEnvelopeShape
 	}
 	return req, nil
@@ -286,8 +245,6 @@ func (e *UpdateEnvelope) MoveRequest() (*MoveUpdateReq, error) {
 	return req, nil
 }
 
-func (e *UpdateEnvelope) IsForm() bool { return e.form }
-
 func updateJSONRaw(body []byte) (map[string]json.RawMessage, error) {
 	if len(bytes.TrimSpace(body)) == 0 {
 		return nil, ErrUpdateEnvelopeBody
@@ -297,37 +254,6 @@ func updateJSONRaw(body []byte) (map[string]json.RawMessage, error) {
 		return nil, ErrUpdateEnvelopeBody
 	}
 	return raw, nil
-}
-
-func updateFormRaw(values url.Values) (map[string]json.RawMessage, error) {
-	if updateIsEmptyQuery(values) {
-		return nil, ErrUpdateEnvelopeBody
-	}
-	raw := make(map[string]json.RawMessage, len(values))
-	for key, list := range values {
-		if len(list) == 0 {
-
-			raw[key] = json.RawMessage("null")
-			continue
-		}
-		encoded, err := json.Marshal(list[len(list)-1])
-		if err != nil {
-			return nil, ErrUpdateEnvelopeBody
-		}
-		raw[key] = encoded
-	}
-	return raw, nil
-}
-
-func updateIsEmptyQuery(values url.Values) bool {
-	for _, list := range values {
-		for _, v := range list {
-			if strings.TrimSpace(v) != "" {
-				return false
-			}
-		}
-	}
-	return true
 }
 
 func updateTranslationTopAllowed(raw map[string]json.RawMessage) bool {
@@ -382,59 +308,6 @@ func updateOptionalString(value json.RawMessage) (string, bool) {
 		return "", false
 	}
 	return strings.TrimSpace(text), true
-}
-
-func updateLegacyPayload(body []byte, form bool) ([]byte, error) {
-	if !form {
-		return body, nil
-	}
-	raw, err := updateFormRawValues(body)
-	if err != nil {
-		return nil, err
-	}
-	out := make(map[string]json.RawMessage, len(raw))
-	for key, list := range raw {
-		if len(list) == 0 {
-			continue
-		}
-		text := list[len(list)-1]
-		if typed, ok := updateFormScalar(text); ok {
-			out[key] = typed
-			continue
-		}
-		encoded, err := json.Marshal(text)
-		if err != nil {
-			return nil, ErrUpdateEnvelopeShape
-		}
-		out[key] = encoded
-	}
-	payload, err := json.Marshal(out)
-	if err != nil {
-		return nil, ErrUpdateEnvelopeShape
-	}
-	return payload, nil
-}
-
-func updateFormRawValues(body []byte) (url.Values, error) {
-	values, err := url.ParseQuery(string(body))
-	if err != nil || updateIsEmptyQuery(values) {
-		return nil, ErrUpdateEnvelopeShape
-	}
-	return values, nil
-}
-
-func updateFormScalar(text string) (json.RawMessage, bool) {
-	if text == "null" {
-		return json.RawMessage("null"), true
-	}
-	trimmed := strings.TrimSpace(text)
-	if trimmed == "" {
-		return nil, false
-	}
-	if _, err := strconv.Atoi(trimmed); err != nil {
-		return nil, false
-	}
-	return json.RawMessage(trimmed), true
 }
 
 func updateLangSupported(lang string) bool {

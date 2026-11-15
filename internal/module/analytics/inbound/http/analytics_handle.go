@@ -52,8 +52,9 @@ func (h *Handle) Collect(c *gin.Context) {
 }
 
 func (h *Handle) Summary(c *gin.Context) {
-	req, ok := binding.Query[analyticsdto.SummaryReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[analyticsdto.SummaryReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	res, err := h.svc.Summary(c.Request.Context(), req)

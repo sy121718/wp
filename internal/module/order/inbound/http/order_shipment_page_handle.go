@@ -32,8 +32,9 @@ func NewOrderShipmentPageHandle(svc ordercontract.OrderService, projects project
 }
 
 func (h *orderShipmentPageHandle) PendingShipPage(c *gin.Context) {
-	query, ok := binding.Query[orderdto.ShipmentPageQueryReq](c)
-	if !ok {
+	query, err := binding.ParseQuery[orderdto.ShipmentPageQueryReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	data, _ := h.pendingShipView(c, query)
@@ -142,8 +143,9 @@ func (h *orderShipmentPageHandle) carrierView(c *gin.Context, requested string) 
 }
 
 func (h *orderShipmentPageHandle) ShipFormFragment(c *gin.Context) {
-	req, ok := binding.Query[orderdto.ListShipmentReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[orderdto.ListShipmentReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	form, err := h.svc.BuildShipForm(c.Request.Context(), req)
@@ -159,8 +161,9 @@ func (h *orderShipmentPageHandle) ShipFormFragment(c *gin.Context) {
 }
 
 func (h *orderShipmentPageHandle) OrderCarriersPage(c *gin.Context) {
-	query, ok := binding.Query[orderdto.ShipmentPageQueryReq](c)
-	if !ok {
+	query, err := binding.ParseQuery[orderdto.ShipmentPageQueryReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	pageview.RenderTemplate(c, OrderCarriersPageTemplate, h.carrierView(c, query.ProjectID))

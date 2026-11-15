@@ -697,8 +697,8 @@ func nativeBinding(body *ast.BlockStmt, pkg string, imports map[string]string,
 		case *ast.FuncLit:
 			return false
 		case *ast.CallExpr:
-			// pkg/binding 的泛型入口 binding.Form[T](c) / JSON[T](c) / Query[T](c) /
-			// ParseForm[T](c) / ParseJSON[T](c)：协议由函数名给，DTO 是类型实参。
+			// pkg/binding 的泛型入口 ParseForm[T](c) / ParseJSON[T](c) / ParseQuery[T](c)：
+			// 协议由函数名给，DTO 是类型实参。
 			// 它们不是 gin.Context 的方法调用，必须先于下面的方法锁判定识别。
 			if bind, okBind := bindingGenericDTO(node, pkg, imports); okBind {
 				bindings = append(bindings, bind)
@@ -1646,7 +1646,7 @@ func isPkgBindingGeneric(fun ast.Expr, src *funcSource) bool {
 		return false
 	}
 	switch sel.Sel.Name {
-	case "ParseForm", "ParseJSON", "Query", "Form", "JSON":
+	case "ParseForm", "ParseJSON", "ParseQuery":
 		return true
 	}
 	return false
@@ -1876,15 +1876,12 @@ func directGenericBinder(name string, index sourceIndex) bodyBinding {
 
 // bindingGenericDTO 识别 pkg/binding 的泛型绑定入口。
 //
-//	binding.ParseForm[T](c) —— 显式普通表单（FormPost，只读 body）
-//	binding.ParseJSON[T](c) —— 显式 JSON
-//	binding.Query[T](c)     —— 显式查询串
-//	binding.Form[T](c)      —— 旧入口，c.ShouldBind 按 Content-Type 自适应，
-//	                           还会把 query 并进表单；输入协议不能由函数名认定
-//	binding.JSON[T](c)      —— 同上，无 Content-Type 时才走 JSON
+//	binding.ParseForm[T](c)  —— 显式普通表单（FormPost，只读 body）
+//	binding.ParseJSON[T](c)  —— 显式 JSON
+//	binding.ParseQuery[T](c) —— 显式查询串
 //
-// 自适应入口只登记「无法确定协议」，不按函数名猜 form/json：猜错会让模板侧的
-// 协议对账拿一个并不存在的确定性去放行。
+// 三个入口各自给一份确定协议，函数名即协议；不存在「按 Content-Type 自适应、
+// 由调用方猜协议」的入口。
 func bindingGenericDTO(call *ast.CallExpr, pkg string, imports map[string]string) (bodyBinding, bool) {
 	fun, ok := call.Fun.(*ast.IndexExpr)
 	if !ok {
@@ -1910,14 +1907,8 @@ func bindingGenericDTO(call *ast.CallExpr, pkg string, imports map[string]string
 		return bodyBinding{DTO: dto, Protocol: "form", Encodings: []string{"urlencoded", "multipart"}}, true
 	case "ParseJSON":
 		return bodyBinding{DTO: dto, Protocol: "json"}, true
-	case "Query":
+	case "ParseQuery":
 		return bodyBinding{DTO: dto, Protocol: "query"}, true
-	case "Form", "JSON":
-		// 兼容入口：按 Content-Type 在 JSON 与表单之间选择，本身不声明唯一协议。
-		// 如实报未检查；声明协议的端点用 ParseForm / ParseJSON / Query，
-		// 或直接写原生 ShouldBindWith / ShouldBindJSON。
-		return bodyBinding{Protocol: "unknown", Reason: "pkg/binding." + sel.Sel.Name +
-			" 是兼容入口，输入协议不由函数名确定；声明协议请用 ParseForm / ParseJSON / Query 或原生显式 binder"}, true
 	default:
 		return bodyBinding{}, false
 	}

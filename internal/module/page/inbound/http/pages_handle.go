@@ -419,8 +419,9 @@ func (h *Handle) Create(c *gin.Context) {
 }
 
 func (h *Handle) Detail(c *gin.Context) {
-	req, ok := binding.Query[pagedto.DetailReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[pagedto.DetailReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	res, err := h.svc.Detail(c.Request.Context(), req)
@@ -432,8 +433,9 @@ func (h *Handle) Detail(c *gin.Context) {
 }
 
 func (h *Handle) List(c *gin.Context) {
-	req, ok := binding.Query[pagedto.ListReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[pagedto.ListReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	res, err := h.svc.List(c.Request.Context(), req)
@@ -525,8 +527,9 @@ func (h *Handle) GarbageCollectArtifacts(c *gin.Context) {
 }
 
 func (h *Handle) SEOPatrol(c *gin.Context) {
-	req, ok := binding.Query[pagedto.SEOPatrolReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[pagedto.SEOPatrolReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	res, err := h.svc.SEOPatrol(c.Request.Context(), req)
@@ -588,8 +591,9 @@ func (h *Handle) Delete(c *gin.Context) {
 }
 
 func (h *Handle) ListRevisions(c *gin.Context) {
-	req, ok := binding.Query[pagedto.RevisionReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[pagedto.RevisionReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	res, err := h.svc.ListRevisions(c.Request.Context(), req)

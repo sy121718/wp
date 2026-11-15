@@ -14,8 +14,9 @@ import (
 )
 
 func (h *ProductPageHandle) ProductCategoriesPage(c *gin.Context) {
-	req, ok := binding.Query[productdto.CatalogTaxonomyReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[productdto.CatalogTaxonomyReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	scope, err := h.products.ResolveCatalogScope(c.Request.Context(), req.ProjectID)
@@ -38,8 +39,9 @@ func (h *ProductPageHandle) ProductCategoriesPage(c *gin.Context) {
 }
 
 func (h *ProductHandle) ProductCategoryParents(c *gin.Context) {
-	req, ok := binding.Query[productdto.CatalogTaxonomyReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[productdto.CatalogTaxonomyReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	result, err := h.svc.SearchCategoryParents(c.Request.Context(), req)
@@ -50,8 +52,9 @@ func (h *ProductHandle) ProductCategoryParents(c *gin.Context) {
 	response.SuccessWithMessage(c, productenums.MsgListSuccess, result)
 }
 func (h *ProductPageHandle) ProductBrandsPage(c *gin.Context) {
-	req, ok := binding.Query[productdto.CatalogTaxonomyReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[productdto.CatalogTaxonomyReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	scope, err := h.products.ResolveCatalogScope(c.Request.Context(), req.ProjectID)
@@ -82,8 +85,9 @@ func (h *ProductHandle) UpdateCategory(c *gin.Context) {
 }
 
 func (h *ProductHandle) GetCategory(c *gin.Context) {
-	req, ok := binding.Query[productdto.GetCategoryReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[productdto.GetCategoryReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	res, err := h.svc.GetCategory(c.Request.Context(), req)
@@ -95,8 +99,9 @@ func (h *ProductHandle) GetCategory(c *gin.Context) {
 }
 
 func (h *ProductHandle) ListCategories(c *gin.Context) {
-	req, ok := binding.Query[productdto.ListCategoryReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[productdto.ListCategoryReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	list, err := h.svc.ListCategories(c.Request.Context(), req)
@@ -155,8 +160,9 @@ func (h *ProductHandle) UpdateBrand(c *gin.Context) {
 }
 
 func (h *ProductHandle) GetBrand(c *gin.Context) {
-	req, ok := binding.Query[productdto.GetBrandReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[productdto.GetBrandReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	res, err := h.svc.GetBrand(c.Request.Context(), req)
@@ -168,8 +174,9 @@ func (h *ProductHandle) GetBrand(c *gin.Context) {
 }
 
 func (h *ProductHandle) ListBrands(c *gin.Context) {
-	req, ok := binding.Query[productdto.ListBrandReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[productdto.ListBrandReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	list, err := h.svc.ListBrands(c.Request.Context(), req)

@@ -92,8 +92,9 @@ func (h *Handle) Delete(c *gin.Context) {
 }
 
 func (h *Handle) Get(c *gin.Context) {
-	req, ok := binding.Form[contenttemplatedto.GetReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[contenttemplatedto.GetReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	res, err := h.svc.Get(c.Request.Context(), req)
@@ -105,8 +106,9 @@ func (h *Handle) Get(c *gin.Context) {
 }
 
 func (h *Handle) List(c *gin.Context) {
-	req, ok := binding.Form[contenttemplatedto.ListReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[contenttemplatedto.ListReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	list, err := h.svc.List(c.Request.Context(), req)

@@ -16,8 +16,9 @@ func NewContentPublicHandle(svc contentcontract.PublicSearchReader) *ContentPubl
 	return &ContentPublicHandle{svc: svc}
 }
 func (h *ContentPublicHandle) Search(c *gin.Context) {
-	req, ok := binding.Query[contentdto.PublicSearchReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[contentdto.PublicSearchReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	data, err := h.svc.PublicSearch(c.Request.Context(), req)

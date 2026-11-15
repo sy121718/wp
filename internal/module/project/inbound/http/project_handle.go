@@ -47,8 +47,9 @@ func (h *Handle) List(c *gin.Context) {
 }
 
 func (h *Handle) Detail(c *gin.Context) {
-	req, ok := binding.Query[projectdto.DetailReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[projectdto.DetailReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	res, err := h.svc.Detail(c.Request.Context(), req)

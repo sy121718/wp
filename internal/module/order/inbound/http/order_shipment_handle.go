@@ -38,8 +38,9 @@ func shipOrderForm(c *gin.Context) (*orderdto.ShipOrderReq, bool) {
 }
 
 func (h *Handle) ListShipments(c *gin.Context) {
-	req, ok := binding.Query[orderdto.ListShipmentReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[orderdto.ListShipmentReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	list, err := h.svc.ListShipments(c.Request.Context(), req)
@@ -51,8 +52,9 @@ func (h *Handle) ListShipments(c *gin.Context) {
 }
 
 func (h *Handle) ListPendingShip(c *gin.Context) {
-	req, ok := binding.Query[orderdto.PendingShipReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[orderdto.PendingShipReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	res, err := h.svc.ListPendingShip(c.Request.Context(), req)
@@ -64,8 +66,9 @@ func (h *Handle) ListPendingShip(c *gin.Context) {
 }
 
 func (h *Handle) ShipForm(c *gin.Context) {
-	req, ok := binding.Query[orderdto.ListShipmentReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[orderdto.ListShipmentReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	form, err := h.svc.BuildShipForm(c.Request.Context(), req)
@@ -77,8 +80,9 @@ func (h *Handle) ShipForm(c *gin.Context) {
 }
 
 func (h *Handle) ListCarriers(c *gin.Context) {
-	req, ok := binding.Query[orderdto.ListCarrierReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[orderdto.ListCarrierReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	list, err := h.svc.ListCarriers(c.Request.Context(), req)
@@ -118,8 +122,9 @@ func (h *Handle) UpdateCarrier(c *gin.Context) {
 }
 
 func (h *Handle) GetCurrencyRate(c *gin.Context) {
-	req, ok := binding.Query[orderdto.GetRateReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[orderdto.GetRateReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	res, err := h.svc.GetRate(c.Request.Context(), req)

@@ -19,8 +19,9 @@ type Handle struct {
 func NewHandle(svc masterdatacontract.MasterDataService) *Handle { return &Handle{svc: svc} }
 
 func (h *Handle) ListChanges(c *gin.Context) {
-	req, ok := binding.Query[masterdatadto.ListChangeReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[masterdatadto.ListChangeReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	list, err := h.svc.ListChanges(c.Request.Context(), req)
@@ -32,8 +33,9 @@ func (h *Handle) ListChanges(c *gin.Context) {
 }
 
 func (h *Handle) CountChanges(c *gin.Context) {
-	req, ok := binding.Query[masterdatadto.ListChangeReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[masterdatadto.ListChangeReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	total, err := h.svc.CountChanges(c.Request.Context(), req)
@@ -45,8 +47,9 @@ func (h *Handle) CountChanges(c *gin.Context) {
 }
 
 func (h *Handle) ListEntities(c *gin.Context) {
-	req, ok := binding.Query[masterdatadto.ListEntityReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[masterdatadto.ListEntityReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	list, err := h.svc.ListEntities(c.Request.Context(), req)
@@ -58,8 +61,9 @@ func (h *Handle) ListEntities(c *gin.Context) {
 }
 
 func (h *Handle) EntityTimeline(c *gin.Context) {
-	req, ok := binding.Query[masterdatadto.EntityTimelineReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[masterdatadto.EntityTimelineReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	res, err := h.svc.EntityTimeline(c.Request.Context(), req)

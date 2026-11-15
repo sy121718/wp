@@ -53,8 +53,9 @@ func updateForm(c *gin.Context) (*productdto.UpdateReq, bool) {
 }
 
 func (h *ProductHandle) Get(c *gin.Context) {
-	req, ok := binding.Query[productdto.GetReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[productdto.GetReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	res, err := h.svc.Get(c.Request.Context(), req)
@@ -66,8 +67,9 @@ func (h *ProductHandle) Get(c *gin.Context) {
 }
 
 func (h *ProductHandle) List(c *gin.Context) {
-	req, ok := binding.Query[productdto.ListReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[productdto.ListReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	list, err := h.svc.QueryProducts(c.Request.Context(), req)
@@ -146,8 +148,9 @@ func (h *ProductHandle) GenerateVariants(c *gin.Context) {
 }
 
 func (h *ProductPageHandle) ProductsPage(c *gin.Context) {
-	req, ok := binding.Query[productdto.ProductListPageReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[productdto.ProductListPageReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	scope, err := h.products.ResolveCatalogScope(c.Request.Context(), req.ProjectID)
@@ -188,8 +191,9 @@ func (h *ProductPageHandle) ProductsPage(c *gin.Context) {
 }
 
 func (h *ProductPageHandle) ProductNewPage(c *gin.Context) {
-	req, ok := binding.Query[productdto.ProductNewPageReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[productdto.ProductNewPageReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	scope, err := h.products.ResolveCatalogScope(c.Request.Context(), req.ProjectID)
@@ -222,8 +226,9 @@ func (h *ProductPageHandle) ProductNewPage(c *gin.Context) {
 }
 
 func (h *ProductPageHandle) ProductEditPage(c *gin.Context) {
-	req, ok := binding.Query[productdto.ProductEditPageReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[productdto.ProductEditPageReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	scope, err := h.products.ResolveCatalogScope(c.Request.Context(), req.ProjectID)
@@ -277,8 +282,9 @@ func (h *ProductPageHandle) ProductEditPage(c *gin.Context) {
 }
 
 func (h *ProductPageHandle) ProductDetailPage(c *gin.Context) {
-	req, ok := binding.Query[productdto.ProductDetailPageReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[productdto.ProductDetailPageReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	scope, err := h.products.ResolveCatalogScope(c.Request.Context(), req.ProjectID)
@@ -354,8 +360,9 @@ func (h *ProductHandle) DeleteRating(c *gin.Context) {
 
 func (h *ProductPageHandle) ProductPreviewFrame(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	req, ok := binding.Query[productdto.ProductPreviewFrameReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[productdto.ProductPreviewFrameReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	res, err := productservice.PreviewSavedProduct(c.Request.Context(), h.products, h.reader, h.instances, req.ProjectID, req.ProductID)
@@ -367,8 +374,9 @@ func (h *ProductPageHandle) ProductPreviewFrame(c *gin.Context) {
 }
 
 func (h *ProductPageHandle) ProductPricingPage(c *gin.Context) {
-	req, ok := binding.Query[productdto.ProductProjectReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[productdto.ProductProjectReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	scope, err := h.products.ResolveCatalogScope(c.Request.Context(), req.ProjectID)
@@ -455,8 +463,9 @@ func (h *ProductHandle) BulkPricing(c *gin.Context) {
 }
 
 func (h *ProductHandle) ListPriceAdjustments(c *gin.Context) {
-	req, ok := binding.Query[productdto.ListPriceAdjustmentReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[productdto.ListPriceAdjustmentReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	list, err := h.svc.ListPriceAdjustments(c.Request.Context(), req)
@@ -468,8 +477,9 @@ func (h *ProductHandle) ListPriceAdjustments(c *gin.Context) {
 }
 
 func (h *ProductHandle) GetPriceAdjustment(c *gin.Context) {
-	req, ok := binding.Query[productdto.GetPriceAdjustmentReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[productdto.GetPriceAdjustmentReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	res, err := h.svc.GetPriceAdjustment(c.Request.Context(), req)

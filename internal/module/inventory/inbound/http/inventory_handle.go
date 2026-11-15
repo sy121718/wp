@@ -47,8 +47,9 @@ func (h *Handle) UpdateWarehouse(c *gin.Context) {
 }
 
 func (h *Handle) GetWarehouse(c *gin.Context) {
-	req, ok := binding.Query[inventorydto.GetWarehouseReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[inventorydto.GetWarehouseReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	res, err := h.svc.GetWarehouse(c.Request.Context(), req)
@@ -60,8 +61,9 @@ func (h *Handle) GetWarehouse(c *gin.Context) {
 }
 
 func (h *Handle) ListWarehouses(c *gin.Context) {
-	req, ok := binding.Query[inventorydto.ListWarehouseReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[inventorydto.ListWarehouseReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	list, err := h.svc.ListWarehouses(c.Request.Context(), req)
@@ -100,8 +102,9 @@ func (h *Handle) EnsureStock(c *gin.Context) {
 }
 
 func (h *Handle) GetStock(c *gin.Context) {
-	req, ok := binding.Query[inventorydto.GetStockReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[inventorydto.GetStockReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	res, err := h.svc.GetStock(c.Request.Context(), req)
@@ -113,8 +116,9 @@ func (h *Handle) GetStock(c *gin.Context) {
 }
 
 func (h *Handle) ListStocksBySKU(c *gin.Context) {
-	req, ok := binding.Query[inventorydto.ListStockBySKUReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[inventorydto.ListStockBySKUReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	list, err := h.svc.ListStocksBySKU(c.Request.Context(), req)
@@ -126,8 +130,9 @@ func (h *Handle) ListStocksBySKU(c *gin.Context) {
 }
 
 func (h *Handle) ListStocks(c *gin.Context) {
-	req, ok := binding.Query[inventorydto.ListStockReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[inventorydto.ListStockReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	list, err := h.svc.ListStocks(c.Request.Context(), req)
@@ -167,8 +172,9 @@ func (h *Handle) DeductStock(c *gin.Context) {
 }
 
 func (h *Handle) ListMovements(c *gin.Context) {
-	req, ok := binding.Query[inventorydto.ListMovementReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[inventorydto.ListMovementReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	list, err := h.svc.ListMovements(c.Request.Context(), req)
@@ -180,8 +186,9 @@ func (h *Handle) ListMovements(c *gin.Context) {
 }
 
 func (h *Handle) ListReasons(c *gin.Context) {
-	req, ok := binding.Query[inventorydto.ListReasonReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[inventorydto.ListReasonReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	list, err := h.svc.ListReasons(c.Request.Context(), req)

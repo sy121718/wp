@@ -24,8 +24,9 @@ type Handle struct {
 func NewHandle(svc commentcontract.CommentService) *Handle { return &Handle{svc: svc} }
 
 func (h *Handle) AdminList(c *gin.Context) {
-	req, ok := binding.Query[commentdto.AdminListReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[commentdto.AdminListReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	res, err := h.svc.AdminList(c.Request.Context(), req)

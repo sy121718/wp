@@ -1,41 +1,18 @@
 package binding
 
 import (
-	"bytes"
 	"errors"
-	"io"
 	"mime"
-	"net/http"
 	"net/url"
 	"reflect"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 	ginbinding "github.com/gin-gonic/gin/binding"
-
-	"go_wp/pkg/response"
 )
 
 type FormBinder interface {
 	BindForm(url.Values) error
-}
-
-func JSONLimited[T any](c *gin.Context, maxBytes int64) (*T, bool) {
-	if maxBytes <= 0 || c.Request == nil || c.Request.Body == nil {
-		response.ParamError(c)
-		return nil, false
-	}
-
-	reader := &io.LimitedReader{R: c.Request.Body, N: maxBytes}
-	body, err := io.ReadAll(reader)
-	var extra [1]byte
-	n, tailErr := io.ReadFull(c.Request.Body, extra[:])
-	if err != nil || n > 0 || (tailErr != nil && tailErr != io.EOF) {
-		response.ParamError(c)
-		return nil, false
-	}
-	c.Request.Body = io.NopCloser(bytes.NewReader(body))
-	return JSON[T](c)
 }
 
 // formMediaType 解析请求声明的媒体类型，并回答它是否就是两种表单编码之一。
@@ -72,73 +49,8 @@ func isMultipartBody(c *gin.Context) bool {
 	return ok && mt == "multipart/form-data"
 }
 
-func isFormBody(c *gin.Context) bool {
-	_, ok := formMediaType(c)
-	return ok
-}
-
-func hasBodyWithoutContentType(c *gin.Context) bool {
-	if c.Request == nil || c.Request.Body == nil {
-		return false
-	}
-	switch c.Request.Method {
-	case http.MethodPost, http.MethodPut, http.MethodPatch:
-	default:
-		return false
-	}
-	return strings.TrimSpace(c.GetHeader("Content-Type")) == ""
-}
-
-// JSON 是兼容入口：写方法按 Content-Type 在 JSON 与表单之间选择，读方法读查询串。
-//
-// 它服务的是一批**同时接受 JSON 与表单**的公开端点（访客下单、退货申请、站点账号），
-// 这些端点的调用方既有 JSON 客户端也有 htmx 表单，不能收窄成单一协议。
-// 正因为它不声明唯一协议，契约生成器把它标成 unknown —— 要声明协议请用
-// ParseJSON（JSON body）或 ParseForm / BindForm（表单 body）。
-func JSON[T any](c *gin.Context) (*T, bool) {
-	var req T
-
-	if hasBodyWithoutContentType(c) {
-		if err := c.ShouldBindJSON(&req); err != nil {
-			response.ParamError(c)
-			return nil, false
-		}
-		return &req, true
-	}
-	if err := c.ShouldBind(&req); err != nil {
-		response.ParamError(c)
-		return nil, false
-	}
-
-	if isFormBody(c) {
-		if b, ok := any(&req).(FormBinder); ok {
-			if err := b.BindForm(bodyValues(c)); err != nil {
-				response.ParamError(c)
-				return nil, false
-			}
-		}
-	}
-	return &req, true
-}
-
 type QueryBinder interface {
 	BindQuery(url.Values) error
-}
-
-func Query[T any](c *gin.Context) (*T, bool) {
-	var req T
-	if err := c.ShouldBindQuery(&req); err != nil {
-		response.ParamError(c)
-		return nil, false
-	}
-	if b, ok := any(&req).(QueryBinder); ok {
-		if err := b.BindQuery(c.Request.URL.Query()); err != nil {
-			response.ParamError(c)
-			return nil, false
-		}
-	}
-	ApplyListQuery(c, &req)
-	return &req, true
 }
 
 func Field(c *gin.Context, key string) string {
@@ -160,6 +72,7 @@ func ParseQuery[T any](c *gin.Context) (*T, error) {
 			return &req, err
 		}
 	}
+	applyListQuery(c, &req)
 	return &req, nil
 }
 
@@ -220,30 +133,11 @@ func bodyValues(c *gin.Context) url.Values {
 	return c.Request.PostForm
 }
 
-// Form 是兼容入口：按 Content-Type 选择 binder 并合并查询串。
-//
-// 与 JSON 同理，它不声明唯一协议，契约生成器标成 unknown。
-// 要声明协议请用 ParseForm（只读 body 的表单）或 Query（只读查询串）。
-func Form[T any](c *gin.Context) (*T, bool) {
-	var req T
-	if err := c.ShouldBind(&req); err != nil {
-		response.ParamError(c)
-		return nil, false
-	}
-	if b, ok := any(&req).(FormBinder); ok {
-		if err := b.BindForm(bodyValues(c)); err != nil {
-			response.ParamError(c)
-			return nil, false
-		}
-	}
-	return &req, true
-}
-
 type listQueryTagger interface {
 	setListQuery(string)
 }
 
-func ListQueryTag(req any) []string {
+func listQueryTag(req any) []string {
 	t := reflect.TypeOf(req)
 	if t == nil {
 		return nil
@@ -261,8 +155,8 @@ func ListQueryTag(req any) []string {
 	return splitKeys(f.Tag.Get("listquery"))
 }
 
-func ApplyListQuery(c *gin.Context, req any) {
-	keys := ListQueryTag(req)
+func applyListQuery(c *gin.Context, req any) {
+	keys := listQueryTag(req)
 	if len(keys) == 0 {
 		return
 	}

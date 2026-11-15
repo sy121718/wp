@@ -13,8 +13,9 @@ type ProductOptionsHandle struct {
 }
 
 func (h *ProductOptionsHandle) Get(c *gin.Context) {
-	req, ok := binding.Query[productdto.PublicProductOptionsReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[productdto.PublicProductOptionsReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	data, err := h.svc.PublicProductOptions(c.Request.Context(), req)

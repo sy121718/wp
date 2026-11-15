@@ -17,6 +17,7 @@ import (
 	"go_wp/pkg/binding"
 	"go_wp/pkg/pagination"
 	"go_wp/pkg/reqparams"
+	"go_wp/pkg/response"
 	pageview "go_wp/pkg/view"
 )
 
@@ -105,8 +106,9 @@ func (h *purchasePageHandle) purchasesPageView(c *gin.Context, d *purchasesPageD
 }
 
 func (h *purchasePageHandle) PurchasesPage(c *gin.Context) {
-	q, ok := binding.Query[purchasedto.PurchaseListQueryReq](c)
-	if !ok {
+	q, err := binding.ParseQuery[purchasedto.PurchaseListQueryReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	pageview.Render(c, h.purchasesPageView(c, h.purchasesPageFacts(c, q)))

@@ -6,6 +6,7 @@ import (
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
 	"go_wp/pkg/binding"
+	"go_wp/pkg/response"
 	pageview "go_wp/pkg/view"
 )
 
@@ -18,8 +19,9 @@ func NewPublishAttemptHandle(reader productcontract.ProductPageReader) *PublishA
 }
 
 func (h *PublishAttemptHandle) ProductPublishAttempts(c *gin.Context) {
-	req, ok := binding.Query[productdto.PublishAttemptListReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[productdto.PublishAttemptListReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	res, err := h.reader.ProductPublishAttempts(c.Request.Context(), req)

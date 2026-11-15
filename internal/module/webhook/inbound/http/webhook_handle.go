@@ -88,8 +88,9 @@ func (h *Handle) EndpointStatus(c *gin.Context) {
 
 func (h *Handle) DeliveryList(c *gin.Context) {
 
-	req, ok := binding.Query[webhookdto.DeliveryListReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[webhookdto.DeliveryListReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	res, err := h.svc.ListDeliveries(c.Request.Context(), req)

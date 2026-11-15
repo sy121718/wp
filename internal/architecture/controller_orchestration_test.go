@@ -31,7 +31,7 @@ var pendingControllerStatements = map[string]struct{ offenders, max int }{
 	"internal/module/inventory/inbound/http/inventory_page_handle.go":           {offenders: 1, max: 37},
 	"internal/module/inventory/inbound/http/inventory_reason_handle.go":         {offenders: 2, max: 9},
 	"internal/module/inventory/inbound/http/inventory_warehouse_handle.go":      {offenders: 1, max: 8},
-	"internal/module/mail/inbound/http/mail_page_handle.go":                     {offenders: 10, max: 20},
+	"internal/module/mail/inbound/http/mail_page_handle.go":                     {offenders: 8, max: 19},
 	"internal/module/mail/inbound/http/mail_contact_write.go":                   {offenders: 3, max: 19},
 	"internal/module/mail/inbound/http/mail_handle.go":                          {offenders: 1, max: 9},
 	"internal/module/masterdata/inbound/http/masterdata_page.go":                {offenders: 1, max: 42},

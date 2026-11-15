@@ -20,8 +20,9 @@ func NewCartPublicHandle(svc cartcontract.CartService) *CartPublicHandle {
 }
 
 func (h *CartPublicHandle) View(c *gin.Context) {
-	req, ok := binding.Query[cartdto.CartViewReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[cartdto.CartViewReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	req.Cookie = requestCookie(c, cartcontract.CartCookieName)

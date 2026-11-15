@@ -100,8 +100,9 @@ func (h *Handle) Uninstall(c *gin.Context) {
 }
 
 func (h *Handle) Detail(c *gin.Context) {
-	req, ok := binding.Form[plugindto.DetailReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[plugindto.DetailReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	res, err := h.svc.Detail(c.Request.Context(), req)

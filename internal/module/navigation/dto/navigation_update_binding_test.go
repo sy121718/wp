@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"slices"
 	"strings"
 	"testing"
 
@@ -17,22 +16,23 @@ import (
 	"go_wp/pkg/binding"
 )
 
-const maxBody int64 = 1 << 20
-
 type bound struct {
 	env  *navigationdto.UpdateEnvelope
 	code int
 	body string
 }
 
+// bindThrough 复刻生产端点：/api/navigation/translations 只声明 JSON 协议，
+// 绑定入口就是 binding.ParseJSON（表单写入走另一条路由的 UpdateReq）。
 func bindThrough(t *testing.T, req *http.Request) bound {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	var got bound
-	router.POST("/api/navigation/update", func(c *gin.Context) {
-		env, ok := binding.JSONLimited[navigationdto.UpdateEnvelope](c, maxBody)
-		if !ok {
+	router.POST("/api/navigation/translations", func(c *gin.Context) {
+		env, err := binding.ParseJSON[navigationdto.UpdateEnvelope](c)
+		if err != nil {
+			c.Status(http.StatusBadRequest)
 			return
 		}
 
@@ -54,7 +54,7 @@ func bindThrough(t *testing.T, req *http.Request) bound {
 
 func jsonRequest(t *testing.T, contentType, body string) *http.Request {
 	t.Helper()
-	req := httptest.NewRequest(http.MethodPost, "/api/navigation/update", strings.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/navigation/translations", strings.NewReader(body))
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
 	}
@@ -63,7 +63,7 @@ func jsonRequest(t *testing.T, contentType, body string) *http.Request {
 
 func formRequest(t *testing.T, values url.Values) *http.Request {
 	t.Helper()
-	req := httptest.NewRequest(http.MethodPost, "/api/navigation/update", strings.NewReader(values.Encode()))
+	req := httptest.NewRequest(http.MethodPost, "/api/navigation/translations", strings.NewReader(values.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	return req
 }
@@ -80,92 +80,48 @@ func multipartRequest(t *testing.T, fields [][2]string) *http.Request {
 	if err := w.Close(); err != nil {
 		t.Fatalf("multipart close: %v", err)
 	}
-	req := httptest.NewRequest(http.MethodPost, "/api/navigation/update", &buf)
+	req := httptest.NewRequest(http.MethodPost, "/api/navigation/translations", &buf)
 	req.Header.Set("Content-Type", w.FormDataContentType())
 	return req
 }
 
-func translationFields(rows string) [][2]string {
-	return [][2]string{{"action", "translations"}, {"project", "p-1"}, {"lang", langOK()}, {"rows", rows}}
-}
-
 func TestUpdateEnvelopeThroughRealBinding(t *testing.T) {
 	rowsJSON := `[{"context":"nav.header","hash":"h1","target":"Home"},{"context":"nav.footer","hash":"h2","target":""}]`
-	// 端点声明为写方法 + JSON 输入：只验 JSON 一条协议。
-	cases := []struct {
-		name string
-		req  func() *http.Request
-	}{
-		{"json", func() *http.Request { return jsonRequest(t, "application/json", translationJSON(rowsJSON)) }},
+	r := bindThrough(t, jsonRequest(t, "application/json", translationJSON(rowsJSON)))
+	if r.code != http.StatusOK || r.env == nil {
+		t.Fatalf("binding 应成功，code=%d body=%s", r.code, r.body)
 	}
-	var want *navigationdto.TranslationUpdateReq
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			r := bindThrough(t, tc.req())
-			if r.code != http.StatusOK || r.env == nil {
-				t.Fatalf("binding 应成功，code=%d body=%s", r.code, r.body)
-			}
-			if got := r.env.Route(); got != navigationdto.RouteTranslations {
-				t.Fatalf("Route() = %v, want translations", got)
-			}
-			req, err := r.env.DecodeTranslation()
-			if err != nil {
-				t.Fatalf("DecodeTranslation: %v", err)
-			}
-			if want == nil {
-				want = req
-				return
-			}
-			if req.ProjectID != want.ProjectID || req.Lang != want.Lang || !slices.Equal(req.Rows, want.Rows) {
-				t.Fatalf("同一份 JSON 必须解出同一份入参：got=%+v want=%+v", req, want)
-			}
-		})
+	if got := r.env.Route(); got != navigationdto.RouteTranslations {
+		t.Fatalf("Route() = %v, want translations", got)
 	}
-	if want == nil || len(want.Rows) != 2 || want.Rows[1].Target != "" {
-		t.Fatalf("入参不符: %+v", want)
+	req, err := r.env.DecodeTranslation()
+	if err != nil {
+		t.Fatalf("DecodeTranslation: %v", err)
+	}
+	if req.ProjectID != "p-1" || len(req.Rows) != 2 || req.Rows[1].Target != "" {
+		t.Fatalf("入参不符: %+v", req)
 	}
 }
 
 func TestUpdateEnvelopeBindingLegacyThroughRealBinding(t *testing.T) {
-	for _, tc := range []struct {
-		name string
-		req  func() *http.Request
-	}{
-		{"json", func() *http.Request {
-			return jsonRequest(t, "application/json", `{"id":"n-1","title":"home","sortOrder":3,"unknownField":1}`)
-		}},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			r := bindThrough(t, tc.req())
-			if r.code != http.StatusOK || r.env == nil {
-				t.Fatalf("binding 应成功，code=%d body=%s", r.code, r.body)
-			}
-			if got := r.env.Route(); got != navigationdto.RouteLegacy {
-				t.Fatalf("未知键必须被忽略并判 legacy，实际 %v", got)
-			}
-			req, err := r.env.DecodeLegacy()
-			if err != nil {
-				t.Fatalf("DecodeLegacy: %v", err)
-			}
-			if req.ID != "n-1" || req.Title == nil || *req.Title != "home" {
-				t.Fatalf("legacy 字段不符: %+v", req)
-			}
-		})
+	r := bindThrough(t, jsonRequest(t, "application/json", `{"id":"n-1","title":"home","sortOrder":3,"unknownField":1}`))
+	if r.code != http.StatusOK || r.env == nil {
+		t.Fatalf("binding 应成功，code=%d body=%s", r.code, r.body)
+	}
+	if got := r.env.Route(); got != navigationdto.RouteLegacy {
+		t.Fatalf("未知键必须被忽略并判 legacy，实际 %v", got)
+	}
+	req, err := r.env.DecodeLegacy()
+	if err != nil {
+		t.Fatalf("DecodeLegacy: %v", err)
+	}
+	if req.ID != "n-1" || req.Title == nil || *req.Title != "home" {
+		t.Fatalf("legacy 字段不符: %+v", req)
 	}
 
-	missing := []struct {
-		name string
-		req  func() *http.Request
-	}{
-		{"json 缺 id", func() *http.Request { return jsonRequest(t, "application/json", `{"title":"home"}`) }},
-	}
-	for _, tc := range missing {
-		t.Run(tc.name, func(t *testing.T) {
-			r := bindThrough(t, tc.req())
-			if r.code == http.StatusOK || r.env != nil {
-				t.Fatalf("缺 id 必须 400，实际 code=%d env=%+v", r.code, r.env)
-			}
-		})
+	missing := bindThrough(t, jsonRequest(t, "application/json", `{"title":"home"}`))
+	if missing.code == http.StatusOK || missing.env != nil {
+		t.Fatalf("缺 id 必须 400，实际 code=%d env=%+v", missing.code, missing.env)
 	}
 }
 
@@ -189,67 +145,10 @@ func TestUpdateEnvelopeBindingMove(t *testing.T) {
 
 func TestUpdateEnvelopeBindingTranslationUnknownKey(t *testing.T) {
 	rows := `[{"context":"c","hash":"h","target":"t"}]`
-	bad := translationForm(rows)
-	bad.Set("unexpected", "x")
-	for _, tc := range []struct {
-		name string
-		req  *http.Request
-	}{
-		{"json 未知键", jsonRequest(t, "application/json", `{"action":"translations","project":"p-1","lang":"`+langOK()+`","rows":`+rows+`,"id":"n-1"}`)},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			r := bindThrough(t, tc.req)
-			if r.code == http.StatusOK || r.env != nil {
-				t.Fatalf("未知顶层键必须 400，实际 code=%d", r.code)
-			}
-		})
-	}
-
-	// 绑定走 pkg/binding 的兼容入口：JSON 与表单两种形状都接受（公开端点两种调用方都有）。
-	// 「协议不唯一」由契约生成器如实标 unknown，不在绑定层收窄。
-	ok := translationForm(rows)
-	ok.Set("csrf_token", "tok")
-	for _, tc := range []struct {
-		name string
-		req  *http.Request
-	}{
-		{"urlencoded 带 csrf_token", formRequest(t, ok)},
-		{"multipart 带 csrf_token", multipartRequest(t, append(translationFields(rows), [2]string{"csrf_token", "tok"}))},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			r := bindThrough(t, tc.req)
-			if r.code != http.StatusOK || r.env == nil {
-				t.Fatalf("带 csrf_token 的表单必须接受，code=%d body=%s", r.code, r.body)
-			}
-			if got := r.env.Route(); got != navigationdto.RouteTranslations {
-				t.Fatalf("Route() = %v, want translations", got)
-			}
-		})
-	}
-}
-
-func TestUpdateEnvelopeBindingBodyLimit(t *testing.T) {
-	const head = `{"id":"n-1","title":"`
-	const tail = `"}`
-	pad := strings.Repeat("a", int(maxBody)-len(head)-len(tail))
-	exact := head + pad + tail
-	if int64(len(exact)) != maxBody {
-		t.Fatalf("用例构造错误: len=%d want %d", len(exact), maxBody)
-	}
-	r := bindThrough(t, jsonRequest(t, "application/json", exact))
-	if r.code != http.StatusOK || r.env == nil {
-		t.Fatalf("恰好 1 MiB 必须通过，code=%d", r.code)
-	}
-	req, err := r.env.DecodeLegacy()
-	if err != nil {
-		t.Fatalf("DecodeLegacy: %v", err)
-	}
-	if req.ID != "n-1" || req.Title == nil || *req.Title != pad {
-		t.Fatalf("1 MiB 体内的字段必须完整（不截断）")
-	}
-	over := bindThrough(t, jsonRequest(t, "application/json", exact+" "))
-	if over.code == http.StatusOK || over.env != nil {
-		t.Fatalf("超 1 字节必须整体失败，code=%d", over.code)
+	body := `{"action":"translations","project":"p-1","lang":"` + langOK() + `","rows":` + rows + `,"id":"n-1"}`
+	r := bindThrough(t, jsonRequest(t, "application/json", body))
+	if r.code == http.StatusOK || r.env != nil {
+		t.Fatalf("未知顶层键必须 400，实际 code=%d", r.code)
 	}
 }
 
@@ -268,6 +167,7 @@ func TestUpdateEnvelopeBindingRowsRoundTrip(t *testing.T) {
 	}
 }
 
+// 端点声明 JSON：表单编码与非 JSON 体都必须进 400，不能退回零值封套。
 func TestUpdateEnvelopeBindingNonJSONBodyRejected(t *testing.T) {
 	for _, tc := range []struct {
 		name string

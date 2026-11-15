@@ -66,8 +66,9 @@ func (h *Handle) Publish(c *gin.Context) {
 // 写成 ParseForm 会把 GET 永远绑成零值（FormPost 只读 body），带 required 的 id
 // 直接 400、列表则静默返回空集；这里用显式查询入口声明唯一输入协议。
 func (h *Handle) Get(c *gin.Context) {
-	req, ok := binding.Query[blueprintdto.GetReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[blueprintdto.GetReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	res, err := h.svc.Get(c.Request.Context(), req)
@@ -79,8 +80,9 @@ func (h *Handle) Get(c *gin.Context) {
 }
 
 func (h *Handle) List(c *gin.Context) {
-	req, ok := binding.Query[blueprintdto.ListReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[blueprintdto.ListReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	list, err := h.svc.List(c.Request.Context(), req)
@@ -105,8 +107,9 @@ func (h *Handle) Delete(c *gin.Context) {
 }
 
 func (h *Handle) Init(c *gin.Context) {
-	req, ok := binding.Query[blueprintdto.GetReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[blueprintdto.GetReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	doc, err := h.svc.InitPageDocument(c.Request.Context(), req.ID)

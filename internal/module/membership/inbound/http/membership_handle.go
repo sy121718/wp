@@ -168,8 +168,9 @@ func NewHandle(svc membershipcontract.MembershipService) *Handle {
 }
 
 func (h *Handle) ListTiers(c *gin.Context) {
-	req, ok := binding.Form[membershipdto.ListTiersReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[membershipdto.ListTiersReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	list, err := h.svc.ListTiers(c.Request.Context(), req)
@@ -181,8 +182,9 @@ func (h *Handle) ListTiers(c *gin.Context) {
 }
 
 func (h *Handle) GetTier(c *gin.Context) {
-	req, ok := binding.Form[membershipdto.GetTierReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[membershipdto.GetTierReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	res, err := h.svc.GetTier(c.Request.Context(), req)
@@ -230,8 +232,9 @@ func (h *Handle) SaveEntitlements(c *gin.Context) {
 }
 
 func (h *Handle) ListAssignments(c *gin.Context) {
-	req, ok := binding.Form[membershipdto.ListAssignmentsReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[membershipdto.ListAssignmentsReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	list, err := h.svc.ListAssignments(c.Request.Context(), req)
@@ -268,8 +271,9 @@ func (h *Handle) AssignUnlock(c *gin.Context) {
 }
 
 func (h *Handle) Resolve(c *gin.Context) {
-	req, ok := binding.Form[membershipdto.ResolveReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[membershipdto.ResolveReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	res, err := h.svc.Resolve(c.Request.Context(), req)

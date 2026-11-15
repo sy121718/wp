@@ -91,8 +91,8 @@ func equalRule(a, b []string) bool {
 // TestPolicyMutationDoesNotPropagateToOtherInstance 固化多实例部署下的策略可见性：
 // 写路径（ReplaceRolePermissions 等）只重建**本进程**的内存 enforcer 与 URL→code 映射，
 // 另一实例在自己的 ReloadPolicy 之前看不到新策略。这不是待修缺陷，而是当前设计的事实；
-// 若将来接入 Watcher/TTL 自动刷新，这条用例会变红，提醒同步更新 docs/rls-role-cutover.md
-// 之外的部署说明（多实例要么滚动重启，要么显式调用 ReloadPolicy）。
+// 若将来接入 Watcher/TTL 自动刷新，这条用例会变红，提醒同步更新部署说明
+// （多实例要么滚动重启，要么显式调用 ReloadPolicy）。
 func TestPolicyMutationDoesNotPropagateToOtherInstance(t *testing.T) {
 	source := &memoryAdapter{rules: [][]string{
 		{"role_base", "/admin/known", "GET", "perm.known"},

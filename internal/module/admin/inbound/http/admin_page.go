@@ -1471,7 +1471,7 @@ func parseBulkIDs(raw []string) (ids []uint64, invalid []string) {
 //
 // 失败已由这里写出 401/400：参数错误的文案由词库给，控制器不自己拼。
 // 这些端点在页面里是标准表单提交，绑定必须显式声明 FormPost —— 不能靠
-// binding.JSON 的 Content-Type 自适应，否则同一个端点会悄悄接受两种形状。
+// ShouldBind 的 Content-Type 自适应，否则同一个端点会悄悄接受两种形状。
 // rejectBulkDeleteOverLimit 在绑定之后、调用业务之前拦下超限的批量删除。
 //
 // 上限是**请求形状**而不是业务规则：超限整批拒绝、只回一句受控提示，

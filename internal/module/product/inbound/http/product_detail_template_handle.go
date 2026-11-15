@@ -142,8 +142,9 @@ func (h *ProductPageHandle) SetDetailTemplateDeps(templates contenttemplatecontr
 }
 
 func (h *ProductPageHandle) ProductDetailTemplatePage(c *gin.Context) {
-	req, ok := binding.Query[productdto.ProductDetailTemplatePageReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[productdto.ProductDetailTemplatePageReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	scope, err := h.products.ResolveCatalogScope(c.Request.Context(), req.ProjectID)

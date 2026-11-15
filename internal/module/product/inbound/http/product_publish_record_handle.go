@@ -5,12 +5,14 @@ import (
 
 	productdto "go_wp/internal/module/product/dto"
 	"go_wp/pkg/binding"
+	"go_wp/pkg/response"
 	pageview "go_wp/pkg/view"
 )
 
 func (h *ProductPageHandle) ProductPublishRecordPage(c *gin.Context) {
-	req, ok := binding.Query[productdto.ProductPublishRecordPageReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[productdto.ProductPublishRecordPageReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	scope, err := h.products.ResolveCatalogScope(c.Request.Context(), req.ProjectID)

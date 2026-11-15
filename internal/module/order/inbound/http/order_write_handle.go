@@ -92,11 +92,13 @@ func (e *orderBulkRejectedError) Facing() (string, string) {
 func (e *orderBulkRejectedError) BlockedItems() []facing.BlockedItem { return e.items }
 
 // couponBackURL 是优惠码写成功后回到列表的地址：保留当前筛选上下文。
-// 查询参数经 binding.Query 读取（键名在 DTO 的 form tag 里），不手工读查询串。
+// 查询参数经 binding.ParseQuery 读取（键名在 DTO 的 form tag 里），不手工读查询串。
 func couponBackURL(c *gin.Context, projectID string) string {
 	filter := couponFilter{}
-	if q, ok := binding.Query[orderdto.CouponListReq](c); ok {
+	if q, err := binding.ParseQuery[orderdto.CouponListReq](c); err == nil {
 		filter.Status, filter.Keyword = q.Status, q.Keyword
+	} else {
+		response.ParamError(c)
 	}
 	return "/admin/coupons?" + couponListQuery(projectID, filter, 0, 0)
 }

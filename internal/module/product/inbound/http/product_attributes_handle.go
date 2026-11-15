@@ -14,8 +14,9 @@ import (
 )
 
 func (h *ProductPageHandle) ProductAttributesPage(c *gin.Context) {
-	req, ok := binding.Query[productdto.CatalogTaxonomyReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[productdto.CatalogTaxonomyReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	scope, err := h.products.ResolveCatalogScope(c.Request.Context(), req.ProjectID)
@@ -68,8 +69,9 @@ func (h *ProductHandle) SetAttributeValues(c *gin.Context) {
 }
 
 func (h *ProductHandle) GetAttribute(c *gin.Context) {
-	req, ok := binding.Query[productdto.GetAttributeReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[productdto.GetAttributeReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	res, err := h.svc.GetAttribute(c.Request.Context(), req)
@@ -81,8 +83,9 @@ func (h *ProductHandle) GetAttribute(c *gin.Context) {
 }
 
 func (h *ProductHandle) ListAttributes(c *gin.Context) {
-	req, ok := binding.Query[productdto.ListAttributeReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[productdto.ListAttributeReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	list, err := h.svc.ListAttributes(c.Request.Context(), req)

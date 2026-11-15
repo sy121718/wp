@@ -10,14 +10,16 @@ import (
 	"go_wp/pkg/money"
 	"go_wp/pkg/pagination"
 	"go_wp/pkg/reqparams"
+	"go_wp/pkg/response"
 	pageview "go_wp/pkg/view"
 )
 
 const inventoryMovementsPath = "/admin/inventory/movements"
 
 func (h *inventoryPageHandle) InventoryMovementsPage(c *gin.Context) {
-	query, ok := binding.Query[inventorydto.MovementPageReq](c)
-	if !ok {
+	query, err := binding.ParseQuery[inventorydto.MovementPageReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	data, err := h.movementsData(c, query)

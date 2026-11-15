@@ -18,6 +18,7 @@ import (
 	json "go_wp/pkg/jsonx"
 	"go_wp/pkg/pagination"
 	"go_wp/pkg/reqparams"
+	"go_wp/pkg/response"
 	pageview "go_wp/pkg/view"
 )
 
@@ -86,8 +87,9 @@ func (h *sourcePageHandle) sourcesPageView(c *gin.Context, d *sourcesPageData) a
 }
 
 func (h *sourcePageHandle) SourcesPage(c *gin.Context) {
-	q, ok := binding.Query[purchasedto.SourceListQueryReq](c)
-	if !ok {
+	q, err := binding.ParseQuery[purchasedto.SourceListQueryReq](c)
+	if err != nil {
+		response.ParamError(c)
 		return
 	}
 	pageview.Render(c, h.sourcesPageView(c, h.sourcesPageFacts(c, q)))

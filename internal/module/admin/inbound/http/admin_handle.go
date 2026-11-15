@@ -49,8 +49,9 @@ func NewHandleWithDeps(
 }
 
 func (h *Handle) AdminList(c *gin.Context) {
-	req, ok := binding.Query[admindto.AdminListReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[admindto.AdminListReq](c)
+	if err != nil {
+		r.ParamError(c)
 		return
 	}
 
@@ -177,8 +178,9 @@ func (h *Handle) AdminEdit(c *gin.Context) {
 }
 
 func (h *Handle) AdminDetail(c *gin.Context) {
-	req, ok := binding.Query[admindto.AdminDetailReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[admindto.AdminDetailReq](c)
+	if err != nil {
+		r.ParamError(c)
 		return
 	}
 
@@ -215,8 +217,9 @@ func (h *Handle) AdminDelete(c *gin.Context) {
 }
 
 func (h *Handle) AdminRoleList(c *gin.Context) {
-	req, ok := binding.Query[admindto.AdminRoleListReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[admindto.AdminRoleListReq](c)
+	if err != nil {
+		r.ParamError(c)
 		return
 	}
 	res, err := h.admin.AdminRoleList(c.Request.Context(), req)
@@ -248,8 +251,9 @@ func (h *Handle) AdminRoleSave(c *gin.Context) {
 }
 
 func (h *Handle) AdminMenuList(c *gin.Context) {
-	req, ok := binding.Query[admindto.AdminMenuListReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[admindto.AdminMenuListReq](c)
+	if err != nil {
+		r.ParamError(c)
 		return
 	}
 	res, err := h.admin.AdminMenuList(c.Request.Context(), req)
@@ -281,8 +285,9 @@ func (h *Handle) AdminMenuSave(c *gin.Context) {
 }
 
 func (h *Handle) RuleList(c *gin.Context) {
-	req, ok := binding.Query[admindto.RuleListReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[admindto.RuleListReq](c)
+	if err != nil {
+		r.ParamError(c)
 		return
 	}
 	res, err := h.rule.RuleList(c.Request.Context(), req)
@@ -294,8 +299,9 @@ func (h *Handle) RuleList(c *gin.Context) {
 }
 
 func (h *Handle) RuleDetail(c *gin.Context) {
-	req, ok := binding.Query[admindto.RuleDetailReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[admindto.RuleDetailReq](c)
+	if err != nil {
+		r.ParamError(c)
 		return
 	}
 	res, err := h.rule.RuleDetail(c.Request.Context(), req)
@@ -355,8 +361,9 @@ func (h *Handle) RuleSchemaList(c *gin.Context) {
 }
 
 func (h *Handle) RuleSchemaDetail(c *gin.Context) {
-	req, ok := binding.Query[admindto.RuleSchemaDetailReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[admindto.RuleSchemaDetailReq](c)
+	if err != nil {
+		r.ParamError(c)
 		return
 	}
 	res, err := h.rule.RuleSchemaDetail(c.Request.Context(), req)
@@ -372,8 +379,9 @@ func (h *Handle) RuleSchemaDetail(c *gin.Context) {
 }
 
 func (h *Handle) RuleAssignmentList(c *gin.Context) {
-	req, ok := binding.Query[admindto.RuleAssignmentListReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[admindto.RuleAssignmentListReq](c)
+	if err != nil {
+		r.ParamError(c)
 		return
 	}
 	res, err := h.rule.RuleAssignmentList(c.Request.Context(), req)
@@ -407,8 +415,9 @@ func (h *Handle) DeptTree(c *gin.Context) {
 }
 
 func (h *Handle) DeptDetail(c *gin.Context) {
-	req, ok := binding.Query[admindto.DeptDetailReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[admindto.DeptDetailReq](c)
+	if err != nil {
+		r.ParamError(c)
 		return
 	}
 	res, err := h.dept.DeptDetail(c.Request.Context(), req)
@@ -459,8 +468,9 @@ func (h *Handle) DeptDelete(c *gin.Context) {
 }
 
 func (h *Handle) DeptUserList(c *gin.Context) {
-	req, ok := binding.Query[admindto.DeptUserListReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[admindto.DeptUserListReq](c)
+	if err != nil {
+		r.ParamError(c)
 		return
 	}
 	res, err := h.dept.DeptUserList(c.Request.Context(), req)
@@ -485,8 +495,9 @@ func (h *Handle) DeptUserSave(c *gin.Context) {
 }
 
 func (h *Handle) MenuTree(c *gin.Context) {
-	req, ok := binding.Query[admindto.MenuTreeReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[admindto.MenuTreeReq](c)
+	if err != nil {
+		r.ParamError(c)
 		return
 	}
 
@@ -499,8 +510,9 @@ func (h *Handle) MenuTree(c *gin.Context) {
 }
 
 func (h *Handle) MenuDetail(c *gin.Context) {
-	req, ok := binding.Query[admindto.MenuDetailReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[admindto.MenuDetailReq](c)
+	if err != nil {
+		r.ParamError(c)
 		return
 	}
 
@@ -555,8 +567,9 @@ func (h *Handle) MenuDelete(c *gin.Context) {
 }
 
 func (h *Handle) PermList(c *gin.Context) {
-	req, ok := binding.Query[admindto.PermListReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[admindto.PermListReq](c)
+	if err != nil {
+		r.ParamError(c)
 		return
 	}
 
@@ -569,8 +582,9 @@ func (h *Handle) PermList(c *gin.Context) {
 }
 
 func (h *Handle) PermDetail(c *gin.Context) {
-	req, ok := binding.Query[admindto.PermDetailReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[admindto.PermDetailReq](c)
+	if err != nil {
+		r.ParamError(c)
 		return
 	}
 
@@ -583,8 +597,9 @@ func (h *Handle) PermDetail(c *gin.Context) {
 }
 
 func (h *Handle) PermOptions(c *gin.Context) {
-	req, ok := binding.Query[admindto.PermOptionsReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[admindto.PermOptionsReq](c)
+	if err != nil {
+		r.ParamError(c)
 		return
 	}
 
@@ -642,8 +657,9 @@ func (h *Handle) PermDelete(c *gin.Context) {
 }
 
 func (h *Handle) RoleList(c *gin.Context) {
-	req, ok := binding.Query[admindto.RoleListReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[admindto.RoleListReq](c)
+	if err != nil {
+		r.ParamError(c)
 		return
 	}
 	res, err := h.role.RoleList(c.Request.Context(), req)
@@ -655,8 +671,9 @@ func (h *Handle) RoleList(c *gin.Context) {
 }
 
 func (h *Handle) RoleDetail(c *gin.Context) {
-	req, ok := binding.Query[admindto.RoleDetailReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[admindto.RoleDetailReq](c)
+	if err != nil {
+		r.ParamError(c)
 		return
 	}
 	res, err := h.role.RoleDetail(c.Request.Context(), req)
@@ -707,8 +724,9 @@ func (h *Handle) RoleDelete(c *gin.Context) {
 }
 
 func (h *Handle) RoleMenuList(c *gin.Context) {
-	req, ok := binding.Query[admindto.RoleMenuListReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[admindto.RoleMenuListReq](c)
+	if err != nil {
+		r.ParamError(c)
 		return
 	}
 	res, err := h.role.RoleMenuList(c.Request.Context(), req)
@@ -740,8 +758,9 @@ func (h *Handle) RoleMenuSave(c *gin.Context) {
 }
 
 func (h *Handle) RoleUserList(c *gin.Context) {
-	req, ok := binding.Query[admindto.RoleUserListReq](c)
-	if !ok {
+	req, err := binding.ParseQuery[admindto.RoleUserListReq](c)
+	if err != nil {
+		r.ParamError(c)
 		return
 	}
 	res, err := h.role.RoleUserList(c.Request.Context(), req)
