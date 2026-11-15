@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/spf13/viper"
-	"go_wp/public/migrations"
 )
 
 func NewComponentTestConfig(t *testing.T) string {
@@ -20,9 +19,6 @@ func NewComponentTestConfig(t *testing.T) string {
 	db, err := newTestDatabase(t, env.PG, true, false)
 	if err != nil {
 		t.Fatalf("创建组件测试库失败：%v", err)
-	}
-	if err := migrations.RunSeeds(db); err != nil {
-		t.Fatalf("初始化组件测试种子失败：%v", err)
 	}
 	var dbname string
 	if err := db.Raw("SELECT current_database()").Scan(&dbname).Error; err != nil {

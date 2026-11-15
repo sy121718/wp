@@ -15,7 +15,7 @@ import (
 	"gorm.io/gorm"
 
 	tdbdriver "go_wp/pkg/database/driver"
-	"go_wp/public/migrations"
+	"go_wp/public/schema"
 )
 
 const DefaultPGHost = "127.0.0.1"
@@ -200,7 +200,7 @@ func ensureTemplateDB(ep PGEndpoint) (string, error) {
 			return
 		}
 
-		name := templatePrefix + migrations.Fingerprint()
+		name := templatePrefix + schema.Digest()[:16]
 		templateErr = admin.Connection(func(conn *gorm.DB) error {
 
 			if err := conn.Exec("SELECT pg_advisory_lock(?)", templateLockKey).Error; err != nil {
@@ -221,8 +221,8 @@ func ensureTemplateDB(ep PGEndpoint) (string, error) {
 				if err != nil {
 					return fmt.Errorf("连接模板库失败: %w", err)
 				}
-				if err := migrations.Run(tpl); err != nil {
-					return fmt.Errorf("模板库执行生产迁移失败: %w", err)
+				if err := schema.Apply(tpl); err != nil {
+					return fmt.Errorf("模板库载入 schema 失败: %w", err)
 				}
 
 				if sdb, err := tpl.DB(); err == nil {

@@ -7,7 +7,6 @@ import (
 	"gorm.io/gorm"
 
 	pkgpartition "go_wp/pkg/database/partition"
-	migrations "go_wp/public/migrations"
 )
 
 // Tables 是应用的表目录（保留在生产迁移所属的应用侧）。
@@ -23,7 +22,7 @@ const AheadMonths = pkgpartition.AheadMonths
 func DefaultOptions() pkgpartition.Options {
 	return pkgpartition.Options{
 		Tables:          Tables,
-		ReconcileRLSSQL: migrations.ReconcilePartitionRLSSQL,
+		ReconcileRLSSQL: ReconcilePartitionRLSSQL,
 	}
 }
 
@@ -32,7 +31,7 @@ func EnsureAhead(ctx context.Context, db *gorm.DB, aheadMonths int) ([]string, e
 }
 
 func ReconcileRLS(ctx context.Context, db *gorm.DB) error {
-	return pkgpartition.ReconcileRLS(ctx, db, migrations.ReconcilePartitionRLSSQL)
+	return pkgpartition.ReconcileRLS(ctx, db, ReconcilePartitionRLSSQL)
 }
 
 // 返回的 stop 等待循环退出：调用方必须在关闭数据库之前调用它。

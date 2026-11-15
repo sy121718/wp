@@ -27,7 +27,7 @@ import (
 	"go_wp/pkg/builder/core"
 	"go_wp/pkg/builder/plugincomp"
 	"go_wp/pkg/logger"
-	"go_wp/public/migrations"
+	"go_wp/pkg/sqlsplit"
 )
 
 const (
@@ -253,7 +253,7 @@ func (s *Service) migrateSchema(ctx context.Context, m *plugincomp.Manifest, fil
 			return fmt.Errorf("锁定 search_path 到 %s 失败: %w", schemaName, err)
 		}
 		for _, name := range names {
-			for _, stmt := range migrations.SplitStatements(string(files[name])) {
+			for _, stmt := range sqlsplit.Split(string(files[name])) {
 				if stmt == "" {
 					continue
 				}

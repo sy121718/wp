@@ -102,7 +102,6 @@ import (
 	"go_wp/pkg/response"
 	"go_wp/pkg/view"
 	text "go_wp/pkg/view/jet"
-	"go_wp/public/migrations"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -568,11 +567,6 @@ func (a *assembly) buildFoundation(ready func() error) {
 		if err := casbin.ReloadPolicy(); err != nil {
 			logger.Scene("init").With("err", err).Warn("业务权限策略重载失败（Casbin 未初始化时忽略）")
 		}
-		return
-	}
-	if err := migrations.RunSeeds(db); err != nil {
-		logger.Scene("init").Error(err, "业务权限 seed 失败")
-
 		return
 	}
 	if err := casbin.ReloadPolicy(); err != nil {

@@ -12,7 +12,6 @@ import (
 	"go_wp/pkg/database"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/utils"
-	migrations "go_wp/public/migrations"
 	"log"
 	"net/http"
 	"os"
@@ -52,10 +51,7 @@ func run(migrateOnly bool) error {
 		// migrate-only 也要走统一收尾：失败不能绕过显式关闭。
 		seedErr := error(nil)
 		if config.RunMigrationsEnabled() {
-			seedErr = runSeeds()
-			if seedErr == nil {
-				seedErr = runPartitionMaintenance()
-			}
+			seedErr = runPartitionMaintenance()
 		}
 		closeErr := config.CloseComponents()
 		if seedErr != nil {
@@ -218,17 +214,6 @@ func runPartitionMaintenance() error {
 	}
 	if len(created) > 0 {
 		logger.Scene("init").With("count", len(created)).Info("已补齐未来分区（-migrate-only）")
-	}
-	return nil
-}
-
-func runSeeds() error {
-	db, err := database.GetDB()
-	if err != nil {
-		return fmt.Errorf("seed 前置检查失败: %w", err)
-	}
-	if err := migrations.RunSeeds(db); err != nil {
-		return fmt.Errorf("业务 seed 失败: %w", err)
 	}
 	return nil
 }

@@ -3,7 +3,6 @@ package config
 import (
 	"strings"
 
-	"go_wp/pkg/seo"
 	"go_wp/pkg/auth"
 	"go_wp/pkg/cache"
 	"go_wp/pkg/captcha"
@@ -12,9 +11,10 @@ import (
 	"go_wp/pkg/i18n"
 	pkglogger "go_wp/pkg/logger"
 	"go_wp/pkg/queue"
+	"go_wp/pkg/seo"
 	"go_wp/pkg/upload"
 	pkgvalidate "go_wp/pkg/validate"
-	migrations "go_wp/public/migrations"
+	"go_wp/public/schema"
 
 	"github.com/spf13/viper"
 )
@@ -68,7 +68,7 @@ var runtimeComponents = []runtimeComponent{
 			if err != nil {
 				return err
 			}
-			return migrations.Run(db)
+			return schema.Apply(db)
 		},
 	},
 	{
