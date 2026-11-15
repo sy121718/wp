@@ -51,9 +51,16 @@ GOWP_SNAPSHOT_DB=wp_baseline_probe bash scripts/schema-snapshot.sh
 生成与校验：
 
 ```bash
-bash scripts/baseline-generate.sh          # 自建临时库跑 -migrate-only（含 seed），生成四件，结束删库
-bash scripts/baseline-generate.sh --check  # 产物与当前代码不一致则退出码 1（改过已有迁移必须重生成）
+bash scripts/baseline-generate.sh                  # 自建临时库跑 -migrate-only（含 seed），生成四件，结束删库
+bash scripts/baseline-generate.sh --check          # 前缀 + 摘要自洽；注册表等于冻结清单时另做全量重生成比对
+bash scripts/baseline-generate.sh --check --static # 只做无库检查（check-all 里的 check-baseline-artifacts.sh 就是这条）
 ```
+
+`--check` 有三条判据（第二十四轮修正：旧版把「新增迁移」误报成「基线过期」）：
+
+1. `manifest.txt` 两段各自是当前注册表的**前缀**（[cmd/baseline-manifest](../cmd/baseline-manifest/main.go) 的 `-check-prefix`）。段外新增版本按设计不进基线、照常执行，不算过期；只有顺序错位、条目消失或已冻结条目被改写才报红。
+2. `init.sql` 登记的摘要与版本必须与产物内容一致 —— 手改 SQL 而不重新生成会被这条抓住，且不需要建库。
+3. 仅当注册表等于冻结清单时，才自建临时库重跑全量并逐份比对（抓「基线 SQL 内容漂移」）。有段外新增版本时不比：「基线＋增量」与历史全量的终态等价由 [scripts/baseline-verify.sh](../scripts/baseline-verify.sh) 判定 —— 不能要求每加一条迁移就重生成基线、刷所有库水位。
 
 `--check` 归一两处噪声：头部「生成时间」注释、系统数据里的时间字面量（时间列由生成时刻的 `now()` 写入）。不归一的话，换一次生成或换一天都会误报过期。
 
@@ -78,13 +85,16 @@ bash scripts/baseline-generate.sh --check  # 产物与当前代码不一致则�
 
 | 情形 | 行为 |
 |---|---|
-| 无 manifest / 无 `sys_baseline` 表 / 无水位行 | 全量执行（新库） |
+| 无 manifest / 无 `sys_baseline` 表 / 表在但水位为空 | 全量执行（新库与未接入的旧库） |
 | 水位 `manifest_sha256` == `ContentSHA256()` | 跳过 manifest 两段，执行段外增量 |
 | 水位存在但摘要不等 | **报错退出**，提示「基线产物已变更」与处置办法 |
+| 水位查询本身失败 | **报错退出**，不当作「没有基线」—— 那会让已有结构的库重新跑历史链 |
 
 摘要覆盖内容，不只是清单：`ContentSHA256()` 依次喂 manifest 原文、`--structure--`、structure.sql、`--system-data--`、系统数据（时间字面量归一、剥生成头）。只比 version 清单的话，基线 SQL 内容变了仍会被判「已覆盖」，跳过的迁移永远不会补上。
 
-第三档**不回落全量**。历史迁移假定从空库开始，实证：`164_content_template_is_default.sql` 的 UPDATE 引用 `updated_at`，而 223 已 `DROP` 它建的 `idx_content_templates_default_per_type`、201/205 已把列改名 `update_time`；在终态结构的库上重放，164 的 `CheckSQL` 判不到索引 → 执行 → 撞 `column "updated_at" does not exist (SQLSTATE 42703)`。基线内容变了意味着迁移链形状变了，正确处置是在新库重建，或人工核对后 `--refresh`。
+第三、四档都**不回落全量**。历史迁移假定从空库开始，实证：`164_content_template_is_default.sql` 的 UPDATE 引用 `updated_at`，而 223 已 `DROP` 它建的 `idx_content_templates_default_per_type`、201/205 已把列改名 `update_time`；在终态结构的库上重放，164 的 `CheckSQL` 判不到索引 → 执行 → 撞 `column "updated_at" does not exist (SQLSTATE 42703)`。基线内容变了意味着迁移链形状变了，正确处置是核对差异、追平结构后 `baseline-adopt.sh --refresh --apply` —— 不是删掉水位行试跑（那会半路失败）。
+
+存在性用 `to_regclass('public.sys_baseline')` 查询而不是 `Migrator().HasTable`：后者只有 bool，连接或权限出错时返回 false，已有结构的库会被当成新库重新进入历史链。
 
 `sys_baseline.manifest_sha256` 这个列名沿用历史，语义是**产物内容摘要**（不是清单摘要）。
 
@@ -100,7 +110,7 @@ bash scripts/baseline-adopt.sh --db DBNAME --apply             # 核验通过后
 bash scripts/baseline-adopt.sh --db DBNAME --refresh --apply   # 基线产物变更后更新既有水位
 ```
 
-核验四条，任一不过都不写库：
+核验四条，任一不过都不写库；核验过程中的 **SQL 错误一律拒绝接入**（见下方「错误不吞」）：
 
 1. `sys_baseline` 不存在或只有一行（多行判失败；已接入的库要更新水位用 `--refresh`）；
 2. 结构与「重放 `init.sql` 再跑 `-migrate-only` 的临时库」一致 —— 两侧都是 `pg_dump` 输出，比较口径对称；先做**混库检测**，现有库多出的表直接点名并拒绝（混了别的应用对象，接入等于把外来结构当基线固化）；
@@ -108,6 +118,8 @@ bash scripts/baseline-adopt.sh --db DBNAME --refresh --apply   # 基线产物变
 4. 必需业务键：词条 `(item_key, lang)`、权限 `permission_code`、菜单非空 `permission_code` 在基线里的每一个键都必须存在于现有库（anti-join 为 0）。行数够不代表键齐 —— 缺一个必需键、同时多一条无关记录，行数照样相等。
 
 水位摘要用 `go run ./cmd/baseline-digest`（与迁移器同源），脚本不自己算，避免口径漂移。
+
+**错误不吞**：必需键核验的两次查询原用 `|| true` 调用，失败时输出为空 → anti-join 看起来「没有缺键」→ 脚本报「键全部存在」并以 0 退出（评审 2026-11-15 用不连库的替身探针复现）。现在函数自己记 `key_check_failed`，行数查询失败也直接 fail；[scripts/tests/test_baseline_adopt_guard.py](../scripts/tests/test_baseline_adopt_guard.py) 用假 `psql`/`pg_dump`/`go` 锁住「键查询失败 / COPY 失败 / 确有缺键 / 行数查询失败 / 正常通过」五种结果，已进 check-all 无依赖组。
 
 实测：`artex` 被混库检测拒绝（多出 60+ 张其他项目表与 `pgcrypto`/`vector` 扩展），不接入基线；`wp` 2026-11-15 接入，同日基线改为「冻结前缀 + 内容摘要」后用 `--refresh` 更新水位（`8a6d0f78…`），接入后 `-migrate-only` 实测 `skipped=186 total=186` / `skipped=440 total=440`。
 
@@ -151,7 +163,7 @@ bash scripts/baseline-verify.sh --keep   # 保留库与 /tmp/wp-baseline-verify-
 
 ### 3.8 已知限制与维护动作
 
-- **改已有迁移的 SQL 内容必须重生成基线**（内容摘要变），已接入的库会拒绝启动：先让库结构追平，再 `--refresh`。只新增迁移不用重生成。
+- **改已有迁移的 SQL 内容必须重生成基线**（内容摘要变），已接入的库会拒绝启动：先让库结构追平，再 `--refresh`。只新增迁移不用重生成 —— `--check` 的前缀判据保证了这一点，静态部分（前缀 + 摘要自洽）在 `check-all.sh` 无依赖组里跑。
 - manifest 两段必须与注册表前缀一致，[baseline_manifest_test.go](../public/migrations/baseline_manifest_test.go) 会拦；同一条既有测试钉住 `init.sql` 的摘要与 `ContentSHA256()` 同源（shell 与 Go 各算一遍，口径漂移就红）。
 - **seed 里不得放 DDL**：6 张 `ai_*` 表曾由 seed 建（纯 DDL、无数据），已改为迁移登记；判据固定为「纯 DDL 走 Migration，seed 只写数据」。
 - adopt 的必需键只覆盖词条/权限/菜单三张表，其余系统表只比行数。

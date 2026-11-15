@@ -1,6 +1,6 @@
 # 框架基础归一与可视化工具化任务书
 
-当前状态（2026-11-15 第二十三轮收口）：**154 处原生 FormPost 已全部迁移、初始化基线阶段 1、2 均已落地**。契约 362 条：**239 form / 106 json / 8 query / 4 multipart / 3 nobody / 2 raw，unknown 为 0**；`ParseForm` 端点额外声明 `encodings: [urlencoded, multipart]`，`BindForm` 钩子读取的字面量键（remember / pageSize / emailNotify / shipName…）已并入字段表。非表单编码现在直接 400，不再「忽略 JSON 后写默认值」。447 历史 SQL 已恢复原文并归档，现行执行源改为 758b。密码业务链补齐生产布局（`/production`）三视口 × 四输入 12 格。`go test ./...` **283 包 ok（rls 188 秒）**；`check-all.sh --with-db` 39/39；`go build ./...`、`go vet ./...`、`write-contracts -check` 通过。第十七轮改动分五批提交（`e466ac95` / `db4ba666` / `e95c7ce7` / `5e9e3842` / `ee1c3391`），第十八轮改动分五批提交（`2edc91ea` / `ff6b9730` / `63d347fe` / `f5625910` / `87960150`），第十九轮改动分六批提交（`f8bed43c` / `2854dc40` / `52142147` / `a95c86ef` / `e5ac0333` / `74c840f9`），另 `c1cfc5dd` 修分区列名回退。最新范围与证据边界以[当前收口任务](#当前收口任务)为准；历轮记录保留为历史，不据其旧缺口重复实施。第二十轮改动分两批提交（`c0610ea0` 观测列迁 761、`4be9537d` 浏览器矩阵），并已推送 `origin/main`（`c6b4a178..4be9537d`，321 个提交）；第二十一轮分两批（`e0f36f69` CheckSQL 覆盖与存量库列名、`a529aea3` wp 接入基线）；第二十二轮分两批（`048273f9` 两段 manifest / 内容摘要 / 拒绝重放、文档本提交）。第二十二轮复跑：`go build ./...` 绿、`go test ./public/migrations/` 94.170s ok、`go test ./pkg/binding/` ok、`bash scripts/check-all.sh` 31 脚本全过、`baseline-generate.sh --check` 与 `schema-snapshot.sh --check` 绿。第二十三轮删除 `pkg/binding` 的 `Query` / `Form` / `JSON` / `JSONLimited` 四个兼容入口（140 处调用迁到 `ParseQuery`）并去掉导航译文封套的表单半边：61 个文件 +621 / −974（净 −353 行），新增包装与门禁均为 0；分两批提交（`927e254a` 代码、`2c75d34a` 文档）并推送。
+当前状态（2026-11-15 第二十四轮收口）：**154 处原生 FormPost 已全部迁移、初始化基线阶段 1、2 均已落地**。契约 362 条：**239 form / 106 json / 8 query / 4 multipart / 3 nobody / 2 raw，unknown 为 0**；`ParseForm` 端点额外声明 `encodings: [urlencoded, multipart]`，`BindForm` 钩子读取的字面量键（remember / pageSize / emailNotify / shipName…）已并入字段表。非表单编码现在直接 400，不再「忽略 JSON 后写默认值」。447 历史 SQL 已恢复原文并归档，现行执行源改为 758b。密码业务链补齐生产布局（`/production`）三视口 × 四输入 12 格。`go test ./...` **283 包 ok（rls 188 秒）**；`check-all.sh --with-db` 39/39；`go build ./...`、`go vet ./...`、`write-contracts -check` 通过。第十七轮改动分五批提交（`e466ac95` / `db4ba666` / `e95c7ce7` / `5e9e3842` / `ee1c3391`），第十八轮改动分五批提交（`2edc91ea` / `ff6b9730` / `63d347fe` / `f5625910` / `87960150`），第十九轮改动分六批提交（`f8bed43c` / `2854dc40` / `52142147` / `a95c86ef` / `e5ac0333` / `74c840f9`），另 `c1cfc5dd` 修分区列名回退。最新范围与证据边界以[当前收口任务](#当前收口任务)为准；历轮记录保留为历史，不据其旧缺口重复实施。第二十轮改动分两批提交（`c0610ea0` 观测列迁 761、`4be9537d` 浏览器矩阵），并已推送 `origin/main`（`c6b4a178..4be9537d`，321 个提交）；第二十一轮分两批（`e0f36f69` CheckSQL 覆盖与存量库列名、`a529aea3` wp 接入基线）；第二十二轮分两批（`048273f9` 两段 manifest / 内容摘要 / 拒绝重放、文档本提交）。第二十二轮复跑：`go build ./...` 绿、`go test ./public/migrations/` 94.170s ok、`go test ./pkg/binding/` ok、`bash scripts/check-all.sh` 31 脚本全过、`baseline-generate.sh --check` 与 `schema-snapshot.sh --check` 绿。第二十三轮删除 `pkg/binding` 的 `Query` / `Form` / `JSON` / `JSONLimited` 四个兼容入口（140 处调用迁到 `ParseQuery`）并去掉导航译文封套的表单半边：61 个文件 +621 / −974（净 −353 行），新增包装与门禁均为 0；分两批提交（`927e254a` 代码、`2c75d34a` 文档）并推送。
 
 本任务书是本次重构的唯一实施清单，不是第二份架构规范；规范仍以 [AGENTS.md](AGENTS.md) 为准。原 [商品后台通用写反馈任务书](TASK-html-feedback.md) 保留为背景和原始用例索引，其实施安排由本文接替：不再由 `internal/adminui` 承担成功渲染，不分开交付第二套反馈，不按旧任务书默认运行全量门禁。
 
@@ -950,7 +950,7 @@ pkg/database/{retention,partition}
 
 **1. `pkg/binding` 只剩三个入口**
 
-删除 `Query` / `Form` / `JSON`（返回 bool、按 Content-Type 猜协议）与 `JSONLimited`；`ApplyListQuery` / `ListQueryTag` 私有化为 `applyListQuery` / `listQueryTag`，`isFormBody` 随唯一调用方删除。保留 `ParseForm` / `ParseJSON` / `ParseQuery` 与辅助实现 `Field` / `ListQuery` / `WithListQuery`。`binding.go` 295 → 189 行（−106）。
+删除 `Query` / `Form` / `JSON`（返回 bool、按 Content-Type 猜协议）与 `JSONLimited`；`ApplyListQuery` / `ListQueryTag` 私有化为 `applyListQuery` / `listQueryTag`，`isFormBody` 随唯一调用方删除。保留 `ParseForm` / `ParseJSON` / `ParseQuery` 与辅助实现 `ListQuery` / `WithListQuery`（`Field` 在第二十四轮删除，见该轮）。`binding.go` 295 → 189 行（−106）。
 
 140 处调用点全部迁到 `binding.ParseQuery[T]`（135 处 `Query` + 5 处 `Form`）：admin 19、mail 10、product 与 masterdata 35（11 文件）、order / purchase / cart / membership 35（10 文件）、inventory / page / content / contenttemplate / navigation / presentation / blueprint / media / plugin / project / workbench 36（16 文件）、analytics / block / build / comment / webhook 5。失败分支统一 `response.ParamError(c)` + return，读到 400 后不再继续解引用。生产代码 `binding.Query[/Form[/JSON[` 归零。
 
@@ -966,8 +966,8 @@ pkg/database/{retention,partition}
 
 - [controller_objects_test.go](internal/architecture/controller_objects_test.go)：对象查询管线判据改认 `binding.ParseQuery`，调用白名单加 `response.ParamError`（`requestJSON:` 形态不再需要）。
 - [controller_orchestration_test.go](internal/architecture/controller_orchestration_test.go)：mail 台账 10 条 / 峰值 20 降为 8 / 19（`ParseQuery` 的「绑定 + 失败 return」被 `bindPreamble` 整体排除，每个 handler 少一条业务语句）。
-- 删除 [pkg/binding/json_limited_test.go](pkg/binding/json_limited_test.go)；[pkg/binding/binding_test.go](pkg/binding/binding_test.go) 重写为三个入口 + `Field` + `ListQuery` 回填（173 → 145）。
-- `pkg/casbin/multi_instance_test.go` 注释不再指向已删除的 `docs/rls-role-cutover.md`，`docs_pointer_test.go` 死指针预算回到 0。
+- 删除 [pkg/binding/json_limited_test.go](pkg/binding/json_limited_test.go)；[pkg/binding/binding_test.go](pkg/binding/binding_test.go) 重写为三个入口 + `Field` + `ListQuery` 回填（173 → 145；`Field` 相关用例已于第二十四轮删除）。
+- `pkg/casbin/multi_instance_test.go` 注释不再指向此前已删除的那份 RLS 角色切换文档（去掉路径引用），`docs_pointer_test.go` 死指针预算回到 0。
 
 **5. 唯一实现 / 旧入口退出 / 调用链**
 
@@ -987,7 +987,40 @@ pkg/database/{retention,partition}
 **未做（如实登记）**
 
 - 440 条 seed 的历史检查与重放仍在：存量库升级需要它们，收敛成「基线 + 增量」的单一路径要先解决「存量库如何判定水位」，见 [docs/initial-baseline.md](docs/initial-baseline.md)。
-- `binding.Field` 的三个调用方（登录后跳转、找回密码）仍靠 `c.PostForm` 读单个隐藏字段；它是辅助实现而非第二个绑定入口，尚未合并进 DTO。
+- ~~`binding.Field` 的三个调用方（登录后跳转、找回密码）仍靠 `c.PostForm` 读单个隐藏字段~~ —— 这一条登记有误，已于第二十四轮更正：真实消费者是 AI 的三个 GET（模型列表 / 会话详情 / 会话事件）经 [internal/module/ai/inbound/http/ai_handle.go](internal/module/ai/inbound/http/ai_handle.go) 的 `bindID` 读单个 id 参数；三个 handler 都不收表单体，`PostForm` 回退永远读不到值。改为 `aidto.IDQuery` + `binding.ParseQuery` 后 `Field` 已删除。
+
+### 第二十四轮：审核八条收口、基线安全与入口归一（2026-11-15）
+
+**触发**：外部审核确认第二十三轮主体方向成立（删除兼容入口、以 Gin 原生机制实现、无业务规则与响应写入），但列 8 条并要求按顺序收尾：①基线核验的错误放行与不安全处置提示；②冻结前缀的维护检查与过期工具测试；③AI 的 Field 回退、剩余入口与登记口径。同时校准两点：不得声称「三个 Parse 入口已是全仓唯一实现」（当时导航 handler 仍直调 `ShouldBindJSON`）；「生产代码净删 353 行」的口径应分类，实测 69fd5aa7..9ef15e2d = impl −63 / tests −356 / docs +45 / 合计 −374。
+
+#### 1. 基线核验 fail-closed
+
+- [public/migrations/baseline_skip.go](public/migrations/baseline_skip.go)：存在性改用 `SELECT to_regclass('public.sys_baseline') IS NOT NULL`，查询失败返回错误（不再当成「没有基线」）；水位改为读 `[]struct{Version, ManifestSHA256}`，读取失败同样返回错误；只有「表在、水位为空」才是未接入旧库走全量。摘要不等**不再回落全量**，返回「基线产物已变更……用 `scripts/baseline-adopt.sh --db <库> --refresh --apply` 追平后刷新水位；直接删除水位行再跑迁移会半路失败」。
+- [scripts/baseline-adopt.sh](scripts/baseline-adopt.sh)：行数统计去掉 `|| echo 0`；必需键核验的两次 SQL 失败置 `key_check_failed` 并在循环后拒绝接入。新增 [scripts/tests/test_baseline_adopt_guard.py](scripts/tests/test_baseline_adopt_guard.py)（5 条）：用替身 psql/pg_dump 复现旧版「两次 SQL 都失败仍打印✓键全部存在、exit 0」，修复后断言失败时 exit≠0 且含「SQL 错误」。替身测试必须设 `BASH_ENV=/dev/null`，否则本机 `BASH_ENV` 会把 Homebrew 路径插到 PATH 最前。
+- 新增 [public/migrations/baseline_skip_test.go](public/migrations/baseline_skip_test.go)：连不上的 DSN + `DisableAutomaticPing`，断言查询失败时 `baselineState` 返回 error、跳过集合为 nil。
+
+#### 2. 冻结前缀与 `--check`
+
+- [schema/baseline/baseline.go](schema/baseline/baseline.go)：解析抽成 `ParseManifestText(text string) Manifest`，仓库文件与生成器共用同一套解析。
+- [cmd/baseline-manifest/main.go](cmd/baseline-manifest/main.go)：新增 `-check-prefix`，校验冻结清单是注册表前缀（允许注册表更长），成功打印 `prefix_ok=1 migrations=186/186 seeds=440/440 extras=0`。
+- [scripts/baseline-generate.sh](scripts/baseline-generate.sh)：`--check` 三分支——前缀校验、init.sql 摘要与版本自洽、`extras==0` 时才建探针库全量重生成比对；`--static` 只做前两项。新增 [scripts/check-baseline-artifacts.sh](scripts/check-baseline-artifacts.sh) 并加入 [scripts/check-all.sh](scripts/check-all.sh) 的 plain 组（现 33 个脚本）。
+- [cmd/write-contracts/main_test.go](cmd/write-contracts/main_test.go)：删除仍引用已删 `Form`/`JSON` 入口的 TestCompatBindersStayUnchecked，改为 TestExplicitBindersResolveProtocol（`ParseJSON`→json、`ParseForm`→form、直接 `ShouldBindJSON`→json）。
+
+#### 3. 绑定入口归一
+
+- **删除 `binding.Field`**：真实消费者是 AI 三个 GET（模型列表 / 会话详情 / 会话事件）经 [internal/module/ai/inbound/http/ai_handle.go](internal/module/ai/inbound/http/ai_handle.go) 的 `bindID` 读单个 id；三个 handler 都不收表单体，`PostForm` 回退永远读不到值。改为 [internal/module/ai/dto/ai_req.go](internal/module/ai/dto/ai_req.go) 的 `IDQuery` + `binding.ParseQuery`，`Field` 与其测试一并删除。
+- **92 处直接 `c.ShouldBindJSON` → `binding.ParseJSON`**：admin 组 28（admin_handle 22 / sysconfig / block / webhook 2 / build / order）、page+project 18、inventory+purchase 24（purchase 实数 7，不是任务书写的 9）、media+ai+blueprint+presentation+contenttemplate+content 21、navigation 1。失败出口逐处保留（`ParamError` / `pageview.FailStatus` / 模块错误区）。
+- **14 处直接 `c.ShouldBindQuery` → `binding.ParseQuery`**：admin_page 6、mail_handle 6、webhook_handle 2。
+- **上传端点保留显式 multipart**：media 2、plugin 2 仍用 `ginbinding.FormMultipart`。实测 `ParseForm` 接受 urlencoded 时会把 `file=sample` 绑成非 nil 假文件头，[internal/module/media/inbound/http/media_upload_binding_test.go](internal/module/media/inbound/http/media_upload_binding_test.go) 的 `form` 子用例从 400 变成 500 且 service 被调用；[AGENTS.md](AGENTS.md) 与 [pkg/CLAUDE.md](pkg/CLAUDE.md) 已写明这是唯一例外。
+- 收口后 `internal/module` 内 `ShouldBind`/`ShouldBindJSON`/`ShouldBindQuery` 为 0；只剩 [cmd/builder/main.go](cmd/builder/main.go) 的内部回调与生成器的识别分支。
+
+#### 4. 门禁与登记
+
+- [internal/architecture/controller_orchestration_test.go](internal/architecture/controller_orchestration_test.go)：台账减条——admin_handle 超限函数 5→3（AdminLogin=7 / AdminLogout=13 / AdminProfile=7）、admin_page 15→14、pages_handle 5→4（buildPagesData=14 / CreatePage=9 / HistoryPanel=9 / HistoryRestore=17）。
+- 第二十三轮章节第 970 行指向已删文档的路径改写为不带路径的表述，死指针预算回到 0。
+- 本轮未提交改动（不含三个新文件、不含 testdata 等既有删除）：+596 / −416 tracked。
+
+**未做**：440 条 seed 的跳过只在接入过基线的库生效，未接入的旧库升级仍走全量；cmd/builder 的内部 JSON 回调与四个上传端点是显式例外，不属「未收口」；浏览器矩阵本轮未重跑（未改模板、JS、样式）。
 
 ### 第十七轮实施与验收（2026-11-14）
 

@@ -101,7 +101,7 @@ bash scripts/check-all.sh    # 门禁全集（--with-db 含需要库的那组）
 
 | 包 | 只准 | 一律禁止 |
 |---|---|---|
-| binding | **请求绑定的唯一入口**，三个入口各自给一份确定协议：`ParseForm`（只读 body、只接受 urlencoded/multipart、非表单编码直接报错）/ `ParseJSON` / `ParseQuery`（只读查询串，按 `listquery` tag 回填 `ListQuery`）。`Field`/`ListQuery`/`WithListQuery` 是辅助实现 | 业务校验、按 Content-Type 猜协议的入口、同一端点两种编码、绕过入口直接 `ShouldBind` |
+| binding | **请求绑定的唯一入口**，三个入口各自给一份确定协议：`ParseForm`（只读 body、同一端点接受 urlencoded 与 multipart 两种表单编码、非表单编码直接报错）/ `ParseJSON` / `ParseQuery`（只读查询串，按 `listquery` tag 回填 `ListQuery`）。`ListQuery`/`WithListQuery` 是辅助实现 | 业务校验、按 Content-Type 猜协议的入口（同一端点 JSON 与表单二选一由路由声明，不靠请求头猜）、绕过三个入口直调 `ShouldBind`/`ShouldBindJSON`/`ShouldBindQuery`；文件上传是唯一例外，必须用 `ginbinding.FormMultipart` 显式绑定并检查错误（`ParseForm` 会接受 urlencoded，而 urlencoded 的 `file=sample` 会被绑成非 nil 的假文件头，service 拿到坏文件） |
 | facing | 错误事实（key + 状态码；`facing.Msg` 的兜底是**消息事实**，合法保留） | 取词、日志 |
 | response | JSON 出口取词与状态码（`MessageOf` 产生 message） | 业务语义 |
 | view | 视图结果接口、请求级渲染接线、页面/片段渲染入口、统一成功与失败出口（不含模板引擎） | 模板引擎实现、业务逻辑、按模块定制包装 |
@@ -171,7 +171,7 @@ bash scripts/check-all.sh    # 门禁全集（--with-db 含需要库的那组）
 ## 写操作
 
 - 普通提交使用 Jet 原生 form + HTMX 4 标准表单编码与 HTML 交换；上传明确 multipart，复杂编辑器明确 JSON 输入。`write-base` 只接 CSRF、响应校验、错误区、生命周期和前端成功动作，不另写普通表单 fetch 执行器。
-- 查询用 `binding.ParseQuery[T]`（只读查询串）；普通写 body 用 `binding.ParseForm[T]`（只读 body，不合并 query，非表单编码直接报错）；复杂输入用 `binding.ParseJSON[T]`；上传明确 multipart（`ParseForm` 一视同仁，按声明的编码选 FormPost 或 FormMultipart）。不直接调 `ShouldBind`/`ShouldBindWith`：前者按 Content-Type 自适应并把 query 并进表单，后者对 JSON 体静默得到空表单，带默认值的 DTO 会把「没提交」写成「要求默认值」。Gin 不会自动调用任意 `Validate()`，需要时显式调用；不新增万能 binder 或同义包装，保留请求体上限。
+- 查询用 `binding.ParseQuery[T]`（只读查询串）；普通写 body 用 `binding.ParseForm[T]`（只读 body，不合并 query，非表单编码直接报错）；复杂输入用 `binding.ParseJSON[T]`；文件上传用 `ginbinding.FormMultipart` 显式绑定（只接受 multipart，urlencoded 会被绑出假文件头），失败按参数错处理。不直接调 `ShouldBind`/`ShouldBindJSON`/`ShouldBindQuery`：`ShouldBind` 按 Content-Type 自适应并把 query 并进表单，`ShouldBindJSON` 对空体静默得零值、对表单体报错文案不统一；带默认值的 DTO 会把「没提交」写成「要求默认值」。Gin 不会自动调用任意 `Validate()`，需要时显式调用；不新增万能 binder 或同义包装，保留请求体上限。
 - DTO 不复用展示响应对象作为请求；操作人和授权范围等可信字段由服务端提供，不开放客户端绑定。归属、状态、事务与锁仍归 service。
 - 原生字段名与请求 tag 一致，ID 保持字符串；明确 checkbox、空数字、0、缺失/清空集合和完整替换/PATCH 语义。不得假设 Gin 自动理解任意嵌套表单下标，不新增通用 presence/表单 Schema。
 - 普通表单不逐页拼 JSON；复杂编辑器只提供真实业务对象，发送仍由 HTMX 执行，不 stringify 后藏进普通字段。旧字段整形、旧执行器、旧别名不保留。
