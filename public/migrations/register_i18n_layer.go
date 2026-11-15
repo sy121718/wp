@@ -371,7 +371,7 @@ THEN 1 ELSE 0 END`,
 	register(Migration{
 		Version:   "068-pg-jsonb-partial-index",
 		TableName: "pages",
-		CheckSQL:  "SELECT COUNT(*) FROM pg_indexes WHERE schemaname = current_schema() AND tablename = ? AND indexname = 'idx_pages_blockref'",
+		CheckSQL:  "SELECT CASE WHEN COUNT(*) = 4 THEN 1 ELSE 0 END FROM pg_indexes WHERE schemaname = current_schema() AND tablename = ? AND indexname IN ('idx_pages_blockref', 'idx_pages_structure_header', 'idx_pages_structure_footer', 'idx_pages_theme_alive')",
 		SQL:       mustSQL("068_pg_jsonb_partial_index.sql"),
 	})
 

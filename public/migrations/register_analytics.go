@@ -197,8 +197,10 @@ func registerAnalyticsSeoAndPermissions() {
 	register(Migration{
 		Version:   "171-build-jobs-queue",
 		TableName: "build_jobs",
-		CheckSQL:  "SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END FROM pg_indexes WHERE schemaname = current_schema() AND tablename = ? AND indexname = 'uq_build_jobs_pending'",
-		SQL:       mustSQL("171_build_jobs_queue.sql"),
+		// idx_build_jobs_running 由 295-build-jobs-lease 删掉（回收改按租约到期判定，该索引零命中），
+		// 终态只有 claim 与 uq 两个索引；判 3 会让存量库每次重跑都重放本迁移。
+		CheckSQL: "SELECT CASE WHEN COUNT(*) = 2 THEN 1 ELSE 0 END FROM pg_indexes WHERE schemaname = current_schema() AND tablename = ? AND indexname IN ('idx_build_jobs_claim', 'uq_build_jobs_pending')",
+		SQL:      mustSQL("171_build_jobs_queue.sql"),
 	})
 
 	register(Migration{

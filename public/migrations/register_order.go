@@ -6,9 +6,12 @@ func registerOrderAndSiteSlots() {
 		Version:   "135-order",
 		TableName: "orders",
 
-		CheckSQL: "SELECT CASE WHEN COUNT(*) = 3 THEN 1 ELSE 0 END FROM information_schema.tables " +
-			"WHERE table_schema = current_schema() AND (CAST(? AS text) IS NOT NULL) " +
-			"AND table_name IN ('orders', 'order_items', 'order_status_logs')",
+		CheckSQL: allChecks(
+			"SELECT CASE WHEN COUNT(*) = 3 THEN 1 ELSE 0 END FROM information_schema.tables "+
+				"WHERE table_schema = current_schema() AND (CAST(? AS text) IS NOT NULL) "+
+				"AND table_name IN ('orders', 'order_items', 'order_status_logs')",
+			coverObjects("orders", "uk_orders_request_id", "idx_orders_project_status", "idx_orders_user", "idx_orders_customer_email", "idx_orders_transaction", "idx_orders_create_time", "order_items", "idx_order_items_order", "idx_order_items_variant", "order_status_logs", "idx_order_status_logs_order"),
+		),
 		SQL: mustSQL("135_order.sql"),
 	})
 
@@ -45,9 +48,12 @@ func registerOrderAndSiteSlots() {
 	register(Migration{
 		Version:   "141-order-coupons",
 		TableName: "coupons",
-		CheckSQL: "SELECT CASE WHEN COUNT(*) = 2 THEN 1 ELSE 0 END FROM information_schema.tables " +
-			"WHERE table_schema = current_schema() AND (CAST(? AS text) IS NOT NULL) " +
-			"AND table_name IN ('coupons', 'coupon_redemptions')",
+		CheckSQL: allChecks(
+			"SELECT CASE WHEN COUNT(*) = 2 THEN 1 ELSE 0 END FROM information_schema.tables "+
+				"WHERE table_schema = current_schema() AND (CAST(? AS text) IS NOT NULL) "+
+				"AND table_name IN ('coupons', 'coupon_redemptions')",
+			coverObjects("coupons", "uq_coupons_project_code", "idx_coupons_project_status", "coupon_redemptions", "uq_coupon_redemptions_coupon_order", "idx_coupon_redemptions_project", "idx_coupon_redemptions_user"),
+		),
 		SQL: mustSQL("141_order_coupons.sql"),
 	})
 
@@ -70,9 +76,12 @@ func registerOrderAndSiteSlots() {
 	register(Migration{
 		Version:   "144-order-returns",
 		TableName: "order_returns",
-		CheckSQL: "SELECT CASE WHEN COUNT(*) = 2 THEN 1 ELSE 0 END FROM information_schema.tables " +
-			"WHERE table_schema = current_schema() AND (CAST(? AS text) IS NOT NULL) " +
-			"AND table_name IN ('order_returns', 'order_return_items')",
+		CheckSQL: allChecks(
+			"SELECT CASE WHEN COUNT(*) = 2 THEN 1 ELSE 0 END FROM information_schema.tables "+
+				"WHERE table_schema = current_schema() AND (CAST(? AS text) IS NOT NULL) "+
+				"AND table_name IN ('order_returns', 'order_return_items')",
+			coverObjects("order_returns", "uq_order_returns_no", "uq_order_returns_request", "idx_order_returns_order", "idx_order_returns_project_status", "idx_order_returns_user", "order_return_items", "idx_order_return_items_return", "idx_order_return_items_order_item"),
+		),
 		SQL: mustSQL("144_order_returns.sql"),
 	})
 
@@ -95,9 +104,12 @@ func registerOrderAndSiteSlots() {
 	register(Migration{
 		Version:   "147-page-views",
 		TableName: "page_views",
-		CheckSQL: "SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END FROM information_schema.tables " +
-			"WHERE table_schema = current_schema() AND (CAST(? AS text) IS NOT NULL) " +
-			"AND table_name = 'page_views'",
+		CheckSQL: allChecks(
+			"SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END FROM information_schema.tables "+
+				"WHERE table_schema = current_schema() AND (CAST(? AS text) IS NOT NULL) "+
+				"AND table_name = 'page_views'",
+			coverObjects("page_views", "idx_page_views_project_time", "idx_page_views_project_path_time"),
+		),
 		SQL: mustSQL("147_page_views.sql"),
 	})
 
@@ -157,9 +169,12 @@ func registerOrderAndSiteSlots() {
 	register(Migration{
 		Version:   "627-order-shipment",
 		TableName: "order_shipments",
-		CheckSQL: "SELECT CASE WHEN COUNT(*) = 3 THEN 1 ELSE 0 END FROM information_schema.tables " +
-			"WHERE table_schema = current_schema() AND (CAST(? AS text) IS NOT NULL) " +
-			"AND table_name IN ('order_carriers', 'order_shipments', 'order_shipment_items')",
+		CheckSQL: allChecks(
+			"SELECT CASE WHEN COUNT(*) = 3 THEN 1 ELSE 0 END FROM information_schema.tables "+
+				"WHERE table_schema = current_schema() AND (CAST(? AS text) IS NOT NULL) "+
+				"AND table_name IN ('order_carriers', 'order_shipments', 'order_shipment_items')",
+			coverObjects("order_carriers", "uq_order_carriers_project_code", "order_shipments", "uq_order_shipments_no", "uq_order_shipments_request", "idx_order_shipments_order", "order_shipment_items", "uq_order_shipment_items_row", "idx_order_shipment_items_item"),
+		),
 		SQL: mustSQL("627_order_shipment.sql"),
 	})
 

@@ -275,16 +275,19 @@ func registerCatalogAndInventory() {
 	register(Migration{
 		Version:   "111-master-data-changes",
 		TableName: "master_data_changes",
-		CheckSQL: "SELECT CASE WHEN COUNT(*) = 2 THEN 1 ELSE 0 END FROM (" +
-			"SELECT 1 FROM information_schema.tables " +
-			"WHERE table_schema = current_schema() AND table_name = ? " +
-			"UNION ALL " +
-			"SELECT 1 FROM pg_trigger t " +
-			"JOIN pg_class c ON c.oid = t.tgrelid " +
-			"JOIN pg_namespace n ON n.oid = c.relnamespace " +
-			"WHERE n.nspname = current_schema() AND c.relname = 'master_data_changes' " +
-			"AND t.tgname = 'trg_master_data_changes_append_only' AND NOT t.tgisinternal" +
-			") x",
+		CheckSQL: allChecks(
+			"SELECT CASE WHEN COUNT(*) = 2 THEN 1 ELSE 0 END FROM ("+
+				"SELECT 1 FROM information_schema.tables "+
+				"WHERE table_schema = current_schema() AND table_name = ? "+
+				"UNION ALL "+
+				"SELECT 1 FROM pg_trigger t "+
+				"JOIN pg_class c ON c.oid = t.tgrelid "+
+				"JOIN pg_namespace n ON n.oid = c.relnamespace "+
+				"WHERE n.nspname = current_schema() AND c.relname = 'master_data_changes' "+
+				"AND t.tgname = 'trg_master_data_changes_append_only' AND NOT t.tgisinternal"+
+				") x",
+			coverObjects("master_data_changes", "idx_master_data_changes_entity", "idx_master_data_changes_time", "idx_master_data_changes_field"),
+		),
 		SQL: mustSQL("111_master_data_changes.sql"),
 	})
 
@@ -617,9 +620,12 @@ WHERE NOT EXISTS (SELECT 1 FROM sys_i18n t WHERE t.item_key = keys.item_key AND 
 	register(Migration{
 		Version:   "630-inventory-transfer",
 		TableName: "inventory_transfers",
-		CheckSQL: "SELECT CASE WHEN COUNT(*) = 3 THEN 1 ELSE 0 END FROM information_schema.tables " +
-			"WHERE table_schema = current_schema() AND (CAST(? AS text) IS NOT NULL) " +
-			"AND table_name IN ('inventory_transfers', 'inventory_transfer_items', 'inventory_transfer_attachments')",
+		CheckSQL: allChecks(
+			"SELECT CASE WHEN COUNT(*) = 3 THEN 1 ELSE 0 END FROM information_schema.tables "+
+				"WHERE table_schema = current_schema() AND (CAST(? AS text) IS NOT NULL) "+
+				"AND table_name IN ('inventory_transfers', 'inventory_transfer_items', 'inventory_transfer_attachments')",
+			coverObjects("inventory_transfers", "uq_inventory_transfers_no", "uq_inventory_transfers_request", "idx_inventory_transfers_status", "inventory_transfer_items", "uq_inventory_transfer_items_row", "inventory_transfer_attachments", "uq_inventory_transfer_attachments_row"),
+		),
 		SQL: mustSQL("630_inventory_transfer.sql"),
 	})
 

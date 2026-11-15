@@ -14,7 +14,7 @@ func registerAIProviderMigration() {
 	register(Migration{
 		Version:   "511-ai-provider",
 		TableName: "ai_provider",
-		CheckSQL:  "SELECT CASE WHEN to_regclass('ai_provider') IS NOT NULL THEN 1 ELSE 0 END",
+		CheckSQL:  "SELECT CASE WHEN to_regclass('ai_provider') IS NOT NULL AND (SELECT COUNT(*) FROM pg_indexes WHERE schemaname = current_schema() AND tablename = 'ai_provider' AND indexname IN ('idx_ai_provider_status', 'idx_ai_provider_sort')) = 2 THEN 1 ELSE 0 END",
 		SQL:       mustSQL("511_ai_provider.sql"),
 	})
 }

@@ -41,13 +41,33 @@ CREATE TABLE IF NOT EXISTS master_data_changes (
     CONSTRAINT master_data_changes_field_check CHECK (field <> '')
 );
 
--- 按实体查历史（验收 4 的主查询）：工程 + 实体类型 + 实体 id，按时间倒序取。
-CREATE INDEX IF NOT EXISTS idx_master_data_changes_entity
-    ON master_data_changes(project_id, entity_type, entity_id, created_at DESC);
+-- 时间列在 205_db019_time_columns_full.sql 里从 created_at 改名为 create_time。
+-- 本迁移在存量库重跑时表已存在，必须按当前实际列名建索引，否则撞 42703。
+DO $$
+DECLARE
+    ts_col text;
+BEGIN
+    SELECT column_name INTO ts_col
+      FROM information_schema.columns
+     WHERE table_schema = current_schema()
+       AND table_name = 'master_data_changes'
+       AND column_name IN ('create_time', 'created_at')
+     ORDER BY CASE column_name WHEN 'create_time' THEN 0 ELSE 1 END
+     LIMIT 1;
+    IF ts_col IS NULL THEN
+        RAISE EXCEPTION 'master_data_changes 缺少时间列（create_time / created_at）';
+    END IF;
 
--- 后台时间线（不带实体条件时的默认视图）。
-CREATE INDEX IF NOT EXISTS idx_master_data_changes_time
-    ON master_data_changes(project_id, created_at DESC);
+    -- 按实体查历史（验收 4 的主查询）：工程 + 实体类型 + 实体 id，按时间倒序取。
+    EXECUTE format(
+        'CREATE INDEX IF NOT EXISTS idx_master_data_changes_entity ON master_data_changes (project_id, entity_type, entity_id, %I DESC)',
+        ts_col);
+
+    -- 后台时间线（不带实体条件时的默认视图）。
+    EXECUTE format(
+        'CREATE INDEX IF NOT EXISTS idx_master_data_changes_time ON master_data_changes (project_id, %I DESC)',
+        ts_col);
+END $$;
 
 -- 按字段查（「这个商品的价格被谁改过」）。
 CREATE INDEX IF NOT EXISTS idx_master_data_changes_field
