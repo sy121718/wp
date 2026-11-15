@@ -1024,7 +1024,7 @@ pkg/database/{retention,partition}
 - 业务数据不进 `public/schema`；新库只有结构与系统数据。`defaults.sql` 是启动期补齐脚本而非表数据段：给每个工程补 product / article 两套默认内容模板，等价于旧 seed 085/159，新工程由下一次 `schema.Apply` 自动补齐。
 - 词条集合核对：新库 canonical 13662 条；wp 接入后 **0 条缺失**、多出 37 条历史退役键（早期 seed 条件跳过留下的旧键，属既有业务数据，未清理）。
 
-**全量验收（2026-11-15 收尾）**
+**全量验收（2026-11-15 收尾；提交 5db74eb8 结构来源、531fcfeb 删链与测试、c8d1d07c 文档）**
 - `GOWP_REQUIRE_PG=1 go test ./public/test/... -count=1 -p 4`：64 个包全部 ok、EXIT=0；`GOWP_REQUIRE_PG=1 go test ./internal/... ./pkg/... -count=1`：213 个包 ok、EXIT=0；`bash scripts/check-all.sh`：plain 33 个脚本全过、EXIT=0。
 - 全量首轮暴露并修复的迁移整合副作用：admin 测试自建超管与系统数据冲突（改复用既有 admin、权限计数改独立 module）、enums 词条断言扫 `public/schema/tables/*.sql`、mail 模板页需先清空系统模板、partition RLS 测试改重放 `partition.ReconcilePartitionRLSSQL()`、商品/文章默认模板缺口由 `defaults.sql` 按工程补齐、RLS 库存流水夹具不再写不存在的商品外键、sysconfig 乐观锁夹具先清系统配置行。
 - wp 已用 `scripts/schema-adopt.sh --db wp --refresh --apply` 接入摘要 `schema-fda0662c`；随后 `go run ./cmd -migrate-only` EXIT=0，业务库里 product / article 模板未被重复插入。
