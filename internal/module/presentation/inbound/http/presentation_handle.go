@@ -19,12 +19,12 @@ type Handle struct {
 func NewHandle(svc presentationcontract.PresentationService) *Handle { return &Handle{svc: svc} }
 
 func (h *Handle) CreateInstance(c *gin.Context) {
-	var req presentationdto.CreateInstanceReq
-	if err := c.ShouldBindJSON(&req); err != nil {
+	req, err := binding.ParseJSON[presentationdto.CreateInstanceReq](c)
+	if err != nil {
 		response.ParamError(c)
 		return
 	}
-	res, err := h.svc.CreateInstance(c.Request.Context(), &req)
+	res, err := h.svc.CreateInstance(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "presentation", err)
 		return
@@ -33,12 +33,12 @@ func (h *Handle) CreateInstance(c *gin.Context) {
 }
 
 func (h *Handle) Rebuild(c *gin.Context) {
-	var req presentationdto.RebuildReq
-	if err := c.ShouldBindJSON(&req); err != nil {
+	req, err := binding.ParseJSON[presentationdto.RebuildReq](c)
+	if err != nil {
 		response.ParamError(c)
 		return
 	}
-	res, err := h.svc.Rebuild(c.Request.Context(), &req)
+	res, err := h.svc.Rebuild(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "presentation", err)
 		return

@@ -125,12 +125,12 @@ func NewHandle(svc contentcontract.ContentService) *Handle { return &Handle{svc:
 func (h *Handle) SetCollectionSchemas(p core.CollectionSchemaProvider) { h.collections = p }
 
 func (h *Handle) Create(c *gin.Context) {
-	var req contentdto.CreateReq
-	if err := c.ShouldBindJSON(&req); err != nil {
+	req, err := binding.ParseJSON[contentdto.CreateReq](c)
+	if err != nil {
 		response.ParamError(c)
 		return
 	}
-	res, err := h.svc.Create(c.Request.Context(), &req)
+	res, err := h.svc.Create(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "content", err)
 		return
@@ -139,12 +139,12 @@ func (h *Handle) Create(c *gin.Context) {
 }
 
 func (h *Handle) Update(c *gin.Context) {
-	var req contentdto.UpdateReq
-	if err := c.ShouldBindJSON(&req); err != nil {
+	req, err := binding.ParseJSON[contentdto.UpdateReq](c)
+	if err != nil {
 		response.ParamError(c)
 		return
 	}
-	res, err := h.svc.Update(c.Request.Context(), &req)
+	res, err := h.svc.Update(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "content", err)
 		return

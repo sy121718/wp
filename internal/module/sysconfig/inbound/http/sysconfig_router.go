@@ -9,6 +9,7 @@ import (
 	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
 	sysconfigdto "go_wp/internal/module/sysconfig/dto"
 	sysconfigenums "go_wp/internal/module/sysconfig/enums"
+	"go_wp/pkg/binding"
 	mw "go_wp/pkg/middleware"
 	"go_wp/pkg/response"
 	pageview "go_wp/pkg/view"
@@ -40,13 +41,13 @@ func (h *AdminHandle) APIList(c *gin.Context) {
 }
 
 func (h *AdminHandle) APISave(c *gin.Context) {
-	var req sysconfigdto.SetGroupReq
-	if err := c.ShouldBindJSON(&req); err != nil {
+	req, err := binding.ParseJSON[sysconfigdto.SetGroupReq](c)
+	if err != nil {
 		response.ParamError(c)
 		return
 	}
 	req.UpdateBy = int64(builtin.CurrentUserID(c))
-	res, err := h.svc.SetGroup(c.Request.Context(), &req)
+	res, err := h.svc.SetGroup(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorWithMessage(c, http.StatusConflict, response.MessageOf(c, "sysconfig", err))
 		return

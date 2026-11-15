@@ -49,8 +49,8 @@ type retryReq struct {
 }
 
 func (h *Handle) Retry(c *gin.Context) {
-	var req retryReq
-	if err := c.ShouldBindJSON(&req); err != nil {
+	req, err := binding.ParseJSON[retryReq](c)
+	if err != nil {
 		response.ParamError(c)
 		return
 	}

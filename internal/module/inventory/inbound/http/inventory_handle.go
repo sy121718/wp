@@ -19,12 +19,12 @@ type Handle struct {
 func NewHandle(svc inventorycontract.InventoryService) *Handle { return &Handle{svc: svc} }
 
 func (h *Handle) CreateWarehouse(c *gin.Context) {
-	var req inventorydto.CreateWarehouseReq
-	if err := c.ShouldBindJSON(&req); err != nil {
+	req, err := binding.ParseJSON[inventorydto.CreateWarehouseReq](c)
+	if err != nil {
 		response.ParamError(c)
 		return
 	}
-	res, err := h.svc.CreateWarehouse(c.Request.Context(), &req)
+	res, err := h.svc.CreateWarehouse(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "inventory", err)
 		return
@@ -33,12 +33,12 @@ func (h *Handle) CreateWarehouse(c *gin.Context) {
 }
 
 func (h *Handle) UpdateWarehouse(c *gin.Context) {
-	var req inventorydto.UpdateWarehouseReq
-	if err := c.ShouldBindJSON(&req); err != nil {
+	req, err := binding.ParseJSON[inventorydto.UpdateWarehouseReq](c)
+	if err != nil {
 		response.ParamError(c)
 		return
 	}
-	res, err := h.svc.UpdateWarehouse(c.Request.Context(), &req)
+	res, err := h.svc.UpdateWarehouse(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "inventory", err)
 		return
@@ -75,12 +75,12 @@ func (h *Handle) ListWarehouses(c *gin.Context) {
 }
 
 func (h *Handle) DeleteWarehouse(c *gin.Context) {
-	var req inventorydto.DeleteWarehouseReq
-	if err := c.ShouldBindJSON(&req); err != nil {
+	req, err := binding.ParseJSON[inventorydto.DeleteWarehouseReq](c)
+	if err != nil {
 		response.ParamError(c)
 		return
 	}
-	if err := h.svc.DeleteWarehouse(c.Request.Context(), &req); err != nil {
+	if err := h.svc.DeleteWarehouse(c.Request.Context(), req); err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "inventory", err)
 		return
 	}
@@ -88,12 +88,12 @@ func (h *Handle) DeleteWarehouse(c *gin.Context) {
 }
 
 func (h *Handle) EnsureStock(c *gin.Context) {
-	var req inventorydto.EnsureStockReq
-	if err := c.ShouldBindJSON(&req); err != nil {
+	req, err := binding.ParseJSON[inventorydto.EnsureStockReq](c)
+	if err != nil {
 		response.ParamError(c)
 		return
 	}
-	res, err := h.svc.EnsureStock(c.Request.Context(), &req)
+	res, err := h.svc.EnsureStock(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "inventory", err)
 		return
@@ -144,12 +144,12 @@ func (h *Handle) ListStocks(c *gin.Context) {
 }
 
 func (h *Handle) ChangeStock(c *gin.Context) {
-	var req inventorydto.ChangeStockReq
-	if err := c.ShouldBindJSON(&req); err != nil {
+	req, err := binding.ParseJSON[inventorydto.ChangeStockReq](c)
+	if err != nil {
 		response.ParamError(c)
 		return
 	}
-	res, err := h.svc.ChangeStock(c.Request.Context(), &req)
+	res, err := h.svc.ChangeStock(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "inventory", err)
 		return
@@ -158,12 +158,12 @@ func (h *Handle) ChangeStock(c *gin.Context) {
 }
 
 func (h *Handle) DeductStock(c *gin.Context) {
-	var req inventorydto.DeductStockReq
-	if err := c.ShouldBindJSON(&req); err != nil {
+	req, err := binding.ParseJSON[inventorydto.DeductStockReq](c)
+	if err != nil {
 		response.ParamError(c)
 		return
 	}
-	res, err := h.svc.DeductStock(c.Request.Context(), &req)
+	res, err := h.svc.DeductStock(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "inventory", err)
 		return
@@ -200,12 +200,12 @@ func (h *Handle) ListReasons(c *gin.Context) {
 }
 
 func (h *Handle) CreateReason(c *gin.Context) {
-	var req inventorydto.CreateReasonReq
-	if err := c.ShouldBindJSON(&req); err != nil {
+	req, err := binding.ParseJSON[inventorydto.CreateReasonReq](c)
+	if err != nil {
 		response.ParamError(c)
 		return
 	}
-	res, err := h.svc.CreateReason(c.Request.Context(), &req)
+	res, err := h.svc.CreateReason(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "inventory", err)
 		return
@@ -214,12 +214,12 @@ func (h *Handle) CreateReason(c *gin.Context) {
 }
 
 func (h *Handle) UpdateReason(c *gin.Context) {
-	var req inventorydto.UpdateReasonReq
-	if err := c.ShouldBindJSON(&req); err != nil {
+	req, err := binding.ParseJSON[inventorydto.UpdateReasonReq](c)
+	if err != nil {
 		response.ParamError(c)
 		return
 	}
-	res, err := h.svc.UpdateReason(c.Request.Context(), &req)
+	res, err := h.svc.UpdateReason(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "inventory", err)
 		return

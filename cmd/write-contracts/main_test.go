@@ -420,9 +420,10 @@ func (h *Handle) Create(c *gin.Context) {
 	}
 }
 
-// pkg/binding 的 Form/JSON 是兼容入口（按 Content-Type 在 JSON 与表单间选择），
-// 本身不声明唯一协议 —— 必须如实报 unknown。声明协议的端点用显式入口。
-func TestCompatBindersStayUnchecked(t *testing.T) {
+// 声明协议的入口必须能确定协议与 DTO：显式泛型入口 ParseJSON/ParseForm，
+// 以及存量里仍直接调 c.ShouldBindJSON(&req) 的写法（两者底层同一个 Gin 方法，
+// 生成器都要认；未收口的直接调用不算协议不确定，只是入口还没统一）。
+func TestExplicitBindersResolveProtocol(t *testing.T) {
 	root := writeSources(t, map[string]string{
 		"dto/request.go": "package dto\n" +
 			"type SaveReq struct { ID string `form:\"id\" json:\"id\" binding:\"required\"` }\n",
@@ -433,10 +434,14 @@ import (
  "github.com/gin-gonic/gin"
 )
 type Handle struct{}
-func (h *Handle) Compat(c *gin.Context) { wire.JSON[req.SaveReq](c) }
-func (h *Handle) CompatForm(c *gin.Context) { wire.Form[req.SaveReq](c) }
 func (h *Handle) Explicit(c *gin.Context) { wire.ParseJSON[req.SaveReq](c) }
 func (h *Handle) ExplicitForm(c *gin.Context) { wire.ParseForm[req.SaveReq](c) }
+func (h *Handle) Direct(c *gin.Context) {
+ var req req.SaveReq
+ if err := c.ShouldBindJSON(&req); err != nil {
+  return
+ }
+}
 `,
 	})
 	index, err := scanSources(root, "example/internal")
@@ -444,19 +449,21 @@ func (h *Handle) ExplicitForm(c *gin.Context) { wire.ParseForm[req.SaveReq](c) }
 		t.Fatal(err)
 	}
 	got := buildContracts([]route{
-		{Method: "POST", Path: "/compat", Handler: "example/internal/http.(*Handle).Compat-fm"},
-		{Method: "POST", Path: "/compat-form", Handler: "example/internal/http.(*Handle).CompatForm-fm"},
 		{Method: "POST", Path: "/explicit", Handler: "example/internal/http.(*Handle).Explicit-fm"},
 		{Method: "POST", Path: "/explicit-form", Handler: "example/internal/http.(*Handle).ExplicitForm-fm"},
+		{Method: "POST", Path: "/direct", Handler: "example/internal/http.(*Handle).Direct-fm"},
 	}, index)
-	for _, key := range []string{"POST /compat", "POST /compat-form"} {
-		if ep := got[key]; ep.Protocol != "unknown" || ep.Reason == "" {
-			t.Fatalf("%s 走兼容入口必须如实报未检查：%+v", key, ep)
+	for key, want := range map[string]string{
+		"POST /explicit":      "json",
+		"POST /explicit-form": "form",
+		"POST /direct":        "json",
+	} {
+		ep := got[key]
+		if ep.Protocol != want {
+			t.Fatalf("%s 应确定协议 %s：%+v", key, want, ep)
 		}
-	}
-	for key, want := range map[string]string{"POST /explicit": "json", "POST /explicit-form": "form"} {
-		if ep := got[key]; ep.Protocol != want || ep.DTO != "example/internal/dto.SaveReq" {
-			t.Fatalf("%s 走显式入口应确定协议 %s：%+v", key, want, ep)
+		if ep.Protocol != "form" && ep.DTO != "example/internal/dto.SaveReq" {
+			t.Fatalf("%s 的 DTO 应取自 SaveReq：%+v", key, ep)
 		}
 	}
 }

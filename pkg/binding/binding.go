@@ -53,10 +53,6 @@ type QueryBinder interface {
 	BindQuery(url.Values) error
 }
 
-func Field(c *gin.Context, key string) string {
-	return strings.TrimSpace(c.PostForm(key))
-}
-
 func ParseJSON[T any](c *gin.Context) (*T, error) {
 	var req T
 	return &req, c.ShouldBindJSON(&req)

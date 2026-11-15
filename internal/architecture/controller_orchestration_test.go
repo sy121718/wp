@@ -15,8 +15,8 @@ import (
 const controllerStatementBudget = 6
 
 var pendingControllerStatements = map[string]struct{ offenders, max int }{
-	"internal/module/admin/inbound/http/admin_handle.go":                        {offenders: 5, max: 13},
-	"internal/module/admin/inbound/http/admin_page.go":                          {offenders: 15, max: 15},
+	"internal/module/admin/inbound/http/admin_handle.go":                        {offenders: 3, max: 13},
+	"internal/module/admin/inbound/http/admin_page.go":                          {offenders: 14, max: 15},
 	"internal/module/ai/inbound/http/ai_handle.go":                              {offenders: 6, max: 26},
 	"internal/module/analytics/inbound/http/analytics_handle.go":                {offenders: 1, max: 7},
 	"internal/module/analytics/inbound/http/analytics_page.go":                  {offenders: 2, max: 20},
@@ -47,7 +47,7 @@ var pendingControllerStatements = map[string]struct{ offenders, max int }{
 	"internal/module/order/inbound/http/sales_page.go":                          {offenders: 1, max: 22},
 	"internal/module/page/inbound/http/page_langs_handle.go":                    {offenders: 1, max: 10},
 	"internal/module/page/inbound/http/page_translations_handle.go":             {offenders: 3, max: 51},
-	"internal/module/page/inbound/http/pages_handle.go":                         {offenders: 5, max: 17},
+	"internal/module/page/inbound/http/pages_handle.go":                         {offenders: 4, max: 17},
 	"internal/module/plugin/inbound/http/plugin_handle.go":                      {offenders: 1, max: 8},
 	"internal/module/plugin/inbound/http/plugin_page_handle.go":                 {offenders: 2, max: 13},
 	// 9 → 8：三块编辑器面板改显式 JSON 绑定后，workbenchSettingsPanel 视图构造

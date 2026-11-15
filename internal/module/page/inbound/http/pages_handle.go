@@ -405,12 +405,12 @@ func NewHandle(svc pagecontract.PageService) *Handle {
 }
 
 func (h *Handle) Create(c *gin.Context) {
-	var req pagedto.CreateReq
-	if err := c.ShouldBindJSON(&req); err != nil {
+	req, err := binding.ParseJSON[pagedto.CreateReq](c)
+	if err != nil {
 		response.ParamError(c)
 		return
 	}
-	res, err := h.svc.Create(c.Request.Context(), &req)
+	res, err := h.svc.Create(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorStatusAuto(c, pageErrScene, err)
 		return
@@ -447,12 +447,12 @@ func (h *Handle) List(c *gin.Context) {
 }
 
 func (h *Handle) SaveDraft(c *gin.Context) {
-	var req pagedto.SaveDraftReq
-	if err := c.ShouldBindJSON(&req); err != nil {
+	req, err := binding.ParseJSON[pagedto.SaveDraftReq](c)
+	if err != nil {
 		response.ParamError(c)
 		return
 	}
-	res, err := h.svc.SaveDraft(c.Request.Context(), &req)
+	res, err := h.svc.SaveDraft(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorStatusAuto(c, pageErrScene, err)
 		return
@@ -461,12 +461,12 @@ func (h *Handle) SaveDraft(c *gin.Context) {
 }
 
 func (h *Handle) Build(c *gin.Context) {
-	var req pagedto.BuildReq
-	if err := c.ShouldBindJSON(&req); err != nil {
+	req, err := binding.ParseJSON[pagedto.BuildReq](c)
+	if err != nil {
 		response.ParamError(c)
 		return
 	}
-	res, err := h.svc.Build(c.Request.Context(), &req)
+	res, err := h.svc.Build(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorStatusAuto(c, pageErrScene, err)
 		return
@@ -475,14 +475,14 @@ func (h *Handle) Build(c *gin.Context) {
 }
 
 func (h *Handle) Publish(c *gin.Context) {
-	var req pagedto.PublishReq
-	if err := c.ShouldBindJSON(&req); err != nil {
+	req, err := binding.ParseJSON[pagedto.PublishReq](c)
+	if err != nil {
 		response.ParamError(c)
 		return
 	}
 	if req.AllLangs {
 
-		res, err := h.svc.PublishAllLanguages(c.Request.Context(), &req)
+		res, err := h.svc.PublishAllLanguages(c.Request.Context(), req)
 		if err != nil {
 			response.ErrorStatusAuto(c, pageErrScene, err)
 			return
@@ -490,7 +490,7 @@ func (h *Handle) Publish(c *gin.Context) {
 		response.SuccessWithMessage(c, pageenums.MsgPublished, res)
 		return
 	}
-	res, err := h.svc.Publish(c.Request.Context(), &req)
+	res, err := h.svc.Publish(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorStatusAuto(c, pageErrScene, err)
 		return
@@ -499,12 +499,12 @@ func (h *Handle) Publish(c *gin.Context) {
 }
 
 func (h *Handle) RebuildArtifact(c *gin.Context) {
-	var req pagedto.RebuildArtifactReq
-	if err := c.ShouldBindJSON(&req); err != nil {
+	req, err := binding.ParseJSON[pagedto.RebuildArtifactReq](c)
+	if err != nil {
 		response.ParamError(c)
 		return
 	}
-	res, err := h.svc.RebuildArtifact(c.Request.Context(), &req)
+	res, err := h.svc.RebuildArtifact(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorStatusAuto(c, pageErrScene, err)
 		return
@@ -513,12 +513,12 @@ func (h *Handle) RebuildArtifact(c *gin.Context) {
 }
 
 func (h *Handle) GarbageCollectArtifacts(c *gin.Context) {
-	var req pagedto.GCArtifactsReq
-	if err := c.ShouldBindJSON(&req); err != nil {
+	req, err := binding.ParseJSON[pagedto.GCArtifactsReq](c)
+	if err != nil {
 		response.ParamError(c)
 		return
 	}
-	res, err := h.svc.GarbageCollectArtifacts(c.Request.Context(), &req)
+	res, err := h.svc.GarbageCollectArtifacts(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorStatusAuto(c, pageErrScene, err)
 		return
@@ -550,12 +550,12 @@ func (h *Handle) AuditPublication(c *gin.Context) {
 }
 
 func (h *Handle) Rollback(c *gin.Context) {
-	var req pagedto.RollbackReq
-	if err := c.ShouldBindJSON(&req); err != nil {
+	req, err := binding.ParseJSON[pagedto.RollbackReq](c)
+	if err != nil {
 		response.ParamError(c)
 		return
 	}
-	res, err := h.svc.Rollback(c.Request.Context(), &req)
+	res, err := h.svc.Rollback(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorStatusAuto(c, pageErrScene, err)
 		return
@@ -564,12 +564,12 @@ func (h *Handle) Rollback(c *gin.Context) {
 }
 
 func (h *Handle) UpdateURL(c *gin.Context) {
-	var req pagedto.UpdateURLReq
-	if err := c.ShouldBindJSON(&req); err != nil {
+	req, err := binding.ParseJSON[pagedto.UpdateURLReq](c)
+	if err != nil {
 		response.ParamError(c)
 		return
 	}
-	res, err := h.svc.UpdateURL(c.Request.Context(), &req)
+	res, err := h.svc.UpdateURL(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorStatusAuto(c, pageErrScene, err)
 		return
@@ -578,12 +578,12 @@ func (h *Handle) UpdateURL(c *gin.Context) {
 }
 
 func (h *Handle) Delete(c *gin.Context) {
-	var req pagedto.DeleteReq
-	if err := c.ShouldBindJSON(&req); err != nil {
+	req, err := binding.ParseJSON[pagedto.DeleteReq](c)
+	if err != nil {
 		response.ParamError(c)
 		return
 	}
-	if err := h.svc.Delete(c.Request.Context(), &req); err != nil {
+	if err := h.svc.Delete(c.Request.Context(), req); err != nil {
 		response.ErrorStatusAuto(c, pageErrScene, err)
 		return
 	}

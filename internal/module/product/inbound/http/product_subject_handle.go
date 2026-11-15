@@ -107,14 +107,14 @@ func (h *ProductHandle) CreateVariant(c *gin.Context) {
 }
 
 func (h *ProductHandle) UpdateVariant(c *gin.Context) {
-	var req productdto.UpdateVariantReq
-	if err := c.ShouldBindJSON(&req); err != nil {
+	req, err := binding.ParseJSON[productdto.UpdateVariantReq](c)
+	if err != nil {
 		response.ParamError(c)
 		return
 	}
 
 	req.OperatorID = builtin.OperatorName(c)
-	res, err := h.svc.UpdateVariant(c.Request.Context(), &req)
+	res, err := h.svc.UpdateVariant(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorStatusAuto(c, "product", err)
 		return
@@ -132,14 +132,14 @@ func (h *ProductHandle) DeleteVariant(c *gin.Context) {
 }
 
 func (h *ProductHandle) GenerateVariants(c *gin.Context) {
-	var req productdto.GenerateVariantsReq
-	if err := c.ShouldBindJSON(&req); err != nil {
+	req, err := binding.ParseJSON[productdto.GenerateVariantsReq](c)
+	if err != nil {
 		response.ParamError(c)
 		return
 	}
 
 	req.OperatorID = builtin.OperatorName(c)
-	res, err := h.svc.GenerateVariants(c.Request.Context(), &req)
+	res, err := h.svc.GenerateVariants(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorStatusAuto(c, "product", err)
 		return
@@ -322,14 +322,14 @@ func (h *ProductPageHandle) PreviewVariant(c *gin.Context) {
 }
 
 func (h *ProductHandle) SaveVariantList(c *gin.Context) {
-	var req productdto.SaveVariantListReq
-	if err := c.ShouldBindJSON(&req); err != nil {
+	req, err := binding.ParseJSON[productdto.SaveVariantListReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
 		return
 	}
 
 	req.OperatorID = builtin.OperatorName(c)
-	res, err := h.svc.SaveVariantList(c.Request.Context(), &req)
+	res, err := h.svc.SaveVariantList(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorStatusAuto(c, "product", err)
 		return

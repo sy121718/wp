@@ -62,8 +62,8 @@ type adminRoleChoice struct {
 // AdministratorRolesDrawer 返回管理员角色分配的 Jet 表单。
 func (h *AdminPagesHandle) AdministratorRolesDrawer(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var req admindto.AdminRoleListReq
-	if err := c.ShouldBindQuery(&req); err != nil {
+	req, err := binding.ParseQuery[admindto.AdminRoleListReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, adminErrScene, err)
 		return
 	}
@@ -180,8 +180,8 @@ type adminMenuTreeRow struct {
 // AdministratorMenusDrawer 返回管理员直接授权与角色继承事实的 Jet 表单。
 func (h *AdminPagesHandle) AdministratorMenusDrawer(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var req admindto.AdminMenuListReq
-	if err := c.ShouldBindQuery(&req); err != nil {
+	req, err := binding.ParseQuery[admindto.AdminMenuListReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, adminErrScene, err)
 		return
 	}
@@ -745,8 +745,8 @@ func (h *adminI18nEntryHandle) I18nEntriesPage(c *gin.Context) {
 // I18nEntryEditFragment 返回精确 key 与语言的 Jet 编辑表单。
 func (h *adminI18nEntryHandle) I18nEntryEditFragment(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var req admindto.I18nEditReq
-	if err := c.ShouldBindQuery(&req); err != nil {
+	req, err := binding.ParseQuery[admindto.I18nEditReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, adminErrScene, err)
 		return
 	}
@@ -853,12 +853,12 @@ func (h *AdminPagesHandle) MenusPage(c *gin.Context) {
 // MenusEditFragment 返回由 Jet 渲染的菜单编辑抽屉。
 func (h *AdminPagesHandle) MenusEditFragment(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var req admindto.MenuDetailReq
-	if err := c.ShouldBindQuery(&req); err != nil {
+	req, err := binding.ParseQuery[admindto.MenuDetailReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, adminErrScene, err)
 		return
 	}
-	row, err := h.menus.MenuDetail(c.Request.Context(), &req)
+	row, err := h.menus.MenuDetail(c.Request.Context(), req)
 	if err != nil {
 		pageview.FailScene(c, "admin.menuEdit", err)
 		return
@@ -1071,12 +1071,12 @@ func (h *AdminPagesHandle) PermissionsPage(c *gin.Context) {
 // PermissionsEditFragment 返回由 Jet 渲染的权限编辑抽屉。
 func (h *AdminPagesHandle) PermissionsEditFragment(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var req admindto.PermDetailReq
-	if err := c.ShouldBindQuery(&req); err != nil {
+	req, err := binding.ParseQuery[admindto.PermDetailReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, adminErrScene, err)
 		return
 	}
-	row, err := h.perms.PermDetail(c.Request.Context(), &req)
+	row, err := h.perms.PermDetail(c.Request.Context(), req)
 	if err != nil {
 		pageview.FailScene(c, "admin.permEdit", err)
 		return
@@ -1225,8 +1225,8 @@ func (h *AdminPagesHandle) rolePermissionsDrawerData(c *gin.Context, roleID uint
 // RolePermissionsDrawer 返回角色权限树的 Jet 表单。
 func (h *AdminPagesHandle) RolePermissionsDrawer(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var req admindto.RoleMenuListReq
-	if err := c.ShouldBindQuery(&req); err != nil {
+	req, err := binding.ParseQuery[admindto.RoleMenuListReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, adminErrScene, err)
 		return
 	}

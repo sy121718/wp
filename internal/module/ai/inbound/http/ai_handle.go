@@ -357,13 +357,11 @@ func (h *Handle) AppendModels(c *gin.Context) {
 }
 
 func bindID(c *gin.Context) (int64, error) {
-	if id := parseInt64(c.Query("id")); id > 0 {
-		return id, nil
+	q, err := binding.ParseQuery[aidto.IDQuery](c)
+	if err != nil || q.ID <= 0 {
+		return 0, aienums.Err(aienums.ErrInvalidParam)
 	}
-	if id := parseInt64(binding.Field(c, "id")); id > 0 {
-		return id, nil
-	}
-	return 0, aienums.Err(aienums.ErrInvalidParam)
+	return q.ID, nil
 }
 
 const (
@@ -716,8 +714,8 @@ func (h *SessionHandle) Events(c *gin.Context) {
 }
 
 func (h *SessionHandle) Append(c *gin.Context) {
-	var body sessionAppendBody
-	if err := c.ShouldBindJSON(&body); err != nil {
+	body, err := binding.ParseJSON[sessionAppendBody](c)
+	if err != nil {
 		response.ParamError(c)
 		return
 	}
@@ -765,8 +763,8 @@ func (h *SessionHandle) Send(c *gin.Context) {
 }
 
 func (h *SessionHandle) Rename(c *gin.Context) {
-	var body sessionRenameBody
-	if err := c.ShouldBindJSON(&body); err != nil {
+	body, err := binding.ParseJSON[sessionRenameBody](c)
+	if err != nil {
 		response.ParamError(c)
 		return
 	}
@@ -791,8 +789,8 @@ func (h *SessionHandle) Rename(c *gin.Context) {
 }
 
 func (h *SessionHandle) Archive(c *gin.Context) {
-	var body sessionRenameBody
-	if err := c.ShouldBindJSON(&body); err != nil {
+	body, err := binding.ParseJSON[sessionRenameBody](c)
+	if err != nil {
 		response.ParamError(c)
 		return
 	}
@@ -812,8 +810,8 @@ func (h *SessionHandle) Archive(c *gin.Context) {
 }
 
 func (h *SessionHandle) FoldPlan(c *gin.Context) {
-	var body sessionFoldPlanBody
-	if err := c.ShouldBindJSON(&body); err != nil {
+	body, err := binding.ParseJSON[sessionFoldPlanBody](c)
+	if err != nil {
 		response.ParamError(c)
 		return
 	}
@@ -829,8 +827,8 @@ func (h *SessionHandle) FoldPlan(c *gin.Context) {
 }
 
 func (h *SessionHandle) Fold(c *gin.Context) {
-	var body sessionFoldBody
-	if err := c.ShouldBindJSON(&body); err != nil {
+	body, err := binding.ParseJSON[sessionFoldBody](c)
+	if err != nil {
 		response.ParamError(c)
 		return
 	}

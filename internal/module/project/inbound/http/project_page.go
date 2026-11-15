@@ -113,12 +113,12 @@ type scoreView = scoreview.View
 // 输出是 HTML 片段。用显式 JSON 绑定声明唯一输入协议，不按 Content-Type 自动选择。
 func workbenchSettingsPanel(c *gin.Context) {
 	// 原生 JSON 绑定：面板只收 application/json，不按 Content-Type 自动选择。
-	var req projectdto.SettingsPanelReq
-	if err := c.ShouldBindJSON(&req); err != nil {
+	req, err := binding.ParseJSON[projectdto.SettingsPanelReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, "project", err)
 		return
 	}
-	pageview.Render(c, settingsPanelViewOf(req))
+	pageview.Render(c, settingsPanelViewOf(*req))
 }
 
 // settingsPanelViewOf 由整份文档与（可选的）新访问密码构造面板视图。
@@ -173,8 +173,8 @@ func applyAccessPassword(doc json.RawMessage, password string) (json.RawMessage,
 }
 
 func workbenchSeoScorePanel(c *gin.Context) {
-	var req projectdto.SeoScorePanelReq
-	if err := c.ShouldBindJSON(&req); err != nil {
+	req, err := binding.ParseJSON[projectdto.SeoScorePanelReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, "project", err)
 		return
 	}
@@ -1461,12 +1461,12 @@ func propString(obj map[string]any, path string) string {
 }
 
 func workbenchGlobalPanel(c *gin.Context) {
-	var req projectdto.GlobalPanelReq
-	if err := c.ShouldBindJSON(&req); err != nil {
+	req, err := binding.ParseJSON[projectdto.GlobalPanelReq](c)
+	if err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, "project", err)
 		return
 	}
-	pageview.Render(c, globalPanelViewOf(req))
+	pageview.Render(c, globalPanelViewOf(*req))
 }
 
 // globalPanelViewOf 由主题标识与该主题的设置对象构造面板视图。

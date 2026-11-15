@@ -156,12 +156,12 @@ func (h *Handle) BulkDelete(c *gin.Context) {
 }
 
 func (h *Handle) CloneAST(c *gin.Context) {
-	var req blockdto.CloneReq
-	if err := c.ShouldBindJSON(&req); err != nil {
+	req, err := binding.ParseJSON[blockdto.CloneReq](c)
+	if err != nil {
 		response.ParamError(c)
 		return
 	}
-	res, err := h.svc.CloneAST(c.Request.Context(), &req)
+	res, err := h.svc.CloneAST(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorWithMessage(c, blockErrorStatus(err), blockErrorMessage(err))
 		return

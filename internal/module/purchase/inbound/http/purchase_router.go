@@ -25,14 +25,14 @@ type Handle struct {
 func NewHandle(svc purchasecontract.PurchaseService) *Handle { return &Handle{svc: svc} }
 
 func (h *Handle) CreateSource(c *gin.Context) {
-	var req purchasedto.CreateSourceReq
-	if err := c.ShouldBindJSON(&req); err != nil {
+	req, err := binding.ParseJSON[purchasedto.CreateSourceReq](c)
+	if err != nil {
 		response.ParamError(c)
 		return
 	}
 
 	req.OperatorID = operatorFromContext(c)
-	res, err := h.svc.CreateSource(c.Request.Context(), &req)
+	res, err := h.svc.CreateSource(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, purchaseErrScene, err)
 		return
@@ -41,13 +41,13 @@ func (h *Handle) CreateSource(c *gin.Context) {
 }
 
 func (h *Handle) UpdateSource(c *gin.Context) {
-	var req purchasedto.UpdateSourceReq
-	if err := c.ShouldBindJSON(&req); err != nil {
+	req, err := binding.ParseJSON[purchasedto.UpdateSourceReq](c)
+	if err != nil {
 		response.ParamError(c)
 		return
 	}
 	req.OperatorID = operatorFromContext(c)
-	res, err := h.svc.UpdateSource(c.Request.Context(), &req)
+	res, err := h.svc.UpdateSource(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, purchaseErrScene, err)
 		return
@@ -84,13 +84,13 @@ func (h *Handle) ListSources(c *gin.Context) {
 }
 
 func (h *Handle) DeleteSource(c *gin.Context) {
-	var req purchasedto.DeleteSourceReq
-	if err := c.ShouldBindJSON(&req); err != nil {
+	req, err := binding.ParseJSON[purchasedto.DeleteSourceReq](c)
+	if err != nil {
 		response.ParamError(c)
 		return
 	}
 	req.OperatorID = operatorFromContext(c)
-	if err := h.svc.DeleteSource(c.Request.Context(), &req); err != nil {
+	if err := h.svc.DeleteSource(c.Request.Context(), req); err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, purchaseErrScene, err)
 		return
 	}
@@ -112,12 +112,12 @@ func (h *Handle) SourceSummary(c *gin.Context) {
 }
 
 func (h *Handle) CreatePurchaseOrder(c *gin.Context) {
-	var req purchasedto.CreatePurchaseOrderReq
-	if err := c.ShouldBindJSON(&req); err != nil {
+	req, err := binding.ParseJSON[purchasedto.CreatePurchaseOrderReq](c)
+	if err != nil {
 		response.ParamError(c)
 		return
 	}
-	res, err := h.svc.CreatePurchaseOrder(c.Request.Context(), &req)
+	res, err := h.svc.CreatePurchaseOrder(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, purchaseErrScene, err)
 		return
@@ -126,12 +126,12 @@ func (h *Handle) CreatePurchaseOrder(c *gin.Context) {
 }
 
 func (h *Handle) UpdatePurchaseOrder(c *gin.Context) {
-	var req purchasedto.UpdatePurchaseOrderReq
-	if err := c.ShouldBindJSON(&req); err != nil {
+	req, err := binding.ParseJSON[purchasedto.UpdatePurchaseOrderReq](c)
+	if err != nil {
 		response.ParamError(c)
 		return
 	}
-	res, err := h.svc.UpdatePurchaseOrder(c.Request.Context(), &req)
+	res, err := h.svc.UpdatePurchaseOrder(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, purchaseErrScene, err)
 		return
@@ -168,12 +168,12 @@ func (h *Handle) ListPurchaseOrders(c *gin.Context) {
 }
 
 func (h *Handle) RegisterReceipt(c *gin.Context) {
-	var req purchasedto.RegisterReceiptReq
-	if err := c.ShouldBindJSON(&req); err != nil {
+	req, err := binding.ParseJSON[purchasedto.RegisterReceiptReq](c)
+	if err != nil {
 		response.ParamError(c)
 		return
 	}
-	res, err := h.svc.RegisterReceipt(c.Request.Context(), &req)
+	res, err := h.svc.RegisterReceipt(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, purchaseErrScene, err)
 		return
@@ -182,12 +182,12 @@ func (h *Handle) RegisterReceipt(c *gin.Context) {
 }
 
 func (h *Handle) RegisterProductionInbound(c *gin.Context) {
-	var req purchasedto.ProductionInboundReq
-	if err := c.ShouldBindJSON(&req); err != nil {
+	req, err := binding.ParseJSON[purchasedto.ProductionInboundReq](c)
+	if err != nil {
 		response.ParamError(c)
 		return
 	}
-	res, err := h.svc.RegisterProductionInbound(c.Request.Context(), &req)
+	res, err := h.svc.RegisterProductionInbound(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, purchaseErrScene, err)
 		return

@@ -76,13 +76,13 @@ func (h *Handle) Detail(c *gin.Context) {
 }
 
 func (h *Handle) Delete(c *gin.Context) {
-	var req mediadto.DeleteReq
-	if err := c.ShouldBindJSON(&req); err != nil {
+	req, err := binding.ParseJSON[mediadto.DeleteReq](c)
+	if err != nil {
 		response.ParamError(c)
 		return
 	}
 
-	if err := h.svc.Delete(c.Request.Context(), &req); err != nil {
+	if err := h.svc.Delete(c.Request.Context(), req); err != nil {
 		response.ErrorStatusAuto(c, "media", err)
 		return
 	}
@@ -138,12 +138,12 @@ func (h *Handle) CategoryTree(c *gin.Context) {
 }
 
 func (h *Handle) CategoryCreate(c *gin.Context) {
-	var req mediadto.CategoryCreateReq
-	if err := c.ShouldBindJSON(&req); err != nil {
+	req, err := binding.ParseJSON[mediadto.CategoryCreateReq](c)
+	if err != nil {
 		response.ParamError(c)
 		return
 	}
-	res, err := h.svc.CreateCategory(c.Request.Context(), &req)
+	res, err := h.svc.CreateCategory(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorStatusAuto(c, "media", err)
 		return
@@ -152,12 +152,12 @@ func (h *Handle) CategoryCreate(c *gin.Context) {
 }
 
 func (h *Handle) CategoryUpdate(c *gin.Context) {
-	var req mediadto.CategoryUpdateReq
-	if err := c.ShouldBindJSON(&req); err != nil {
+	req, err := binding.ParseJSON[mediadto.CategoryUpdateReq](c)
+	if err != nil {
 		response.ParamError(c)
 		return
 	}
-	if err := h.svc.UpdateCategory(c.Request.Context(), &req); err != nil {
+	if err := h.svc.UpdateCategory(c.Request.Context(), req); err != nil {
 		response.ErrorStatusAuto(c, "media", err)
 		return
 	}
@@ -165,12 +165,12 @@ func (h *Handle) CategoryUpdate(c *gin.Context) {
 }
 
 func (h *Handle) CategoryDelete(c *gin.Context) {
-	var req mediadto.CategoryDeleteReq
-	if err := c.ShouldBindJSON(&req); err != nil {
+	req, err := binding.ParseJSON[mediadto.CategoryDeleteReq](c)
+	if err != nil {
 		response.ParamError(c)
 		return
 	}
-	if err := h.svc.DeleteCategory(c.Request.Context(), &req); err != nil {
+	if err := h.svc.DeleteCategory(c.Request.Context(), req); err != nil {
 		response.ErrorStatusAuto(c, "media", err)
 		return
 	}
@@ -178,12 +178,12 @@ func (h *Handle) CategoryDelete(c *gin.Context) {
 }
 
 func (h *Handle) UpdateAttachment(c *gin.Context) {
-	var req mediadto.AttachmentUpdateReq
-	if err := c.ShouldBindJSON(&req); err != nil {
+	req, err := binding.ParseJSON[mediadto.AttachmentUpdateReq](c)
+	if err != nil {
 		response.ParamError(c)
 		return
 	}
-	if err := h.svc.UpdateAttachment(c.Request.Context(), &req); err != nil {
+	if err := h.svc.UpdateAttachment(c.Request.Context(), req); err != nil {
 		response.ErrorStatusAuto(c, "media", err)
 		return
 	}
@@ -191,8 +191,8 @@ func (h *Handle) UpdateAttachment(c *gin.Context) {
 }
 
 func (h *Handle) GenerateVariants(c *gin.Context) {
-	var req mediadto.VariantsGenerateReq
-	if err := c.ShouldBindJSON(&req); err != nil {
+	req, err := binding.ParseJSON[mediadto.VariantsGenerateReq](c)
+	if err != nil {
 		response.ParamError(c)
 		return
 	}

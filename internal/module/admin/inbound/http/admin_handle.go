@@ -68,13 +68,13 @@ func (h *Handle) AdminLogin(c *gin.Context) {
 	// 登录端点的真实消费者只有登录页 fetch 与自动化脚本，两者都发 application/json。
 	// 输入与输出协议分开：输入是原生 JSON body 绑定（失败按 400 参数事实返回），
 	// 输出仍是既有 JSON 响应；不再按 Content-Type 在 JSON/表单之间自动选择。
-	var req admindto.AdminLoginReq
-	if err := c.ShouldBindJSON(&req); err != nil {
+	req, err := binding.ParseJSON[admindto.AdminLoginReq](c)
+	if err != nil {
 		adminBindFail(c, err)
 		return
 	}
 
-	res, err := h.admin.AdminLogin(c.Request.Context(), &req, c.ClientIP())
+	res, err := h.admin.AdminLogin(c.Request.Context(), req, c.ClientIP())
 	if err != nil {
 		adminFail(c, err)
 		return
@@ -150,12 +150,12 @@ func (h *Handle) AdminProfile(c *gin.Context) {
 }
 
 func (h *Handle) AdminCreate(c *gin.Context) {
-	var req admindto.AdminCreateReq
-	if err := c.ShouldBindJSON(&req); err != nil {
+	req, err := binding.ParseJSON[admindto.AdminCreateReq](c)
+	if err != nil {
 		r.ParamError(c)
 		return
 	}
-	res, err := h.admin.AdminCreate(c.Request.Context(), &req)
+	res, err := h.admin.AdminCreate(c.Request.Context(), req)
 	if err != nil {
 		adminFail(c, err)
 		return
@@ -164,12 +164,12 @@ func (h *Handle) AdminCreate(c *gin.Context) {
 }
 
 func (h *Handle) AdminEdit(c *gin.Context) {
-	var req admindto.AdminEditReq
-	if err := c.ShouldBindJSON(&req); err != nil {
+	req, err := binding.ParseJSON[admindto.AdminEditReq](c)
+	if err != nil {
 		r.ParamError(c)
 		return
 	}
-	res, err := h.admin.AdminEdit(c.Request.Context(), &req)
+	res, err := h.admin.AdminEdit(c.Request.Context(), req)
 	if err != nil {
 		adminFail(c, err)
 		return
@@ -194,8 +194,8 @@ func (h *Handle) AdminDetail(c *gin.Context) {
 }
 
 func (h *Handle) AdminDelete(c *gin.Context) {
-	var req admindto.AdminDeleteReq
-	if err := c.ShouldBindJSON(&req); err != nil {
+	req, err := binding.ParseJSON[admindto.AdminDeleteReq](c)
+	if err != nil {
 		r.ParamError(c)
 		return
 	}
@@ -207,7 +207,7 @@ func (h *Handle) AdminDelete(c *gin.Context) {
 	}
 	req.OperatorID = uid
 
-	res, err := h.admin.AdminDelete(c.Request.Context(), &req)
+	res, err := h.admin.AdminDelete(c.Request.Context(), req)
 	if err != nil {
 		adminFail(c, err)
 		return
@@ -313,12 +313,12 @@ func (h *Handle) RuleDetail(c *gin.Context) {
 }
 
 func (h *Handle) RuleCreate(c *gin.Context) {
-	var req admindto.RuleCreateReq
-	if err := c.ShouldBindJSON(&req); err != nil {
+	req, err := binding.ParseJSON[admindto.RuleCreateReq](c)
+	if err != nil {
 		r.ParamError(c)
 		return
 	}
-	if err := h.rule.RuleCreate(c.Request.Context(), &req); err != nil {
+	if err := h.rule.RuleCreate(c.Request.Context(), req); err != nil {
 		adminFail(c, err)
 		return
 	}
@@ -326,12 +326,12 @@ func (h *Handle) RuleCreate(c *gin.Context) {
 }
 
 func (h *Handle) RuleUpdate(c *gin.Context) {
-	var req admindto.RuleUpdateReq
-	if err := c.ShouldBindJSON(&req); err != nil {
+	req, err := binding.ParseJSON[admindto.RuleUpdateReq](c)
+	if err != nil {
 		r.ParamError(c)
 		return
 	}
-	if err := h.rule.RuleUpdate(c.Request.Context(), &req); err != nil {
+	if err := h.rule.RuleUpdate(c.Request.Context(), req); err != nil {
 		adminFail(c, err)
 		return
 	}
@@ -339,12 +339,12 @@ func (h *Handle) RuleUpdate(c *gin.Context) {
 }
 
 func (h *Handle) RuleDelete(c *gin.Context) {
-	var req admindto.RuleDeleteReq
-	if err := c.ShouldBindJSON(&req); err != nil {
+	req, err := binding.ParseJSON[admindto.RuleDeleteReq](c)
+	if err != nil {
 		r.ParamError(c)
 		return
 	}
-	if err := h.rule.RuleDelete(c.Request.Context(), &req); err != nil {
+	if err := h.rule.RuleDelete(c.Request.Context(), req); err != nil {
 		adminFail(c, err)
 		return
 	}
@@ -393,12 +393,12 @@ func (h *Handle) RuleAssignmentList(c *gin.Context) {
 }
 
 func (h *Handle) RuleAssignmentSave(c *gin.Context) {
-	var req admindto.RuleAssignmentSaveReq
-	if err := c.ShouldBindJSON(&req); err != nil {
+	req, err := binding.ParseJSON[admindto.RuleAssignmentSaveReq](c)
+	if err != nil {
 		r.ParamError(c)
 		return
 	}
-	if err := h.rule.RuleAssignmentSave(c.Request.Context(), &req); err != nil {
+	if err := h.rule.RuleAssignmentSave(c.Request.Context(), req); err != nil {
 		adminFail(c, err)
 		return
 	}
@@ -429,12 +429,12 @@ func (h *Handle) DeptDetail(c *gin.Context) {
 }
 
 func (h *Handle) DeptCreate(c *gin.Context) {
-	var req admindto.DeptCreateReq
-	if err := c.ShouldBindJSON(&req); err != nil {
+	req, err := binding.ParseJSON[admindto.DeptCreateReq](c)
+	if err != nil {
 		r.ParamError(c)
 		return
 	}
-	if err := h.dept.DeptCreate(c.Request.Context(), &req); err != nil {
+	if err := h.dept.DeptCreate(c.Request.Context(), req); err != nil {
 		adminFail(c, err)
 		return
 	}
@@ -442,12 +442,12 @@ func (h *Handle) DeptCreate(c *gin.Context) {
 }
 
 func (h *Handle) DeptUpdate(c *gin.Context) {
-	var req admindto.DeptUpdateReq
-	if err := c.ShouldBindJSON(&req); err != nil {
+	req, err := binding.ParseJSON[admindto.DeptUpdateReq](c)
+	if err != nil {
 		r.ParamError(c)
 		return
 	}
-	if err := h.dept.DeptUpdate(c.Request.Context(), &req); err != nil {
+	if err := h.dept.DeptUpdate(c.Request.Context(), req); err != nil {
 		adminFail(c, err)
 		return
 	}
@@ -455,12 +455,12 @@ func (h *Handle) DeptUpdate(c *gin.Context) {
 }
 
 func (h *Handle) DeptDelete(c *gin.Context) {
-	var req admindto.DeptDeleteReq
-	if err := c.ShouldBindJSON(&req); err != nil {
+	req, err := binding.ParseJSON[admindto.DeptDeleteReq](c)
+	if err != nil {
 		r.ParamError(c)
 		return
 	}
-	if err := h.dept.DeptDelete(c.Request.Context(), &req); err != nil {
+	if err := h.dept.DeptDelete(c.Request.Context(), req); err != nil {
 		adminFail(c, err)
 		return
 	}
@@ -482,12 +482,12 @@ func (h *Handle) DeptUserList(c *gin.Context) {
 }
 
 func (h *Handle) DeptUserSave(c *gin.Context) {
-	var req admindto.DeptUserSaveReq
-	if err := c.ShouldBindJSON(&req); err != nil {
+	req, err := binding.ParseJSON[admindto.DeptUserSaveReq](c)
+	if err != nil {
 		r.ParamError(c)
 		return
 	}
-	if err := h.dept.DeptUserSave(c.Request.Context(), &req); err != nil {
+	if err := h.dept.DeptUserSave(c.Request.Context(), req); err != nil {
 		adminFail(c, err)
 		return
 	}
@@ -525,13 +525,13 @@ func (h *Handle) MenuDetail(c *gin.Context) {
 }
 
 func (h *Handle) MenuCreate(c *gin.Context) {
-	var req admindto.MenuCreateReq
-	if err := c.ShouldBindJSON(&req); err != nil {
+	req, err := binding.ParseJSON[admindto.MenuCreateReq](c)
+	if err != nil {
 		r.ParamError(c)
 		return
 	}
 
-	if err := h.menu.MenuCreate(c.Request.Context(), &req); err != nil {
+	if err := h.menu.MenuCreate(c.Request.Context(), req); err != nil {
 		adminFail(c, err)
 		return
 	}
@@ -539,13 +539,13 @@ func (h *Handle) MenuCreate(c *gin.Context) {
 }
 
 func (h *Handle) MenuUpdate(c *gin.Context) {
-	var req admindto.MenuUpdateReq
-	if err := c.ShouldBindJSON(&req); err != nil {
+	req, err := binding.ParseJSON[admindto.MenuUpdateReq](c)
+	if err != nil {
 		r.ParamError(c)
 		return
 	}
 
-	if err := h.menu.MenuUpdate(c.Request.Context(), &req); err != nil {
+	if err := h.menu.MenuUpdate(c.Request.Context(), req); err != nil {
 		adminFail(c, err)
 		return
 	}
@@ -553,13 +553,13 @@ func (h *Handle) MenuUpdate(c *gin.Context) {
 }
 
 func (h *Handle) MenuDelete(c *gin.Context) {
-	var req admindto.MenuDeleteReq
-	if err := c.ShouldBindJSON(&req); err != nil {
+	req, err := binding.ParseJSON[admindto.MenuDeleteReq](c)
+	if err != nil {
 		r.ParamError(c)
 		return
 	}
 
-	if err := h.menu.MenuDelete(c.Request.Context(), &req); err != nil {
+	if err := h.menu.MenuDelete(c.Request.Context(), req); err != nil {
 		adminFail(c, err)
 		return
 	}
@@ -612,13 +612,13 @@ func (h *Handle) PermOptions(c *gin.Context) {
 }
 
 func (h *Handle) PermCreate(c *gin.Context) {
-	var req admindto.PermCreateReq
-	if err := c.ShouldBindJSON(&req); err != nil {
+	req, err := binding.ParseJSON[admindto.PermCreateReq](c)
+	if err != nil {
 		r.ParamError(c)
 		return
 	}
 
-	res, err := h.perm.PermCreate(c.Request.Context(), &req)
+	res, err := h.perm.PermCreate(c.Request.Context(), req)
 	if err != nil {
 		adminFail(c, err)
 		return
@@ -627,13 +627,13 @@ func (h *Handle) PermCreate(c *gin.Context) {
 }
 
 func (h *Handle) PermUpdate(c *gin.Context) {
-	var req admindto.PermUpdateReq
-	if err := c.ShouldBindJSON(&req); err != nil {
+	req, err := binding.ParseJSON[admindto.PermUpdateReq](c)
+	if err != nil {
 		r.ParamError(c)
 		return
 	}
 
-	res, err := h.perm.PermUpdate(c.Request.Context(), &req)
+	res, err := h.perm.PermUpdate(c.Request.Context(), req)
 	if err != nil {
 		adminFail(c, err)
 		return
@@ -642,13 +642,13 @@ func (h *Handle) PermUpdate(c *gin.Context) {
 }
 
 func (h *Handle) PermDelete(c *gin.Context) {
-	var req admindto.PermDeleteReq
-	if err := c.ShouldBindJSON(&req); err != nil {
+	req, err := binding.ParseJSON[admindto.PermDeleteReq](c)
+	if err != nil {
 		r.ParamError(c)
 		return
 	}
 
-	res, err := h.perm.PermDelete(c.Request.Context(), &req)
+	res, err := h.perm.PermDelete(c.Request.Context(), req)
 	if err != nil {
 		adminFail(c, err)
 		return
@@ -685,12 +685,12 @@ func (h *Handle) RoleDetail(c *gin.Context) {
 }
 
 func (h *Handle) RoleCreate(c *gin.Context) {
-	var req admindto.RoleCreateReq
-	if err := c.ShouldBindJSON(&req); err != nil {
+	req, err := binding.ParseJSON[admindto.RoleCreateReq](c)
+	if err != nil {
 		r.ParamError(c)
 		return
 	}
-	if err := h.role.RoleCreate(c.Request.Context(), &req); err != nil {
+	if err := h.role.RoleCreate(c.Request.Context(), req); err != nil {
 		adminFail(c, err)
 		return
 	}
@@ -698,12 +698,12 @@ func (h *Handle) RoleCreate(c *gin.Context) {
 }
 
 func (h *Handle) RoleUpdate(c *gin.Context) {
-	var req admindto.RoleUpdateReq
-	if err := c.ShouldBindJSON(&req); err != nil {
+	req, err := binding.ParseJSON[admindto.RoleUpdateReq](c)
+	if err != nil {
 		r.ParamError(c)
 		return
 	}
-	if err := h.role.RoleUpdate(c.Request.Context(), &req); err != nil {
+	if err := h.role.RoleUpdate(c.Request.Context(), req); err != nil {
 		adminFail(c, err)
 		return
 	}
@@ -711,12 +711,12 @@ func (h *Handle) RoleUpdate(c *gin.Context) {
 }
 
 func (h *Handle) RoleDelete(c *gin.Context) {
-	var req admindto.RoleDeleteReq
-	if err := c.ShouldBindJSON(&req); err != nil {
+	req, err := binding.ParseJSON[admindto.RoleDeleteReq](c)
+	if err != nil {
 		r.ParamError(c)
 		return
 	}
-	if err := h.role.RoleDelete(c.Request.Context(), &req); err != nil {
+	if err := h.role.RoleDelete(c.Request.Context(), req); err != nil {
 		adminFail(c, err)
 		return
 	}
@@ -772,8 +772,8 @@ func (h *Handle) RoleUserList(c *gin.Context) {
 }
 
 func (h *Handle) RoleUserSave(c *gin.Context) {
-	var req admindto.RoleUserSaveReq
-	if err := c.ShouldBindJSON(&req); err != nil {
+	req, err := binding.ParseJSON[admindto.RoleUserSaveReq](c)
+	if err != nil {
 		r.ParamError(c)
 		return
 	}
@@ -784,7 +784,7 @@ func (h *Handle) RoleUserSave(c *gin.Context) {
 		return
 	}
 	req.OperatorID = uid
-	res, err := h.role.RoleUserSave(c.Request.Context(), &req)
+	res, err := h.role.RoleUserSave(c.Request.Context(), req)
 	if err != nil {
 		adminFail(c, err)
 		return

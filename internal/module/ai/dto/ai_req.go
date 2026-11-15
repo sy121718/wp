@@ -18,6 +18,15 @@ type ProviderDeleteReq struct {
 	ID int64 `json:"id" form:"id" binding:"gt=0"`
 }
 
+// IDQuery 是 GET 端点读取 id 的查询参数。
+//
+// 原先是 c.Query("id") 加 binding.Field(c, "id") 的表单回退：共用它的三个 GET 端点
+// （模型列表 / 会话详情 / 会话事件）路由上都不收表单体，回退永远读不到值 ——
+// 多一个入口、多一个公共辅助函数，却没有任何一条请求能走到。
+type IDQuery struct {
+	ID int64 `form:"id" binding:"gt=0"`
+}
+
 type SaveProviderReq struct {
 	ID          int64  `json:"id" form:"id"`
 	ProviderKey string `json:"providerKey" form:"providerKey"`

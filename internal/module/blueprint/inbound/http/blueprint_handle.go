@@ -21,12 +21,12 @@ func NewHandle(svc blueprintcontract.BlueprintService) *Handle {
 }
 
 func (h *Handle) Create(c *gin.Context) {
-	var req blueprintdto.CreateReq
-	if err := c.ShouldBindJSON(&req); err != nil {
+	req, err := binding.ParseJSON[blueprintdto.CreateReq](c)
+	if err != nil {
 		response.ParamError(c)
 		return
 	}
-	res, err := h.svc.Create(c.Request.Context(), &req)
+	res, err := h.svc.Create(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "blueprint", err)
 		return
@@ -35,12 +35,12 @@ func (h *Handle) Create(c *gin.Context) {
 }
 
 func (h *Handle) Update(c *gin.Context) {
-	var req blueprintdto.UpdateReq
-	if err := c.ShouldBindJSON(&req); err != nil {
+	req, err := binding.ParseJSON[blueprintdto.UpdateReq](c)
+	if err != nil {
 		response.ParamError(c)
 		return
 	}
-	res, err := h.svc.Update(c.Request.Context(), &req)
+	res, err := h.svc.Update(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "blueprint", err)
 		return
@@ -49,12 +49,12 @@ func (h *Handle) Update(c *gin.Context) {
 }
 
 func (h *Handle) Publish(c *gin.Context) {
-	var req blueprintdto.PublishReq
-	if err := c.ShouldBindJSON(&req); err != nil {
+	req, err := binding.ParseJSON[blueprintdto.PublishReq](c)
+	if err != nil {
 		response.ParamError(c)
 		return
 	}
-	res, err := h.svc.Publish(c.Request.Context(), &req)
+	res, err := h.svc.Publish(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "blueprint", err)
 		return
@@ -94,12 +94,12 @@ func (h *Handle) List(c *gin.Context) {
 }
 
 func (h *Handle) Delete(c *gin.Context) {
-	var req blueprintdto.DeleteReq
-	if err := c.ShouldBindJSON(&req); err != nil {
+	req, err := binding.ParseJSON[blueprintdto.DeleteReq](c)
+	if err != nil {
 		response.ParamError(c)
 		return
 	}
-	if err := h.svc.Delete(c.Request.Context(), &req); err != nil {
+	if err := h.svc.Delete(c.Request.Context(), req); err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "blueprint", err)
 		return
 	}

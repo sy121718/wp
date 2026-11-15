@@ -120,17 +120,6 @@ func TestParseFormKeepsPartialValuesOnError(t *testing.T) {
 	}
 }
 
-func TestFieldReadsSharedHidden(t *testing.T) {
-	c, _ := newContext(http.MethodPost, "/x", "next=+%2Fuser%2Faccount+&other=1")
-	c.Request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	if got := Field(c, "next"); got != "/user/account" {
-		t.Fatalf("应去空白后返回，实际 %q", got)
-	}
-	if got := Field(c, "missing"); got != "" {
-		t.Fatalf("缺省键应返回空串，实际 %q", got)
-	}
-}
-
 type requiredNameReq struct {
 	Name  string `form:"name"`
 	Title string `form:"title" binding:"required"`
