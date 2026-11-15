@@ -133,7 +133,11 @@ awk '
 missing=0
 while IFS='|' read -r tbl rows; do
   [ -n "$tbl" ] || continue
-  live=$(db_psql -c "SELECT count(*) FROM public.\"$tbl\"" 2>/dev/null || echo 0)
+  # 计数查询失败必须当作核验不成立：旧写法 || echo 0 把「查不动」写成「0 行」，
+  # 所有表都会被判成数据不足 —— 看着像拒绝，实际是错误被吞掉后的误报。
+  if ! live=$(db_psql -c "SELECT count(*) FROM public.\"$tbl\""); then
+    fail "统计 $tbl 行数失败，核验未成立，拒绝接入"
+  fi
   if [ "$live" -lt "$rows" ]; then
     echo "  ! $tbl：基线 $rows 行，库里只有 $live 行" >&2
     missing=$((missing + 1))
@@ -148,19 +152,28 @@ echo "… 核验必需业务键"
 # 把基线重放库的键集合 COPY 出来，载入目标库的临时表后做 anti-join。
 # COPY 文本格式处理转义，比在 bash 里解析 COPY 行可靠。
 required_key_missing=0
+key_check_failed=0
 check_required_keys() {
   local tbl="$1" cols="$2" filter="${3:-}" cond out
   cond=$(printf '%s' "$cols" | awk -F, '{for(i=1;i<=NF;i++){printf "%st.%s=b.%s", (i>1?" AND ":""), $i, $i}}')
-  psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$REPLAY_DB" -tA -v ON_ERROR_STOP=1 \
-    -c "COPY (SELECT $cols FROM public.$tbl) TO STDOUT" >"$TMP/$tbl.keys"
+  if ! psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$REPLAY_DB" -tA -v ON_ERROR_STOP=1 \
+    -c "COPY (SELECT $cols FROM public.$tbl) TO STDOUT" >"$TMP/$tbl.keys"; then
+    echo "  ✗ $tbl：导出基线键失败（SQL 错误）" >&2
+    key_check_failed=1
+    return 1
+  fi
   # -q 必须加：不加会把 CREATE TABLE AS / COPY n 这类状态标签混进输出，anti-join 结果为空时仍被判成缺键。
-  out=$(psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$TARGET_DB" -q -tA -v ON_ERROR_STOP=1 <<SQL
+  if ! out=$(psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$TARGET_DB" -q -tA -v ON_ERROR_STOP=1 <<SQL
 CREATE TEMP TABLE _baseline_keys AS SELECT $cols FROM public.$tbl WITH NO DATA;
 \copy _baseline_keys FROM '$TMP/$tbl.keys'
 SELECT b.* FROM _baseline_keys b
 WHERE NOT EXISTS (SELECT 1 FROM public.$tbl t WHERE $cond) $filter;
 SQL
-)
+  ); then
+    echo "  ✗ $tbl：键存在性查询失败（SQL 错误）" >&2
+    key_check_failed=1
+    return 1
+  fi
   if [ -n "$out" ]; then
     echo "  ! $tbl 缺少基线里的键（前 5 条）：" >&2
     printf '%s\n' "$out" | head -5 | sed 's/^/    /' >&2
@@ -169,9 +182,14 @@ SQL
   fi
   echo "  ✓ $tbl：基线键全部存在"
 }
+# 失败不能被 || true 吞掉：SQL 出错时 out 为空，anti-join 看起来「没有缺键」，
+# 核验其实从未成立。函数自己记 key_check_failed，调用处只吞返回值。
 check_required_keys sys_i18n item_key,lang || true
 check_required_keys sys_permission permission_code || true
 check_required_keys sys_menus permission_code 'AND b.permission_code IS NOT NULL' || true
+if [ "$key_check_failed" -ne 0 ]; then
+  fail "必需键核验过程中有 SQL 错误，核验未成立，拒绝接入"
+fi
 if [ "$required_key_missing" -gt 0 ]; then
   fail "$required_key_missing 张系统表缺少基线里的必需键，先跑 -migrate-only 补齐 seed 再接入"
 fi

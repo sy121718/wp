@@ -16,8 +16,16 @@
 # 默认自建临时库跑全量迁移（约两分钟）；复用已有终态库时给 GOWP_BASELINE_DB。
 #
 # 用法：
-#   bash scripts/baseline-generate.sh            # 生成/更新产物
-#   bash scripts/baseline-generate.sh --check    # 只比对，过期则非零退出（CI 用）
+#   bash scripts/baseline-generate.sh                  # 生成/更新产物
+#   bash scripts/baseline-generate.sh --check          # 比对：前缀 + 自洽 +（无新增版本时）全量重生成
+#   bash scripts/baseline-generate.sh --check --static # 只做无库检查：前缀 + 摘要自洽（check-all 用）
+#
+# --check 的两种口径（评审 2026-11-15 指出旧版把「新增迁移」误报成「基线过期」）：
+#   1. 冻结清单必须是当前注册表的前缀 —— 段外的新版本按设计不进基线，照常执行；
+#   2. init.sql 里登记的摘要必须与产物内容一致 —— 手改 SQL 而不重新生成会被这条抓住；
+#   3. 仅当注册表等于冻结清单时，才自建临时库重跑全量并逐份比对结构/系统数据。
+#      有段外新增版本时不比：「基线＋增量」与历史全量的终态等价由
+#      scripts/baseline-verify.sh 判定，不能要求每加一条迁移就重生成基线、刷所有库水位。
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -38,21 +46,37 @@ export PGPASSWORD="${DB_PASSWORD:-${GOWP_DB_PASSWORD:-$(yaml_db password)}}"
 BASELINE_DIR="schema/baseline"
 ADMIN_DB="${GOWP_ADMIN_DB:-postgres}"
 CHECK=0
-[ "${1:-}" = "--check" ] && CHECK=1
+STATIC=0
+for arg in "$@"; do
+  case "$arg" in
+    --check) CHECK=1 ;;
+    --static) STATIC=1 ;;
+    *) echo "✗ 未知参数：$arg" >&2; exit 2 ;;
+  esac
+done
+if [ "$STATIC" -eq 1 ] && [ "$CHECK" -eq 0 ]; then
+  echo "✗ --static 只能和 --check 一起用" >&2
+  exit 2
+fi
 
 # 月分区名一律形如 <父表>_YYYY_MM；default 分区不匹配这个模式，必须保留。
 MONTH_PARTITION='*_[0-9][0-9][0-9][0-9]_[0-9][0-9]'
 # 时间字面量归一：与 schema/baseline/baseline.go 的 tsLiteralRe 必须逐字等价。
 TS_RE='s/[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?\+[0-9]{2}/<TS>/g'
 
-command -v pg_dump >/dev/null 2>&1 || { echo "✗ 需要 pg_dump" >&2; exit 1; }
-command -v psql >/dev/null 2>&1 || { echo "✗ 需要 psql" >&2; exit 1; }
+# pg_dump / psql 只在真正建库比对时才需要：--check --static 是纯文件检查，
+# 必须在没有 PostgreSQL 客户端的 CI unit job 里也能跑。
 command -v go >/dev/null 2>&1 || { echo "✗ 需要 go（要跑迁移与 manifest）" >&2; exit 1; }
 
 BASELINE_DB="${GOWP_BASELINE_DB:-}"
 PROBE=0
 cleanup_probe() { :; }
-if [ -z "$BASELINE_DB" ]; then
+# 只有真正要比对产物（生成 / --check 且无段外新增版本）时才建临时库：
+# 静态检查不该付两分钟的迁移代价，更不该因此要求本地有库。
+ensure_probe() {
+  command -v pg_dump >/dev/null 2>&1 || { echo "✗ 需要 pg_dump" >&2; exit 1; }
+  command -v psql >/dev/null 2>&1 || { echo "✗ 需要 psql" >&2; exit 1; }
+  [ -n "$BASELINE_DB" ] && return 0
   BASELINE_DB="wp_baseline_probe_$$"
   PROBE=1
   PROBE_LOG="/tmp/wp-baseline-probe-migrate.log"
@@ -71,7 +95,7 @@ if [ -z "$BASELINE_DB" ]; then
     trap - EXIT
     exit 1
   fi
-fi
+}
 
 # 只剥「每次生成都会变、但与内容无关」的行：生成时间、pg_dump 的随机 \restrict 标记。
 # 注意这里**不清理行尾空白**：数据 dump 里行尾的 tab 是「最后几个字段为空字符串」的
@@ -167,36 +191,80 @@ emit() {
 if [ "$CHECK" -eq 1 ]; then
   TMP="$(mktemp -d)"
   trap 'rm -rf "$TMP"; cleanup_probe' EXIT
-  emit "$TMP"
   status=0
-  for f in structure.sql system_data.sql manifest.txt init.sql; do
-    case "$f" in
-      *.sql)
-        # structure/system_data 头部带生成时间，比对时只比正文。
-        grep -v '^-- 生成时间：' "$BASELINE_DIR/$f" >"$TMP/old.$f" 2>/dev/null || true
-        grep -v '^-- 生成时间：' "$TMP/$f" >"$TMP/new.$f"
-        if [ "$f" = "system_data.sql" ]; then
-          # 时间列的值是生成时刻的 now()，不是内容；比较前归一成占位，否则每次生成都报过期。
-          sed -E -i "$TS_RE" "$TMP/old.$f" "$TMP/new.$f"
-        fi
-        if ! diff -u "$TMP/old.$f" "$TMP/new.$f" >"$TMP/diff.$f"; then
-          echo "✗ $BASELINE_DIR/$f 已过期" >&2
-          head -40 "$TMP/diff.$f" >&2
-          status=1
-        fi
-        ;;
-      *)
-        # init.sql 不归一：版本号与摘要都随内容变，内容一致时它必须逐字节一致。
-        if ! diff -u "$BASELINE_DIR/$f" "$TMP/$f" >"$TMP/diff.$f" 2>/dev/null; then
-          echo "✗ $BASELINE_DIR/$f 已过期" >&2
-          head -20 "$TMP/diff.$f" >&2
-          status=1
-        fi
-        ;;
-    esac
-  done
+
+  # 1) 冻结清单必须是当前注册表的前缀。段外新增版本按设计不进基线、照常执行 ——
+  #    旧版拿「当前全量生成的清单」与冻结清单逐字节比，于是每加一条迁移都报过期，
+  #    与「新增迁移不用重生成基线」的维护约定直接冲突。
+  prefix=""
+  if ! prefix=$(go run ./cmd/baseline-manifest -check-prefix "$BASELINE_DIR/manifest.txt" 2>"$TMP/prefix.err"); then
+    echo "✗ $BASELINE_DIR/manifest.txt 与当前注册表不一致：" >&2
+    cat "$TMP/prefix.err" >&2
+    status=1
+  fi
+  extras=0
+  [ -n "$prefix" ] && extras=$(printf '%s\n' "$prefix" | sed -n 's/.*extras=\([0-9]*\).*/\1/p')
+
+  # 2) init.sql 登记的摘要与版本必须与产物内容自洽：手改 SQL 而不重新生成会被这条抓住，
+  #    不必为此重跑两分钟的迁移。
+  want_sha="$(content_sha "$BASELINE_DIR")"
+  got="$(sed -n "s/^VALUES ('\([^']*\)', '\([0-9a-f]*\)', now(),.*/\1 \2/p" "$BASELINE_DIR/init.sql")"
+  if [ -z "$got" ]; then
+    echo "✗ $BASELINE_DIR/init.sql 里找不到登记摘要的 VALUES 行" >&2
+    status=1
+  else
+    got_version="${got%% *}"
+    got_sha="${got##* }"
+    if [ "$got_sha" != "$want_sha" ]; then
+      echo "✗ $BASELINE_DIR/init.sql 的摘要与产物内容不一致（登记 ${got_sha:0:8}，实际 ${want_sha:0:8}）" >&2
+      status=1
+    fi
+    if [ "$got_version" != "baseline-${want_sha:0:8}" ]; then
+      echo "✗ $BASELINE_DIR/init.sql 的版本号应为 baseline-${want_sha:0:8}，实际 $got_version" >&2
+      status=1
+    fi
+  fi
+
+  # 3) 只有注册表等于冻结清单时，才重跑全量逐份比对（抓「基线 SQL 内容漂移」）；
+  #    有段外新增版本时，终态等价由 baseline-verify.sh 判定，不在这里要求重生成。
+  if [ "$STATIC" -eq 1 ]; then
+    echo "· --static：跳过全量重生成比对（需要时跑 bash scripts/baseline-generate.sh --check）"
+  elif [ "$extras" -gt 0 ]; then
+    echo "· 基线之后有 $extras 条新版本（按设计不在基线内，照常执行），跳过全量重生成比对"
+    echo "  终态等价（基线＋增量 == 历史全量）由 bash scripts/baseline-verify.sh 判定"
+  else
+    ensure_probe
+    emit "$TMP"
+    for f in structure.sql system_data.sql manifest.txt init.sql; do
+      case "$f" in
+        *.sql)
+          # structure/system_data 头部带生成时间，比对时只比正文。
+          grep -v '^-- 生成时间：' "$BASELINE_DIR/$f" >"$TMP/old.$f" 2>/dev/null || true
+          grep -v '^-- 生成时间：' "$TMP/$f" >"$TMP/new.$f"
+          if [ "$f" = "system_data.sql" ]; then
+            # 时间列的值是生成时刻的 now()，不是内容；比较前归一成占位，否则每次生成都报过期。
+            sed -E -i "$TS_RE" "$TMP/old.$f" "$TMP/new.$f"
+          fi
+          if ! diff -u "$TMP/old.$f" "$TMP/new.$f" >"$TMP/diff.$f"; then
+            echo "✗ $BASELINE_DIR/$f 已过期" >&2
+            head -40 "$TMP/diff.$f" >&2
+            status=1
+          fi
+          ;;
+        *)
+          # init.sql 不归一：版本号与摘要都随内容变，内容一致时它必须逐字节一致。
+          if ! diff -u "$BASELINE_DIR/$f" "$TMP/$f" >"$TMP/diff.$f" 2>/dev/null; then
+            echo "✗ $BASELINE_DIR/$f 已过期" >&2
+            head -20 "$TMP/diff.$f" >&2
+            status=1
+          fi
+          ;;
+      esac
+    done
+  fi
+
   if [ "$status" -eq 0 ]; then
-    echo "✓ 基线与当前迁移结果一致"
+    echo "✓ 基线自洽：${prefix:-清单不可用}，摘要 ${want_sha:0:8}"
   fi
   exit "$status"
 fi

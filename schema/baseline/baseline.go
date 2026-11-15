@@ -41,12 +41,16 @@ type Manifest struct {
 	Seeds      []string
 }
 
-// ParseManifest 解析 manifest。段标记为 [migrations] / [seeds]，
+// ParseManifest 解析内嵌的 manifest。段标记为 [migrations] / [seeds]，
 // 空行与 # 开头的注释行不计入。
-func ParseManifest() Manifest {
+func ParseManifest() Manifest { return ParseManifestText(ManifestText()) }
+
+// ParseManifestText 解析给定正文：仓库里的 manifest.txt 与生成器产物必须走同一套解析，
+// 否则「前缀校验」与「跳过判定」会各读一套规则。
+func ParseManifestText(text string) Manifest {
 	var out Manifest
 	var section *[]string
-	for _, line := range strings.Split(ManifestText(), "\n") {
+	for _, line := range strings.Split(text, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue

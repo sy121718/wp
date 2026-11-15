@@ -60,6 +60,9 @@ PLAIN_SCRIPTS=(
   # 再由 check-write-fields.sh 按台账摘出已核对的端点。
   tests/run_write_object_providers.sh
   check-write-fields.sh
+  # 基线产物的静态门禁：清单必须是注册表前缀、init.sql 摘要与产物自洽。
+  # 「基线＋增量 == 历史全量」要真库，归 baseline-verify.sh（不进无依赖组）。
+  check-baseline-artifacts.sh
   # 这两条曾经只在 scripts/ 下摆着、从未进过任何数组 —— 于是永远不会变红。
   # check-page-view-dto.sh 的台账里写着「gin.H 归零」，实际还在增长（mail 1 / order 2 /
   # inventory 3），因为没人跑它。纳管时已把 gin.H 清零。
@@ -68,6 +71,8 @@ PLAIN_SCRIPTS=(
   # 扫描器判据自己的测试：门禁误判是双向损失（多算 = 合法写法永久挂账，
   # 少算 = 真视图混过去），所以判据本休也得有判据。
   tests/test_page_view_scan.py
+  # 基线接入脚本的核验放行回归：SQL 失败曾被 || true 吞掉，仍报「键全部存在」并以 0 退出。
+  tests/test_baseline_adopt_guard.py
 )
 
 # 需要真实 PostgreSQL，且必须在迁移（go run ./cmd -migrate-only）之后。
