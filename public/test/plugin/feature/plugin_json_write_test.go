@@ -3,12 +3,6 @@ package pluginfeature
 import (
 	"context"
 	"errors"
-	"net/http"
-	"net/http/httptest"
-	"path/filepath"
-	"reflect"
-	"strings"
-	"testing"
 	plugincontract "go_wp/internal/module/plugin/contract"
 	plugindto "go_wp/internal/module/plugin/dto"
 	pluginenums "go_wp/internal/module/plugin/enums"
@@ -20,9 +14,15 @@ import (
 	mw "go_wp/pkg/middleware"
 	pageview "go_wp/pkg/view"
 	text "go_wp/pkg/view/jet"
-	"go_wp/public/migrations"
 	"go_wp/public/test/support"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"reflect"
 	"regexp"
+	"strings"
+	"testing"
 
 	"github.com/gin-gonic/gin"
 )
@@ -46,16 +46,17 @@ func (s *writeService) Uninstall(_ context.Context, req *plugindto.UninstallReq)
 func pluginWriteTranslations(t *testing.T) {
 	t.Helper()
 	values := map[string]map[string]string{}
-	// 宽松解析：历史 seed 里偶有全角标点混进 SQL（如 uiOpSuccess 的 en-US 行），
-	// 夹具按「前三个单引号字段」取 key/lang/译文即可，不为某一行改生产迁移。
-	rowRE := regexp.MustCompile(`(?m)^\('([^']+)'[,，]\s*'([^']+)'[,，]\s*'((?:[^']|'')*)'`)
-	for _, seed := range migrations.AllSeeds() {
-		for _, row := range rowRE.FindAllStringSubmatch(seed.SQL, -1) {
-			if values[row[1]] == nil {
-				values[row[1]] = map[string]string{}
-			}
-			values[row[1]][row[2]] = strings.ReplaceAll(row[3], "''", "'")
+	// 词库来源是 public/schema/tables/sys_i18n.sql：位置参数 INSERT，取第 2/3/4 个字段。
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "schema", "tables", "sys_i18n.sql"))
+	if err != nil {
+		t.Fatalf("读取词库快照失败: %v", err)
+	}
+	rowRE := regexp.MustCompile(`(?m)^\s*\(\d+, '([^']+)', '([^']+)', '((?:[^']|'')*)'`)
+	for _, row := range rowRE.FindAllStringSubmatch(string(raw), -1) {
+		if values[row[1]] == nil {
+			values[row[1]] = map[string]string{}
 		}
+		values[row[1]][row[2]] = strings.ReplaceAll(row[3], "''", "'")
 	}
 	// 共享成功提示由现行 747 播种（738 已退役，SQL 仍在但不在执行集合里），
 	// 夹具按现行来源补这两条，避免依赖已退役 seed 的文本。

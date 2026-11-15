@@ -11,7 +11,6 @@ import (
 	"github.com/gin-gonic/gin"
 
 	productdto "go_wp/internal/module/product/dto"
-	"go_wp/public/migrations"
 )
 
 func getWholePage(t *testing.T, engine *gin.Engine, target string) string {
@@ -218,60 +217,6 @@ func TestProductListPaginationKeepsFilter(t *testing.T) {
 	attrSecond := getWholePage(t, attrEngine, "/admin/product-attributes?project="+af.projectID+"&page=2")
 	if got := strings.Count(attrSecond, `name="ids"`); got != 1 {
 		t.Fatalf("属性页第 2 页应有 1 行（第 21 个属性组），实际 %d 行", got)
-	}
-}
-
-func TestProductListFilterI18nSeedIsIdempotent(t *testing.T) {
-	_, f := newTaxonomyPageEngine(t)
-	if f == nil {
-		return
-	}
-	keys := []string{
-		"uiFltSubmit", "uiFltReset", "uiFltOptAll", "uiFltEmptyHint",
-		"attrFltKw", "attrNoMatches",
-		"catFltKw", "catNoMatches",
-		"brandFltKw", "brandNoMatches",
-		"tagFltKw", "tagNoMatches",
-	}
-	seeds := migrations.AllSeeds()
-	var target *migrations.Seed
-	for i := range seeds {
-		if seeds[i].Version == "411-i18n-product-list-filter" {
-			target = &seeds[i]
-			break
-		}
-	}
-	if target == nil {
-		t.Fatal("迁移 411 未注册（register_product_list_filter_i18n.go 的 init 没跑到？）")
-	}
-
-	rows := func() int64 {
-		var n int64
-		if err := f.db.Raw(`SELECT COUNT(*) FROM sys_i18n WHERE item_key IN ?`, keys).Scan(&n).Error; err != nil {
-			t.Fatalf("查询 sys_i18n 失败: %v", err)
-		}
-		return n
-	}
-	want := int64(len(keys) * 2)
-	if err := f.db.Exec(target.SQL).Error; err != nil {
-		t.Fatalf("执行 411 的种子 SQL 失败: %v", err)
-	}
-	if got := rows(); got != want {
-		t.Fatalf("首次执行后应有 %d 行，实际 %d", want, got)
-	}
-	if err := f.db.Exec(target.SQL).Error; err != nil {
-		t.Fatalf("重复执行 411 的种子 SQL 失败: %v", err)
-	}
-	if got := rows(); got != want {
-		t.Fatalf("重复执行后行数应不变（%d），实际 %d —— ON CONFLICT DO NOTHING 没生效", want, got)
-	}
-
-	var hit int64
-	if err := f.db.Raw(target.ConditionSQL).Scan(&hit).Error; err != nil {
-		t.Fatalf("执行 ConditionSQL 失败: %v", err)
-	}
-	if hit == 0 {
-		t.Fatal("词条已落库但 ConditionSQL 判定为 0 —— 这条迁移会每次启动都重跑")
 	}
 }
 

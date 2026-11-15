@@ -27,7 +27,7 @@ var migrationsSkipLogged sync.Once
 
 func logMigrationsSkipped() {
 	migrationsSkipLogged.Do(func() {
-		logger.Scene("init").Info("按 database.run_migrations=false 跳过结构与 seed 迁移，请确认已用管理连接执行过 -migrate-only")
+		logger.Scene("init").Info("按 database.run_migrations=false 跳过 public/schema 结构与系统数据装载，请确认已用管理连接执行过 -migrate-only")
 	})
 }
 

@@ -38,6 +38,3 @@ CREATE INDEX idx_webhook_deliveries_status ON public.webhook_deliveries USING bt
 -- @phase fk
 ALTER TABLE ONLY public.webhook_deliveries
     ADD CONSTRAINT webhook_deliveries_endpoint_id_fkey FOREIGN KEY (endpoint_id) REFERENCES public.webhook_endpoints(id) ON DELETE CASCADE;
-
--- @phase data
-SELECT pg_catalog.setval('public.webhook_deliveries_id_seq', 1, false);

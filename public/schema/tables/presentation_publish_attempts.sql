@@ -60,6 +60,3 @@ COMMENT ON COLUMN public.presentation_publish_attempts.outcome IS '结局：succ
 COMMENT ON COLUMN public.presentation_publish_attempts.attempts IS '冲突重试次数：>1 表示有编译结果被丢弃重来（PERF-01 指标同源）';
 
 COMMENT ON COLUMN public.presentation_publish_attempts.operator_name IS '操作人姓名快照（0/空串 = 系统触发）；账号删除后历史仍可读';
-
--- @phase data
-SELECT pg_catalog.setval('public.presentation_publish_attempts_id_seq', 1, false);

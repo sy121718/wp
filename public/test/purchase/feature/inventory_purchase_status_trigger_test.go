@@ -1,47 +1,16 @@
 package feature
 
 import (
-	"os"
-	"strings"
 	"testing"
 
 	purchasedto "go_wp/internal/module/purchase/dto"
-	"go_wp/public/migrations"
 )
-
-var statusSyncMigrationPaths = []string{
-	"../../../migrations/196_inventory_purchase_status_sync.sql",
-	"../../../migrations/670_inventory_purchase_status_machine.sql",
-}
-
-func execStatusSyncMigration(t *testing.T, f *purchaseFixture) {
-	t.Helper()
-	for _, path := range statusSyncMigrationPaths {
-		raw, err := os.ReadFile(path)
-		if err != nil {
-			t.Fatalf("读取迁移文件失败: %v", err)
-		}
-
-		sqlText := strings.ReplaceAll(string(raw), "updated_at", "update_time")
-		sqlText = strings.ReplaceAll(sqlText, "'pending'", "'ordered'")
-		stmts := migrations.SplitStatements(sqlText)
-		if len(stmts) == 0 {
-			t.Fatalf("迁移文件 %s 解析出 0 条语句，路径或分割逻辑有问题", path)
-		}
-		for i, stmt := range stmts {
-			if err := f.db.Exec(stmt).Error; err != nil {
-				t.Fatalf("执行 %s 第 %d 条迁移语句失败: %v；语句: %s", path, i+1, err, stmt)
-			}
-		}
-	}
-}
 
 func TestPurchaseStatusTriggerFollowsLineWrites(t *testing.T) {
 	f := newPurchaseFixture(t)
 	if f == nil {
 		return
 	}
-	execStatusSyncMigration(t, f)
 
 	wh := f.createWarehouse(t, "TRG", "触发器测试仓", true)
 	src := mustPurchaseSource(t, f, "TRG_SUP", "触发器测试货源", "external")
@@ -108,69 +77,11 @@ func TestPurchaseStatusTriggerFollowsLineWrites(t *testing.T) {
 	}
 }
 
-func TestPurchaseStatusMigrationBackfillsAndIsIdempotent(t *testing.T) {
-	f := newPurchaseFixture(t)
-	if f == nil {
-		return
-	}
-	execStatusSyncMigration(t, f)
-
-	wh := f.createWarehouse(t, "BF", "回填测试仓", true)
-	src := mustPurchaseSource(t, f, "BF_SUP", "回填测试货源", "external")
-	p := mustProductPriced(t, f, "回填商品", 88)
-	v := f.firstVariant(t, p.ID)
-
-	pendingOrder := mustPurchaseOrder(t, f, "BF-PENDING", src.ID, wh.ID,
-		[]purchasedto.PurchaseLineReq{purchaseLine(p, v, 3, 2)})
-	receivedOrder := mustPurchaseOrder(t, f, "BF-RECEIVED", src.ID, wh.ID,
-		[]purchasedto.PurchaseLineReq{purchaseLine(p, v, 3, 2)})
-	if err := f.db.Exec("UPDATE inventory_purchase_order_lines SET received_quantity = quantity WHERE order_id = ?",
-		receivedOrder.ID).Error; err != nil {
-		t.Fatalf("收满明细失败: %v", err)
-	}
-	if got := purchaseStatusIn(t, f, receivedOrder.ID); got != "received" {
-		t.Fatalf("前置：收满后应为 received，实得 %s", got)
-	}
-
-	if err := f.db.Exec(
-		"DROP TRIGGER IF EXISTS trg_inventory_purchase_orders_status_guard ON inventory_purchase_orders").Error; err != nil {
-		t.Fatalf("摘除守卫失败: %v", err)
-	}
-	if err := f.db.Exec("UPDATE inventory_purchase_orders SET status = 'received' WHERE id IN (?, ?)",
-		pendingOrder.ID, receivedOrder.ID).Error; err != nil {
-		t.Fatalf("伪造脏数据失败: %v", err)
-	}
-
-	execStatusSyncMigration(t, f)
-	if got := purchaseStatusIn(t, f, pendingOrder.ID); got != "ordered" {
-		t.Errorf("回填后未收明细的单应为 ordered，实得 %s", got)
-	}
-	if got := purchaseStatusIn(t, f, receivedOrder.ID); got != "received" {
-		t.Errorf("回填后收满明细的单应为 received，实得 %s", got)
-	}
-
-	var before string
-	if err := f.db.Raw("SELECT status || '|' || update_time::text FROM inventory_purchase_orders WHERE id = ?",
-		receivedOrder.ID).Scan(&before).Error; err != nil {
-		t.Fatalf("读取回填后状态失败: %v", err)
-	}
-	execStatusSyncMigration(t, f)
-	var after string
-	if err := f.db.Raw("SELECT status || '|' || update_time::text FROM inventory_purchase_orders WHERE id = ?",
-		receivedOrder.ID).Scan(&after).Error; err != nil {
-		t.Fatalf("读取二次回填后状态失败: %v", err)
-	}
-	if before != after {
-		t.Errorf("重复执行迁移不应改动已经正确的行：%s → %s", before, after)
-	}
-}
-
 func TestPurchaseStatusTriggerKeepsServicePathIntact(t *testing.T) {
 	f := newPurchaseFixture(t)
 	if f == nil {
 		return
 	}
-	execStatusSyncMigration(t, f)
 
 	wh := f.createWarehouse(t, "SVC", "服务路径测试仓", true)
 	src := mustPurchaseSource(t, f, "SVC_SUP", "服务路径测试货源", "external")
@@ -221,16 +132,6 @@ func TestPurchaseStatusTriggerRegistryCondition(t *testing.T) {
 	if f == nil {
 		return
 	}
-
-	var before int64
-	if err := f.db.Raw(statusSyncRegistryConditionSQL).Scan(&before).Error; err != nil {
-		t.Fatalf("判据 SQL 执行失败: %v", err)
-	}
-	if before != 1 {
-		t.Errorf("196 已登记并随全量迁移执行，四个对象应齐备（判据 1），实得 %d（对象名与注册块不一致，或 196 未登记）", before)
-	}
-
-	execStatusSyncMigration(t, f)
 
 	var after int64
 	if err := f.db.Raw(statusSyncRegistryConditionSQL).Scan(&after).Error; err != nil {

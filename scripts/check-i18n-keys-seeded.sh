@@ -197,12 +197,26 @@ def strip_comments(sql):
         i += 1
     return ''.join(out)
 
-INSERT = re.compile(r'INSERT\s+INTO\s+sys_i18n\s*\([^)]*\)\s*(?:VALUES|SELECT\s+[^;]*?\s+FROM\s*\(\s*VALUES)', re.I)
+# 结构快照里的系统数据是位置参数（INSERT INTO public.sys_i18n VALUES (…)，列序见建表），
+# 迁移时代的写成显式列名。两种都要认：有列名时按列名定位 item_key/lang，没有时按建表列序取 1/2。
+INSERT = re.compile(r'INSERT\s+INTO\s+(?:public\.)?sys_i18n\s*(?:\(([^)]*)\))?\s*(?:VALUES|SELECT\s+[^;]*?\s+FROM\s*\(\s*VALUES)', re.I)
+
+def key_lang(fields, columns):
+    if columns:
+        names = [c.strip() for c in columns.split(',')]
+        if 'item_key' not in names or 'lang' not in names:
+            return None
+        return fields[names.index('item_key')], fields[names.index('lang')]
+    # 建表列序：id, item_key, lang, item_value, …
+    if len(fields) < 3:
+        return None
+    return fields[1], fields[2]
 
 def parse_tuples(sql):
-    """取每条 INSERT INTO sys_i18n 的顶层元组 → 字段列表的列表。"""
+    """取每条 INSERT INTO sys_i18n 的顶层元组 → (列名列表或 None, 字段列表)。"""
     tuples = []
     for m in INSERT.finditer(sql):
+        columns = m.group(1)
         i, n, depth, cur, fields, in_str, in_tuple = m.end(), len(sql), 0, '', [], False, False
         while i < n:
             ch = sql[i]
@@ -236,7 +250,7 @@ def parse_tuples(sql):
                     break
                 if depth == 0 and in_tuple:
                     fields.append(cur.strip())
-                    tuples.append(fields)
+                    tuples.append((columns, fields))
                     in_tuple = False
                     i += 1
                     continue
@@ -267,10 +281,11 @@ for path in walk(public, ('.sql',)):
         sql = strip_comments(open(path, encoding='utf-8', errors='replace').read())
     except OSError:
         continue
-    for f in parse_tuples(sql):
-        if len(f) < 2:
+    for columns, f in parse_tuples(sql):
+        pair = key_lang(f, columns)
+        if pair is None:
             continue
-        seeded.setdefault(unquote(f[0]), set()).add(unquote(f[1]))
+        seeded.setdefault(unquote(pair[0]), set()).add(unquote(pair[1]))
 
 missing = sorted(k for k in used if k not in seeded)
 unpaired = sorted(k for k in used if k in seeded and not PAIR <= seeded[k])

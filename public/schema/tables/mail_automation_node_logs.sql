@@ -32,6 +32,3 @@ CREATE INDEX idx_mail_automation_node_logs_run ON public.mail_automation_node_lo
 
 -- @phase comment
 COMMENT ON COLUMN public.mail_automation_node_logs.create_time IS '审计 DB-018：由 timestamp 统一为 timestamptz；历史值按会话时区解释';
-
--- @phase data
-SELECT pg_catalog.setval('public.mail_automation_node_logs_id_seq', 1, false);

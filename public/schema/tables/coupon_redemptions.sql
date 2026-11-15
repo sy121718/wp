@@ -45,6 +45,3 @@ CREATE INDEX idx_coupon_redemptions_user ON public.coupon_redemptions USING btre
 
 -- @phase comment
 COMMENT ON COLUMN public.coupon_redemptions.create_time IS '审计 DB-018：由 timestamp 统一为 timestamptz；历史值按会话时区解释';
-
--- @phase data
-SELECT pg_catalog.setval('public.coupon_redemptions_id_seq', 1, false);

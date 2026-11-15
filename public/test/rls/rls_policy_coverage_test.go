@@ -8,7 +8,7 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
-	"go_wp/public/migrations"
+	"go_wp/public/schema"
 	"go_wp/public/test/support"
 )
 
@@ -123,8 +123,8 @@ func coverageFixture(t *testing.T) *gorm.DB {
 		adminSQL.Close()
 	})
 
-	if err := migrations.Run(db); err != nil {
-		t.Fatalf("执行生产迁移失败: %v", err)
+	if err := schema.Apply(db); err != nil {
+		t.Fatalf("载入 schema 失败: %v", err)
 	}
 	return db
 }

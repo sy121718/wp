@@ -77,7 +77,7 @@ if [ -s "$tmp_gap" ]; then
     sed 's/^/    /' "$tmp_gap"
     echo
     echo "  修法：给这个权限点补一个 type=3 节点（title_key = 该按钮码、绑定对应权限码），"
-    echo "  样板见 public/migrations/589_menu_button_code.sql。"
+    echo "  样板见 public/schema/tables/sys_menus.sql 的 data 段。"
     status=1
 fi
 

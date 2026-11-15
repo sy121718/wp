@@ -137,7 +137,7 @@
                    这里说清原因，避免用户把「按钮不见了」读成权限问题。
                    已知文本缺口（task-91 登记，**不在本卡 scope**）：词条
                    admin.navigations.write.noJs 只点名「新建与删除」，而排序（上移 / 下移）现在
-                   同样需要 JS。改词条要动 public/migrations（另开卡），本卡只登记不改。 *}
+                   同样需要 JS。改词条要动 public/schema/tables/sys_i18n.sql（另开卡），本卡只登记不改。 *}
                 <noscript><p class="form-hint">{{ .["t"]("admin.navigations.write.noJs", "本页的新建与删除需要 JavaScript：写操作由浏览器直接调用接口完成。请开启 JavaScript 后重试。") }}</p></noscript>
                 <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
                 <button data-requires-js hidden type="submit" class="btn btn-primary" >{{ .["t"]("admin.navigations.add", "添加") }}</button>

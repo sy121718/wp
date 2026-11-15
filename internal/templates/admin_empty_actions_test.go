@@ -23,11 +23,11 @@ func TestAdminEmptyActionI18nKeysSeeded(t *testing.T) {
 		"admin.mail.marketing.contacts.empty.clear":       "mail_contacts.html",
 	}
 
-	src, err := os.ReadFile(filepath.Join("..", "..", "public", "migrations", "415_i18n_empty_actions.sql"))
+	src, err := os.ReadFile(filepath.Join("..", "..", "public", "schema", "tables", "sys_i18n.sql"))
 	if err != nil {
-		t.Fatalf("读 415 迁移失败: %v", err)
+		t.Fatalf("读系统词条失败: %v", err)
 	}
-	seedRe := regexp.MustCompile(`\('([^']+)',\s*'(zh-CN|en-US)'`)
+	seedRe := regexp.MustCompile(`\(\s*\d+,\s*'([^']+)',\s*'(zh-CN|en-US)'`)
 	langs := map[string]map[string]bool{}
 	for _, m := range seedRe.FindAllStringSubmatch(string(src), -1) {
 		if langs[m[1]] == nil {
@@ -39,7 +39,7 @@ func TestAdminEmptyActionI18nKeysSeeded(t *testing.T) {
 	for key, tpl := range wantKeys {
 		got := langs[key]
 		if got == nil {
-			t.Errorf("词条 %q 不在 415 迁移里：英文界面上会一直显示中文", key)
+			t.Errorf("词条 %q 不在 public/schema 里：英文界面上会一直显示中文", key)
 			continue
 		}
 		if !got["zh-CN"] || !got["en-US"] {
@@ -51,44 +51,6 @@ func TestAdminEmptyActionI18nKeysSeeded(t *testing.T) {
 			t.Errorf("词条 %q 在 %s 里没有取词点（词条与模板失去同步）", key, tpl)
 		}
 	}
-}
-
-func TestAdminEmptyActionKeysSatisfyMigrationGate(t *testing.T) {
-	sqlSrc, err := os.ReadFile(filepath.Join("..", "..", "public", "migrations", "415_i18n_empty_actions.sql"))
-	if err != nil {
-		t.Fatalf("读 415 迁移失败: %v", err)
-	}
-	goSrc, err := os.ReadFile(filepath.Join("..", "..", "public", "migrations", "register_empty_actions_i18n.go"))
-	if err != nil {
-		t.Fatalf("读 415 注册文件失败: %v", err)
-	}
-
-	seedRe := regexp.MustCompile(`\('([^']+)',\s*'en-US'`)
-	enKeys := map[string]bool{}
-	for _, m := range seedRe.FindAllStringSubmatch(string(sqlSrc), -1) {
-		enKeys[m[1]] = true
-	}
-
-	gateRe := regexp.MustCompile(`COUNT\(\*\) >= (\d+)`)
-	gate := gateRe.FindStringSubmatch(string(goSrc))
-	if gate == nil {
-		t.Fatal("注册文件里没有 COUNT(*) >= N 的幂等条件")
-	}
-	if gate[1] != itoaLen(len(enKeys)) {
-		t.Errorf("幂等条件的门槛是 %s，但迁移里有 %d 个 en-US 词条 —— 两者必须相等", gate[1], len(enKeys))
-	}
-}
-
-func itoaLen(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	var digits []byte
-	for n > 0 {
-		digits = append([]byte{byte('0' + n%10)}, digits...)
-		n /= 10
-	}
-	return string(digits)
 }
 
 func countEmptyActions(out string) int {

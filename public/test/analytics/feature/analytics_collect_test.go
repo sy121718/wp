@@ -20,7 +20,7 @@ import (
 	projectmodel "go_wp/internal/module/project/model"
 	projectservice "go_wp/internal/module/project/service"
 	mw "go_wp/pkg/middleware"
-	"go_wp/public/migrations"
+	"go_wp/public/schema"
 	"go_wp/public/test/support"
 )
 
@@ -43,7 +43,7 @@ func newAnalyticsFixture(t *testing.T) *analyticsFixture {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	db := support.NewMigratedPGTestDB(t)
-	if err := migrations.RunSeeds(db); err != nil {
+	if err := schema.Apply(db); err != nil {
 		t.Fatalf("执行生产数据种子失败: %v", err)
 	}
 	if db == nil {

@@ -32,7 +32,7 @@ import (
 	purchasemodel "go_wp/internal/module/purchase/model"
 	purchaseservice "go_wp/internal/module/purchase/service"
 
-	"go_wp/public/migrations"
+	"go_wp/public/schema"
 	"go_wp/public/test/support"
 )
 
@@ -55,8 +55,8 @@ func newPurchaseFixture(t *testing.T) *purchaseFixture {
 	if db == nil {
 		return nil
 	}
-	if err := migrations.RunSeeds(db); err != nil {
-		t.Fatalf("执行生产数据种子失败: %v", err)
+	if err := schema.Apply(db); err != nil {
+		t.Fatalf("载入 schema 失败: %v", err)
 	}
 	// 失败区文案只从词库取词：把本用例库里的词条灌进缓存，不读会漂移的全局库。
 	var rows []struct {

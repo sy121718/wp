@@ -42,7 +42,7 @@ import (
 	"go_wp/pkg/builder/core"
 
 	"go_wp/pkg/i18n"
-	"go_wp/public/migrations"
+	"go_wp/public/schema"
 	"go_wp/public/test/support"
 
 	"gorm.io/gorm"
@@ -82,8 +82,8 @@ func newOutboxFixture(t *testing.T) *outboxFixture {
 		t.Fatalf("创建测试工程失败: %v", err)
 	}
 
-	if err := migrations.RunSeeds(db); err != nil {
-		t.Fatalf("执行数据种子失败: %v", err)
+	if err := schema.Apply(db); err != nil {
+		t.Fatalf("载入 schema 失败：%v", err)
 	}
 
 	if err := db.Exec(

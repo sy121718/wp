@@ -12,6 +12,9 @@ const (
 	mailGuardTemplateDir = "../../../../internal/templates/admin/mail"
 
 	mailGuardRetiredTemplate = "mail_marketing.html"
+
+	// 拆页前的旧路径，模板与路由守卫都不得再引用。
+	mailSplitLegacyPath = "/admin/mail/marketing"
 )
 
 var (

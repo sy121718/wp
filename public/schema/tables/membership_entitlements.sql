@@ -37,6 +37,3 @@ COMMENT ON COLUMN public.membership_entitlements.tier_id IS '所属等级（memb
 COMMENT ON COLUMN public.membership_entitlements.kind IS '权益类型：free_shipping=免运费；discount=折扣百分比。唯一键 (tier_id, kind)：改权益是 upsert，不是追加';
 
 COMMENT ON COLUMN public.membership_entitlements.value_int IS '按 kind 解释：free_shipping 取 0/1；discount 取 1..100（20 = 打八折，即扣减 20%）。越界由 ck_membership_entitlements_value 拒绝';
-
--- @phase data
-SELECT pg_catalog.setval('public.membership_entitlements_id_seq', 1, false);

@@ -2,25 +2,21 @@ package unit
 
 import (
 	"context"
-	"os"
 	"strings"
 	"testing"
 
 	"gorm.io/gorm"
 
 	"go_wp/internal/partition"
+	"go_wp/pkg/sqlsplit"
 )
 
-const reconcileSQLPath = "../../../migrations/507_partition_rls_reconcile.sql"
-
-func runSQLFile(t *testing.T, db *gorm.DB, path string) {
+func runReconcileSQL(t *testing.T, db *gorm.DB) {
 	t.Helper()
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("读取 %s 失败: %v", path, err)
-	}
-	if err := db.Exec(string(raw)).Error; err != nil {
-		t.Fatalf("执行 %s 失败: %v", path, err)
+	for _, stmt := range sqlsplit.Split(partition.ReconcilePartitionRLSSQL()) {
+		if err := db.Exec(stmt).Error; err != nil {
+			t.Fatalf("执行 reconcile_rls.sql 失败: %v", err)
+		}
 	}
 }
 
@@ -90,25 +86,25 @@ func TestAuditPartitionRLSCoverage(t *testing.T) {
 	}
 	t.Logf("构造缺口后巡检命中：page_views_2030_01 缺 [%s]", missing)
 
-	runSQLFile(t, db, reconcileSQLPath)
+	runReconcileSQL(t, db)
 	gaps, _, err = partition.AuditPartitionRLSCoverage(ctx, db)
 	if err != nil {
 		t.Fatalf("巡检失败: %v", err)
 	}
 	if len(gaps) != 0 {
-		t.Fatalf("507 执行后仍有缺口：%v", gaps)
+		t.Fatalf("reconcile_rls.sql 执行后仍有缺口：%v", gaps)
 	}
 	if en, fo, pol := rlsFlags(t, db, "page_views_2030_01"); !en || !fo || !pol {
-		t.Fatalf("507 执行后 page_views_2030_01 的 RLS 仍不完整：enable=%v force=%v policy=%v", en, fo, pol)
+		t.Fatalf("reconcile_rls.sql 执行后 page_views_2030_01 的 RLS 仍不完整：enable=%v force=%v policy=%v", en, fo, pol)
 	}
 
-	runSQLFile(t, db, reconcileSQLPath)
+	runReconcileSQL(t, db)
 	gaps, _, err = partition.AuditPartitionRLSCoverage(ctx, db)
 	if err != nil {
 		t.Fatalf("巡检失败: %v", err)
 	}
 	if len(gaps) != 0 {
-		t.Fatalf("507 重复执行后出现缺口（幂等性破坏）：%v", gaps)
+		t.Fatalf("reconcile_rls.sql 重复执行后出现缺口（幂等性破坏）：%v", gaps)
 	}
 
 	assertPredicateEqualsParent(t, db, "page_views", "page_views_2030_01")
@@ -162,7 +158,7 @@ func assertPredicateEqualsParent(t *testing.T, db *gorm.DB, parent, child string
 	}
 }
 
-func TestMigration507CopiesArbitraryPolicyShapes(t *testing.T) {
+func TestReconcileRLSCopiesArbitraryPolicyShapes(t *testing.T) {
 	db := newPartitionFixture(t)
 	ctx := context.Background()
 
@@ -192,11 +188,11 @@ func TestMigration507CopiesArbitraryPolicyShapes(t *testing.T) {
 		t.Fatal("夹具不成立：新建分区本该没有策略")
 	}
 
-	runSQLFile(t, db, reconcileSQLPath)
+	runReconcileSQL(t, db)
 
 	enabled, forced, hasPolicy := rlsFlags(t, db, "dbtest_part_1")
 	if !enabled || !forced || !hasPolicy {
-		t.Fatalf("507 没有为临时分区补隔离：enable=%v force=%v policy=%v", enabled, forced, hasPolicy)
+		t.Fatalf("reconcile_rls.sql 没有为临时分区补隔离：enable=%v force=%v policy=%v", enabled, forced, hasPolicy)
 	}
 
 	assertPredicateEqualsParent(t, db, "dbtest_part", "dbtest_part_1")
@@ -210,14 +206,14 @@ func TestMigration507CopiesArbitraryPolicyShapes(t *testing.T) {
 		t.Errorf("分区上的策略数 = %d，期望 2（父表两条都要复制）", n)
 	}
 
-	runSQLFile(t, db, reconcileSQLPath)
+	runReconcileSQL(t, db)
 	var again int64
 	if err := db.Raw("SELECT count(*) FROM pg_policy p JOIN pg_class c ON c.oid = p.polrelid" +
 		" WHERE c.relname = 'dbtest_part_1'").Scan(&again).Error; err != nil {
 		t.Fatalf("统计分区策略失败: %v", err)
 	}
 	if again != 2 {
-		t.Errorf("重复执行 507 后策略数 = %d，期望仍为 2", again)
+		t.Errorf("重复执行 reconcile_rls.sql 后策略数 = %d，期望仍为 2", again)
 	}
 	_ = ctx
 }
@@ -322,7 +318,7 @@ func TestEnsureAheadReconcilesArbitraryPolicyShapes(t *testing.T) {
 	enabled, forced, hasPolicy := rlsFlags(t, db, "dbtest_ahead_1")
 	if !enabled || !forced || !hasPolicy {
 		t.Fatalf("EnsureAhead 之后临时分区仍无隔离：enable=%v force=%v policy=%v"+
-			"（EnsureAhead 与迁移 507 的判据不同源）", enabled, forced, hasPolicy)
+			"（EnsureAhead 与reconcile_rls.sql 的判据不同源）", enabled, forced, hasPolicy)
 	}
 	assertPredicateEqualsParent(t, db, "dbtest_ahead", "dbtest_ahead_1")
 

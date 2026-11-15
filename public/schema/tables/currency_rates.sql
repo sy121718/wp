@@ -33,6 +33,3 @@ ALTER TABLE ONLY public.currency_rates
 
 -- @phase comment
 COMMENT ON TABLE public.currency_rates IS '汇率（币种对，覆盖式：同一币对只留最新一条）';
-
--- @phase data
-SELECT pg_catalog.setval('public.currency_rates_id_seq', 1, false);

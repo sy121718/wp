@@ -42,6 +42,3 @@ COMMENT ON COLUMN public.sys_rule_assignment.target_type IS '目标类型：1角
 COMMENT ON COLUMN public.sys_rule_assignment.target_scope IS '作用范围：0仅本部门 1本部门及子部门';
 
 COMMENT ON COLUMN public.sys_rule_assignment.create_time IS '审计 DB-018：由 timestamp 统一为 timestamptz；历史值按会话时区解释';
-
--- @phase data
-SELECT pg_catalog.setval('public.sys_rule_assignment_id_seq', 1, false);

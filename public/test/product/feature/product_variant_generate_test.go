@@ -9,7 +9,7 @@ import (
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 
-	"go_wp/public/migrations"
+	"go_wp/public/schema"
 )
 
 func mkVariationAttr(t *testing.T, f *attrFixture, name, key string, valueKeys []string) *productdto.AttributeResp {
@@ -405,76 +405,14 @@ func TestGenerateVariantsDisabledValueExcluded(t *testing.T) {
 	}
 }
 
-const legacyProductTemplate = `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"pd-section","type":"core.container","props":{"tag":"section","layout":{"engine":"flex","flex":{"direction":"column"}}},"children":[{"id":"pd-body","type":"core.product","props":{"source":"product","mediaField":"product.defaultImage","galleryField":"product.images","titleField":"product.name","subtitleField":"product.subtitle","priceField":"product.priceRange","comparePriceField":"product.comparePrice","descriptionField":"product.description","currency":"¥","titleTag":"h1"}}]}]}`
-
-func TestVariantOptionsTemplateBackfill(t *testing.T) {
-	f := newAttrFixture(t)
-	if f == nil {
-		return
-	}
-
-	if err := migrations.RunSeeds(f.db); err != nil {
-		t.Fatalf("首次执行种子失败: %v", err)
-	}
-
-	if err := f.db.Exec("UPDATE content_templates SET draft_document = ?::jsonb WHERE entity_type = 'product'", legacyProductTemplate).Error; err != nil {
-		t.Fatalf("回滚草稿失败: %v", err)
-	}
-	if err := f.db.Exec("UPDATE content_template_versions v SET document = ?::jsonb, source_hash = 'legacy' FROM content_templates t WHERE v.id = t.current_version_id AND t.entity_type = 'product'", legacyProductTemplate).Error; err != nil {
-		t.Fatalf("回滚版本失败: %v", err)
-	}
-
-	if err := migrations.RunSeeds(f.db); err != nil {
-		t.Fatalf("补槽位种子执行失败: %v", err)
-	}
-	var draft, version, hash string
-	if err := f.db.Raw("SELECT t.draft_document::text, v.document::text, v.source_hash FROM content_templates t JOIN content_template_versions v ON v.id = t.current_version_id WHERE t.entity_type = 'product'").Row().Scan(&draft, &version, &hash); err != nil {
-		t.Fatalf("读模板失败: %v", err)
-	}
-	for name, doc := range map[string]string{"草稿": draft, "当前版本": version} {
-		if !strings.Contains(doc, "optionsField") || !strings.Contains(doc, "variantsField") {
-			t.Fatalf("%s 应补上规格槽位: %s", name, doc)
-		}
-	}
-	if hash == "legacy" || hash == "" {
-		t.Fatalf("补槽位后应重算 source_hash，实际 %q", hash)
-	}
-
-	if err := migrations.RunSeeds(f.db); err != nil {
-		t.Fatalf("重复执行种子失败: %v", err)
-	}
-	var again string
-	if err := f.db.Raw("SELECT draft_document::text FROM content_templates WHERE entity_type = 'product'").Scan(&again).Error; err != nil {
-		t.Fatalf("再次读模板失败: %v", err)
-	}
-	if again != draft {
-		t.Fatalf("重复执行不应改写模板：前=%s 后=%s", draft, again)
-	}
-
-	custom := `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"only","type":"core.heading","props":{"text":"我的版式"}}]}`
-	if err := f.db.Exec("UPDATE content_templates SET draft_document = ?::jsonb WHERE entity_type = 'product'", custom).Error; err != nil {
-		t.Fatalf("写入自定义模板失败: %v", err)
-	}
-	if err := migrations.RunSeeds(f.db); err != nil {
-		t.Fatalf("自定义模板下执行种子失败: %v", err)
-	}
-	var afterCustom string
-	if err := f.db.Raw("SELECT draft_document::text FROM content_templates WHERE entity_type = 'product'").Scan(&afterCustom).Error; err != nil {
-		t.Fatalf("读自定义模板失败: %v", err)
-	}
-	if !strings.Contains(afterCustom, "我的版式") || strings.Contains(afterCustom, "optionsField") {
-		t.Fatalf("作者改过的模板不应被改写: %s", afterCustom)
-	}
-}
-
 func TestVariantGeneratePermissionSeeded(t *testing.T) {
 	f := newAttrFixture(t)
 	if f == nil {
 		return
 	}
 
-	if err := migrations.RunSeeds(f.db); err != nil {
-		t.Fatalf("执行数据种子失败: %v", err)
+	if err := schema.Apply(f.db); err != nil {
+		t.Fatalf("载入 schema 失败：%v", err)
 	}
 	var n int64
 	if err := f.db.Raw(`SELECT COUNT(*) FROM sys_permission

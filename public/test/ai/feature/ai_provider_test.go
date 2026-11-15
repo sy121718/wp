@@ -11,7 +11,6 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 	aidto "go_wp/internal/module/ai/dto"
 	aienums "go_wp/internal/module/ai/enums"
 	aihttp "go_wp/internal/module/ai/inbound/http"
@@ -22,8 +21,9 @@ import (
 	"go_wp/pkg/i18n"
 	pageview "go_wp/pkg/view"
 	text "go_wp/pkg/view/jet"
-	"go_wp/public/migrations"
+	"go_wp/public/schema"
 	"go_wp/public/test/support"
+	"gorm.io/gorm"
 )
 
 const (
@@ -33,7 +33,7 @@ const (
 
 func applyProductionSchema(t *testing.T, db *gorm.DB) {
 	t.Helper()
-	if err := migrations.RunSeeds(db); err != nil {
+	if err := schema.Apply(db); err != nil {
 		t.Fatalf("执行生产种子失败：%v", err)
 	}
 	var terms []struct {

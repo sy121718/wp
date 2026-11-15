@@ -34,7 +34,7 @@ import (
 	"go_wp/internal/templates"
 	text "go_wp/pkg/view/jet"
 
-	"go_wp/public/migrations"
+	"go_wp/public/schema"
 	"go_wp/public/test/support"
 )
 
@@ -54,8 +54,8 @@ func newVariantListFixture(t *testing.T) *variantListFixture {
 		return nil
 	}
 
-	if err := migrations.RunSeeds(db); err != nil {
-		t.Fatalf("执行生产数据种子失败: %v", err)
+	if err := schema.Apply(db); err != nil {
+		t.Fatalf("载入 schema 失败：%v", err)
 	}
 	projects := projectservice.NewService(projectmodel.NewProjectModel(db))
 	project, err := projects.Create(context.Background(), &projectdto.CreateReq{Name: "变体清单测试工程"})

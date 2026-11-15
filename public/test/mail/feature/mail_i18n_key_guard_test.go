@@ -16,7 +16,7 @@ const (
 	mailI18nGuardTemplateDir = "internal/templates/admin/mail"
 	mailI18nGuardModuleDir   = "internal/module/mail"
 
-	mailI18nGuardSeedDir = "public/migrations"
+	mailI18nGuardSeedDir = "public/schema/tables"
 
 	mailI18nGuardMinUsedKeys = 50
 )
@@ -124,7 +124,7 @@ func TestMailI18nUsedKeysAreSeeded(t *testing.T) {
 	}
 	if len(missing) > 0 {
 		sort.Strings(missing)
-		t.Errorf("以下 %d 个 admin.mail.* 键在模板/模块代码里用了，但 public/migrations 里没有种值：\n  %s",
+		t.Errorf("以下 %d 个 admin.mail.* 键在模板/模块代码里用了，但 public/schema 里没有种值：\n  %s",
 			len(missing), strings.Join(missing, "\n  "))
 	}
 	t.Logf("扫描完成：取词侧 %d 个键，种值侧 %d 个键", len(used), len(seeded))

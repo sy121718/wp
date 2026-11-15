@@ -35,6 +35,3 @@ CREATE INDEX idx_publication_receipts_pending ON public.publication_receipts USI
 
 -- @phase comment
 COMMENT ON COLUMN public.publication_receipts.source_type IS '回执归属类型：page / presentation 为实体级，project 为工程级（仅 action=deactivate，source_id 是真实工程 UUID）';
-
--- @phase data
-SELECT pg_catalog.setval('public.publication_receipts_id_new_seq', 1, false);

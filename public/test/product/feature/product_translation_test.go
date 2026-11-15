@@ -31,7 +31,7 @@ import (
 	"go_wp/pkg/builder/core"
 	"go_wp/pkg/i18n"
 	text "go_wp/pkg/view/jet"
-	"go_wp/public/migrations"
+	"go_wp/public/schema"
 	"go_wp/public/test/support"
 )
 
@@ -60,8 +60,8 @@ func newTRFixture(t *testing.T) *trFixture {
 	// 工作台模板的字段名与状态列都走 t() 取词：迁移只建表，词条由 seed 写进 sys_i18n，
 	// 不跑 seed 也不加载词库时，工作台会退成模板兜底（英文请求也只显示中文「名称」）。
 	// 同包的属性夹具是同一手法（newAttrFixture）。
-	if err := migrations.RunSeeds(db); err != nil {
-		t.Fatalf("执行种子数据失败：%v", err)
+	if err := schema.Apply(db); err != nil {
+		t.Fatalf("载入 schema 失败：%v", err)
 	}
 	loadFeatureWords(t, db)
 	ctx := context.Background()

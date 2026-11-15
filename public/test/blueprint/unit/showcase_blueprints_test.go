@@ -8,10 +8,10 @@ import (
 	"github.com/CloudyKit/jet/v6"
 	"gorm.io/gorm"
 
-	"go_wp/pkg/builder"
 	blueprintmodel "go_wp/internal/module/blueprint/model"
 	blueprintservice "go_wp/internal/module/blueprint/service"
 	"go_wp/internal/templates"
+	"go_wp/pkg/builder"
 
 	artifactmodel "go_wp/internal/module/artifact/model"
 	artifactservice "go_wp/internal/module/artifact/service"
@@ -28,7 +28,7 @@ import (
 	pubmodel "go_wp/internal/module/publication/model"
 	pubservice "go_wp/internal/module/publication/service"
 
-	"go_wp/public/migrations"
+	"go_wp/public/schema"
 	"go_wp/public/test/support"
 )
 
@@ -82,7 +82,7 @@ func seedShowcaseBlueprints(t *testing.T) *gorm.DB {
 	if db == nil {
 		return nil
 	}
-	if err := migrations.RunSeeds(db); err != nil {
+	if err := schema.Apply(db); err != nil {
 		t.Fatalf("执行种子数据失败: %v", err)
 	}
 	return db
@@ -189,7 +189,7 @@ func TestShowcaseBlueprintsSeedIdempotent(t *testing.T) {
 		return
 	}
 
-	if err := migrations.RunSeeds(db); err != nil {
+	if err := schema.Apply(db); err != nil {
 		t.Fatalf("重复执行种子数据失败（幂等性被破坏）: %v", err)
 	}
 	var blueprints, versions int64

@@ -10,7 +10,7 @@ import (
 	"go_wp/pkg/builder"
 	"go_wp/pkg/database"
 	"go_wp/pkg/i18n"
-	"go_wp/public/migrations"
+	"go_wp/public/schema"
 	"go_wp/public/test/support"
 
 	"github.com/spf13/viper"
@@ -83,11 +83,8 @@ func setupI18nUnitEnv(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("获取数据库实例失败: %v", err)
 	}
-	if err := migrations.Run(db); err != nil {
-		t.Fatalf("结构迁移失败: %v", err)
-	}
-	if err := migrations.RunSeeds(db); err != nil {
-		t.Fatalf("词条 seed 失败: %v", err)
+	if err := schema.Apply(db); err != nil {
+		t.Fatalf("载入 schema 失败: %v", err)
 	}
 	if err := i18n.Init(cfg); err != nil {
 		t.Fatalf("初始化 i18n 缓存失败: %v", err)

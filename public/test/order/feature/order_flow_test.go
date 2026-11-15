@@ -2,8 +2,8 @@ package feature
 
 import (
 	"context"
-	json "go_wp/pkg/jsonx"
 	"go_wp/pkg/i18n"
+	json "go_wp/pkg/jsonx"
 	"testing"
 
 	"gorm.io/gorm"
@@ -28,7 +28,7 @@ import (
 
 	masterdatamodel "go_wp/internal/module/masterdata/model"
 	masterdataservice "go_wp/internal/module/masterdata/service"
-	"go_wp/public/migrations"
+	"go_wp/public/schema"
 	"go_wp/public/test/support"
 )
 
@@ -56,7 +56,7 @@ func newOrderFixture(t *testing.T) *orderFixture {
 }
 
 // injectOrderFeatureWords 把生产种子写进库的词条刷新进 i18n 进程缓存。
-// RunSeeds 只写库、不刷缓存；不注入的话取词一律落兜底，HTML 断言会误判成「模板没渲染」。
+// schema.Apply 只写库、不刷缓存；不注入的话取词一律落兜底，HTML 断言会误判成「模板没渲染」。
 func injectOrderFeatureWords(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	var rows []struct {
@@ -82,13 +82,13 @@ func injectOrderFeatureWords(t *testing.T, db *gorm.DB) {
 func newOrderFixtureWithStock(t *testing.T, stock ordercontract.StockOperator) *orderFixture {
 	t.Helper()
 	db := support.NewMigratedPGTestDB(t)
-	if err := migrations.RunSeeds(db); err != nil {
-		t.Fatalf("执行生产数据种子失败: %v", err)
+	if err := schema.Apply(db); err != nil {
+		t.Fatalf("载入 schema 失败: %v", err)
 	}
 	if db == nil {
 		return nil
 	}
-	// RunSeeds 只写库、不刷 i18n 进程缓存；HTML 断言的取词必须先注入。
+	// schema.Apply 只写库、不刷 i18n 进程缓存；HTML 断言的取词必须先注入。
 	injectOrderFeatureWords(t, db)
 	ctx := context.Background()
 	projects := projectservice.NewService(projectmodel.NewProjectModel(db))

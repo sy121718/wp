@@ -12,7 +12,7 @@ import (
 )
 
 // 依赖方向判据：pkg 只能依赖标准库、第三方与本仓其它 pkg 包。
-// pkg 一旦 import internal/config/public/migrations，框架就不再可独立使用。
+// pkg 一旦 import internal/config/public/schema，框架就不再可独立使用。
 var pkgForbiddenImports = []string{
 	"go_wp/internal/",
 	"go_wp/config/",

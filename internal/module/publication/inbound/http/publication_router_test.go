@@ -14,7 +14,7 @@ import (
 	"go_wp/pkg/auth"
 	pkgcasbin "go_wp/pkg/casbin"
 	mw "go_wp/pkg/middleware"
-	"go_wp/public/migrations"
+	"go_wp/public/schema"
 	"go_wp/public/test/support"
 
 	"github.com/gin-gonic/gin"
@@ -26,7 +26,7 @@ func TestSEOAuditRequiresBothExistingPermissions(t *testing.T) {
 	if err := support.SeedTestAdmin(t, db, support.TestAdminUsername, support.TestAdminPassword); err != nil {
 		t.Fatal(err)
 	}
-	if err := migrations.RunSeeds(db); err != nil {
+	if err := schema.Apply(db); err != nil {
 		t.Fatal(err)
 	}
 	for _, item := range []struct{ code, path string }{

@@ -55,6 +55,3 @@ COMMENT ON COLUMN public.membership_tiers.sort_order IS '等级高低，越大�
 COMMENT ON COLUMN public.membership_tiers.threshold_amount IS '升级门槛（分）：工程内累计消费额达到此值进入本档；默认等级恒为 0；非默认档之间不许相同（唯一索引）';
 
 COMMENT ON COLUMN public.membership_tiers.is_default IS '每工程恰一个默认等级（部分唯一索引承载）：无归属行与无门槛满足两种情况都回退到它';
-
--- @phase data
-SELECT pg_catalog.setval('public.membership_tiers_id_seq', 1, false);

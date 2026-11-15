@@ -9,7 +9,7 @@ package mediaservice
 // 不要为了「取词归零」把它清掉：清掉之后 zip 里就只剩裸 key 或中文硬编码。
 //
 // 三条纪律：
-//  1. 每个 key 都要有 zh-CN / en-US 词条（public/migrations 里登记），缺词时
+//  1. 每个 key 都要有 zh-CN / en-US 词条（public/schema/tables/sys_i18n.sql 里登记），缺词时
 //     fallback 必须是非空的人话，不能是 key 本身 —— 见 media_export_text_test.go。
 //  2. 只在 service 内部调用；controller 一行都不许取词（它只把 plan 写成字节流）。
 //  3. 语言由调用方按请求解出后一路传下来（lang 形参），本文件不读 gin.Context。

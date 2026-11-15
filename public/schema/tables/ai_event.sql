@@ -70,6 +70,3 @@ COMMENT ON COLUMN public.ai_event.provider_key IS '产生本条事件的供应�
 COMMENT ON COLUMN public.ai_event.model_id IS '产生本条事件的模型标识；空串 = 未记录（529 之前写入的历史事件）';
 
 COMMENT ON COLUMN public.ai_event.user_id IS '写入这条事件的后台账号 id；0 = 未记录（535 之前写入的历史事件）';
-
--- @phase data
-SELECT pg_catalog.setval('public.ai_event_id_seq', 1, false);

@@ -28,7 +28,7 @@ import (
 	json "go_wp/pkg/jsonx"
 	pageview "go_wp/pkg/view"
 	text "go_wp/pkg/view/jet"
-	"go_wp/public/migrations"
+	"go_wp/public/schema"
 )
 
 // 工作台「主题保存」的**真实落库**闭环：生产布局 + 生产面板方法 + 真实
@@ -212,7 +212,7 @@ func newProjectHTTPTestDB(t *testing.T) *gorm.DB {
 		adminSQL.Close()
 	})
 
-	if err := migrations.Run(db); err != nil {
+	if err := schema.Apply(db); err != nil {
 		t.Fatalf("执行生产迁移失败: %v", err)
 	}
 	return db

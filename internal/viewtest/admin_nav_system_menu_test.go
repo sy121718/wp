@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	admindto "go_wp/internal/module/admin/dto"
-	"go_wp/public/migrations"
+	"go_wp/public/schema"
 	"go_wp/public/test/support"
 	"gorm.io/gorm"
 )
@@ -60,9 +60,5 @@ func TestSystemSettingsMenuRendersInSidebar(t *testing.T) {
 
 func runMigrations(t *testing.T, db *gorm.DB) error {
 	t.Helper()
-	if err := migrations.Run(db); err != nil {
-		return err
-	}
-
-	return migrations.RunSeeds(db)
+	return schema.Apply(db)
 }

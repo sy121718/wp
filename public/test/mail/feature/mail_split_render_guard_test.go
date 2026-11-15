@@ -98,6 +98,10 @@ func TestMailSplitSixPagesRenderWithMatchingColumns(t *testing.T) {
 	if fixture == nil {
 		return
 	}
+	// 系统数据自带邮件模板；本用例要核对六个页面在空列表时的列数对齐，先清空。
+	if err := fixture.db.Exec("DELETE FROM mail_templates").Error; err != nil {
+		t.Fatalf("清空系统邮件模板失败: %v", err)
+	}
 	handle := mailhttp.NewMailPageHandle(fixture.svc)
 
 	mount := map[string]func(*gin.Engine, string){

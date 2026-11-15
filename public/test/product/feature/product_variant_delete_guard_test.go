@@ -23,7 +23,7 @@ import (
 	projectmodel "go_wp/internal/module/project/model"
 	projectservice "go_wp/internal/module/project/service"
 
-	"go_wp/public/migrations"
+	"go_wp/public/schema"
 	"go_wp/public/test/support"
 )
 
@@ -43,8 +43,8 @@ func newGuardFixture(t *testing.T) *guardFixture {
 	if db == nil {
 		return nil
 	}
-	if err := migrations.RunSeeds(db); err != nil {
-		t.Fatalf("执行生产数据种子失败: %v", err)
+	if err := schema.Apply(db); err != nil {
+		t.Fatalf("载入 schema 失败：%v", err)
 	}
 	ctx := context.Background()
 	projects := projectservice.NewService(projectmodel.NewProjectModel(db))

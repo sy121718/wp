@@ -1,13 +1,9 @@
 package i18n_test
 
 import (
-	"os"
-	"path/filepath"
-	"strings"
 	"testing"
 
 	"go_wp/pkg/i18n"
-	"go_wp/public/migrations"
 
 	"gorm.io/gorm"
 )
@@ -18,28 +14,10 @@ const (
 	scopeProjectC = "33333333-3333-3333-3333-333333333333"
 )
 
+// newProjectScopeDB 直接用终态模板库：195 的工程作用域列已在 schema 里。
 func newProjectScopeDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	db := newContentWriteDB(t)
-	applyMigrationFile(t, db, "195_sys_translation_project_scope.sql")
-	return db
-}
-
-func applyMigrationFile(t *testing.T, db *gorm.DB, name string) {
-	t.Helper()
-	path := filepath.Join("..", "..", "..", "migrations", name)
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("读取迁移文件失败（%s）: %v", path, err)
-	}
-	for _, stmt := range migrations.SplitStatements(string(raw)) {
-		if strings.TrimSpace(stmt) == "" {
-			continue
-		}
-		if err := db.Exec(stmt).Error; err != nil {
-			t.Fatalf("执行迁移 %s 失败: %v\nSQL: %s", name, err, stmt)
-		}
-	}
+	return newContentWriteDB(t)
 }
 
 func insertTestProject(t *testing.T, db *gorm.DB, id, name string) {

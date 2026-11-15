@@ -12,7 +12,7 @@ import (
 	pkgcasbin "go_wp/pkg/casbin"
 	mw "go_wp/pkg/middleware"
 	"go_wp/pkg/response"
-	"go_wp/public/migrations"
+	"go_wp/public/schema"
 	"go_wp/public/test/support"
 
 	"github.com/gin-gonic/gin"
@@ -40,16 +40,12 @@ func newAuthFeatureEngine(t *testing.T) (*gin.Engine, *support.AdminSession) {
 		InitComponents:  false,
 		RouteRegistrar: func(engine *gin.Engine) {
 
-			if err := migrations.Run(db); err != nil {
-				t.Fatalf("执行结构迁移失败: %v", err)
+			if err := schema.Apply(db); err != nil {
+				t.Fatalf("载入 schema 失败: %v", err)
 			}
 
 			if err := support.SeedTestAdmin(t, db, support.TestAdminUsername, support.TestAdminPassword); err != nil {
 				t.Fatalf("准备测试管理员失败: %v", err)
-			}
-
-			if err := migrations.RunSeeds(db); err != nil {
-				t.Fatalf("执行业务权限 seed 失败: %v", err)
 			}
 
 			if err := pkgcasbin.InitCasbin(db); err != nil {

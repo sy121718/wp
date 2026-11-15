@@ -4,59 +4,13 @@ import (
 	json "go_wp/pkg/jsonx"
 	"net/http"
 	"reflect"
-	"regexp"
 	"strings"
 	"testing"
 
 	aidto "go_wp/internal/module/ai/dto"
 	aienums "go_wp/internal/module/ai/enums"
 	aimodel "go_wp/internal/module/ai/model"
-	"go_wp/public/migrations"
 )
-
-func TestAIMigrationSeedRegistered(t *testing.T) {
-	const version = "511-ai-provider"
-
-	var found *migrations.Seed
-	seeds := migrations.AllSeeds()
-	for i := range seeds {
-		if seeds[i].Version == version {
-			found = &seeds[i]
-			break
-		}
-	}
-	if found == nil {
-		t.Fatalf("种子 %s 未注册（检查 public/migrations/register_ai.go 与 register.go 的调用）", version)
-	}
-	if found.TableName != "ai_provider" {
-		t.Errorf("TableName 应为 ai_provider，实际 %q", found.TableName)
-	}
-	if !strings.Contains(found.ConditionSQL, "ai_provider") {
-		t.Errorf("ConditionSQL 必须枚举本批对象（ai_provider），实际 %q", found.ConditionSQL)
-	}
-
-	for _, want := range []string{
-		"CREATE TABLE IF NOT EXISTS ai_provider",
-		"CREATE INDEX IF NOT EXISTS",
-	} {
-		if !strings.Contains(found.SQL, want) {
-			t.Errorf("511 迁移缺少幂等语句 %q", want)
-		}
-	}
-
-	if !regexp.MustCompile(`COMMENT ON TABLE\s+ai_provider\s+IS`).MatchString(found.SQL) {
-		t.Error("511 迁移缺少 ai_provider 的表注释")
-	}
-	if !regexp.MustCompile(`COMMENT ON COLUMN\s+ai_provider\.config_data\s+IS`).MatchString(found.SQL) {
-		t.Error("511 迁移缺少 config_data 的列注释")
-	}
-
-	for _, col := range []string{"provider_key", "display_name", "base_url", "protocol", "api_key_cipher", "status", "sort", "config_data", "version", "create_by", "update_by"} {
-		if !strings.Contains(found.SQL, col) {
-			t.Errorf("511 迁移缺少列 %q", col)
-		}
-	}
-}
 
 // 状态码是协议事实源：同一档错误必须给同一个真实状态码。
 //

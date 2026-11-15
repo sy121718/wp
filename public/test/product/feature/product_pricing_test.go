@@ -29,7 +29,7 @@ import (
 	"go_wp/pkg/builder/core"
 	text "go_wp/pkg/view/jet"
 
-	"go_wp/public/migrations"
+	"go_wp/public/schema"
 	"go_wp/public/test/support"
 )
 
@@ -744,8 +744,8 @@ func TestPricingPermissionsAndMenusSeeded(t *testing.T) {
 	if f == nil {
 		return
 	}
-	if err := migrations.RunSeeds(f.db); err != nil {
-		t.Fatalf("执行数据种子失败: %v", err)
+	if err := schema.Apply(f.db); err != nil {
+		t.Fatalf("载入 schema 失败：%v", err)
 	}
 	var n int64
 	permSQL := "SELECT COUNT(*) FROM sys_permission WHERE module = 'product' AND permission_code LIKE 'product:pricing_%'"

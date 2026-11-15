@@ -73,6 +73,3 @@ COMMENT ON COLUMN public.build_jobs.attempt IS '认领次数（回收后重新�
 COMMENT ON COLUMN public.build_jobs.input_version IS 'menu_stale 的输入版本号（来自 build_job_seq）；其余来源为 NULL';
 
 COMMENT ON COLUMN public.build_jobs.context_key IS 'menu_stale 的去重语境（工程 UUID:菜单位置）；其余来源为 NULL';
-
--- @phase data
-SELECT pg_catalog.setval('public.build_jobs_id_new_seq', 1, false);

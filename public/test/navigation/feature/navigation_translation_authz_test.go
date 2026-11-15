@@ -2,14 +2,6 @@ package feature
 
 import (
 	"context"
-	json "go_wp/pkg/jsonx"
-	text "go_wp/pkg/view/jet"
-	"net/http"
-	"net/http/httptest"
-	"regexp"
-	"strconv"
-	"strings"
-	"testing"
 	"go_wp/internal/middleware/adminctx"
 	builtin "go_wp/internal/middleware/builtin"
 	adminhttp "go_wp/internal/module/admin/inbound/http"
@@ -33,10 +25,18 @@ import (
 	"go_wp/pkg/captcha"
 	pkgcasbin "go_wp/pkg/casbin"
 	"go_wp/pkg/i18n"
+	json "go_wp/pkg/jsonx"
 	mw "go_wp/pkg/middleware"
 	pageview "go_wp/pkg/view"
-	"go_wp/public/migrations"
+	text "go_wp/pkg/view/jet"
+	"go_wp/public/schema"
 	"go_wp/public/test/support"
+	"net/http"
+	"net/http/httptest"
+	"regexp"
+	"strconv"
+	"strings"
+	"testing"
 
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
@@ -72,10 +72,10 @@ func newNavTranslationAuthzEnv(t *testing.T) *navTranslationAuthzEnv {
 	if err := support.SeedTestAdmin(t, db, support.TestAdminUsername, support.TestAdminPassword); err != nil {
 		t.Fatalf("准备测试超管失败: %v", err)
 	}
-	if err := migrations.RunSeeds(db); err != nil {
-		t.Fatalf("执行业务权限 seed 失败: %v", err)
+	if err := schema.Apply(db); err != nil {
+		t.Fatalf("载入 schema 失败: %v", err)
 	}
-	// RunSeeds 只写库、不刷新 i18n 进程缓存；不注入的话取词一律落兜底。
+	// schema.Apply 只写库、不刷新 i18n 进程缓存；不注入的话取词一律落兜底。
 	injectNavigationFeatureWords(t, db)
 	if err := pkgcasbin.InitCasbin(db); err != nil {
 		t.Fatalf("初始化 Casbin 失败: %v", err)

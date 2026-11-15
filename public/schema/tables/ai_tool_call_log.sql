@@ -63,6 +63,3 @@ COMMENT ON COLUMN public.ai_tool_call_log.status IS 'ok / args_error / forbidden
 COMMENT ON COLUMN public.ai_tool_call_log.error_key IS '失败时的 i18n key（与 enums 哨兵同源）；不存底层原文';
 
 COMMENT ON COLUMN public.ai_tool_call_log.latency_ms IS '工具执行耗时（毫秒，含权限判定与参数校验）';
-
--- @phase data
-SELECT pg_catalog.setval('public.ai_tool_call_log_id_seq', 1, false);

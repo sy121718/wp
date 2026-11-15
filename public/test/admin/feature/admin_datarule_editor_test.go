@@ -10,7 +10,6 @@ import (
 	"go_wp/pkg/i18n"
 	pageview "go_wp/pkg/view"
 	text "go_wp/pkg/view/jet"
-	"go_wp/public/migrations"
 	"go_wp/public/test/support"
 	"net/http"
 	"net/http/httptest"
@@ -23,29 +22,6 @@ import (
 func TestAdminDataruleEditorPageUsesLocalTemplates(t *testing.T) {
 	db := support.NewMigratedPGTestDB(t)
 	initAdminPolicyTest(t, db)
-	found := false
-	for _, seed := range migrations.AllSeeds() {
-		if seed.Version != "707-admin-datarule-editor-i18n" {
-			continue
-		}
-		found = true
-		if err := db.Exec("PREPARE rule_editor_seed AS " + seed.SQL).Error; err != nil {
-			t.Fatal(err)
-		}
-		if err := db.Exec("EXECUTE rule_editor_seed").Error; err != nil {
-			t.Fatal(err)
-		}
-		if err := db.Exec("DEALLOCATE rule_editor_seed").Error; err != nil {
-			t.Fatal(err)
-		}
-		var ready int
-		if err := db.Raw(seed.ConditionSQL).Scan(&ready).Error; err != nil || ready != 1 {
-			t.Fatalf("词库门槛=%d err=%v", ready, err)
-		}
-	}
-	if !found {
-		t.Fatal("编辑器词库seed未注册")
-	}
 	var words []struct{ ItemKey, Lang, ItemValue string }
 	if err := db.Table("sys_i18n").Where("item_key IN ?", []string{"admin.datarules.editor.domain_conflict", "admin.datarules.editor.load_failed", "admin.datarules.editor.loading"}).Find(&words).Error; err != nil {
 		t.Fatal(err)

@@ -19,9 +19,11 @@ import (
 	"strings"
 
 	"gorm.io/gorm"
+
+	"go_wp/pkg/sqlsplit"
 )
 
-//go:embed base.sql order.txt tables/*.sql
+//go:embed base.sql defaults.sql order.txt tables/*.sql
 var assets embed.FS
 
 const watermarkTable = "sys_baseline"
@@ -29,7 +31,7 @@ const watermarkTable = "sys_baseline"
 // Digest 返回 schema 产物的内容摘要（文件路径 + 内容，按表名排序）。
 func Digest() string {
 	h := sha256.New()
-	files := append([]string{"base.sql"}, tableFiles()...)
+	files := append([]string{"base.sql", "defaults.sql"}, tableFiles()...)
 	files = append(files, "order.txt")
 	for _, name := range files {
 		data, err := assets.ReadFile(name)
@@ -91,7 +93,7 @@ func Apply(db *gorm.DB) error {
 			return err
 		}
 		if skip {
-			return nil
+			return applyDefaults(conn)
 		}
 
 		return conn.Transaction(func(tx *gorm.DB) error {
@@ -124,9 +126,19 @@ func Apply(db *gorm.DB) error {
 					return fmt.Errorf("schema 系统数据 %s 失败: %w", table, err)
 				}
 			}
-			return tx.Exec("INSERT INTO sys_baseline (version, manifest_sha256, note) VALUES (?, ?, ?)",
-				Version(), Digest(), "由 public/schema 载入").Error
+			if err := tx.Exec("INSERT INTO sys_baseline (version, manifest_sha256, note) VALUES (?, ?, ?)",
+				Version(), Digest(), "由 public/schema 载入").Error; err != nil {
+				return err
+			}
+			return execSection(tx, mustRead("defaults.sql"))
 		})
+	})
+}
+
+// applyDefaults 为已有工程补齐默认内容模板；同摘要跳过结构时也要执行。
+func applyDefaults(db *gorm.DB) error {
+	return db.Transaction(func(tx *gorm.DB) error {
+		return execSection(tx, mustRead("defaults.sql"))
 	})
 }
 
@@ -168,7 +180,7 @@ func order() []string {
 }
 
 func execSection(tx *gorm.DB, text string) error {
-	for _, stmt := range splitSQL(text) {
+	for _, stmt := range sqlsplit.Split(text) {
 		if err := tx.Exec(stmt).Error; err != nil {
 			return err
 		}
@@ -183,6 +195,14 @@ func watermarkMatches(db *gorm.DB) (bool, error) {
 		return false, fmt.Errorf("无法确认 sys_baseline 是否存在: %w", err)
 	}
 	if !exists {
+		var others int64
+		if err := db.Raw("SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace " +
+			"WHERE n.nspname = 'public' AND c.relkind IN ('r','p')").Scan(&others).Error; err != nil {
+			return false, fmt.Errorf("统计既有表失败: %w", err)
+		}
+		if others > 0 {
+			return false, fmt.Errorf("库中已有 %d 张表但没有 sys_baseline 水位：请先用 scripts/schema-adopt.sh 核验并写入水位，不能直接重放结构", others)
+		}
 		return false, nil
 	}
 
@@ -216,93 +236,4 @@ func acquireLock(db *gorm.DB) error {
 
 func releaseLock(db *gorm.DB) {
 	_ = db.Exec("SELECT pg_advisory_unlock(hashtextextended(current_database() || ':go_wp_schema', 0))").Error
-}
-
-// splitSQL 按分号切语句，正确跳过单/双引号、$$ 体、行注释与块注释。
-func splitSQL(text string) []string {
-	var out []string
-	var b strings.Builder
-	i := 0
-	for i < len(text) {
-		switch {
-		case strings.HasPrefix(text[i:], "--"):
-			nl := strings.IndexByte(text[i:], '\n')
-			if nl < 0 {
-				b.WriteString(text[i:])
-				i = len(text)
-				continue
-			}
-			b.WriteString(text[i : i+nl])
-			i += nl
-		case strings.HasPrefix(text[i:], "/*"):
-			end := strings.Index(text[i+2:], "*/")
-			if end < 0 {
-				b.WriteString(text[i:])
-				i = len(text)
-				continue
-			}
-			b.WriteString(text[i : i+2+end+2])
-			i += 2 + end + 2
-		case text[i] == '\'':
-			j := i + 1
-			for j < len(text) {
-				if text[j] == '\'' {
-					if j+1 < len(text) && text[j+1] == '\'' {
-						j += 2
-						continue
-					}
-					j++
-					break
-				}
-				j++
-			}
-			b.WriteString(text[i:j])
-			i = j
-		case text[i] == '"':
-			j := i + 1
-			for j < len(text) {
-				if text[j] == '"' {
-					if j+1 < len(text) && text[j+1] == '"' {
-						j += 2
-						continue
-					}
-					j++
-					break
-				}
-				j++
-			}
-			b.WriteString(text[i:j])
-			i = j
-		case text[i] == '$':
-			tagEnd := strings.IndexByte(text[i+1:], '$')
-			if tagEnd < 0 {
-				b.WriteByte(text[i])
-				i++
-				continue
-			}
-			tag := text[i : i+tagEnd+2]
-			end := strings.Index(text[i+len(tag):], tag)
-			if end < 0 {
-				b.WriteString(text[i:])
-				i = len(text)
-				continue
-			}
-			b.WriteString(text[i : i+len(tag)+end+len(tag)])
-			i += len(tag) + end + len(tag)
-		case text[i] == ';':
-			stmt := strings.TrimSpace(b.String())
-			if stmt != "" {
-				out = append(out, stmt)
-			}
-			b.Reset()
-			i++
-		default:
-			b.WriteByte(text[i])
-			i++
-		}
-	}
-	if stmt := strings.TrimSpace(b.String()); stmt != "" {
-		out = append(out, stmt)
-	}
-	return out
 }

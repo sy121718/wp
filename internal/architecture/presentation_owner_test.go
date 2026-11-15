@@ -78,12 +78,11 @@ var moduleTextFuncs = map[string]struct{}{
 }
 
 var pendingModuleText = map[string]int{
-	"internal/module/inventory/inbound/mcp/inventory_tools.go":         1,
-	"internal/module/mail/service/mail_account.go":                     3,
+	"internal/module/inventory/inbound/mcp/inventory_tools.go": 1,
+	"internal/module/mail/service/mail_account.go":             3,
 	// 打包下载把 README.txt 写进 zip 字节流，物理上不经过 Jet 模板；
 	// 这是全域唯一允许 service 取词的地方（理由见该文件头）。
-	"internal/module/media/service/media_export_text.go":      9,
-
+	"internal/module/media/service/media_export_text.go": 9,
 }
 
 func TestModulesDoNotTranslate(t *testing.T) {
@@ -153,7 +152,7 @@ func TestWholePageTemplatesOwnTheirText(t *testing.T) {
 var allowedPkgDirs = map[string]struct{}{
 	"actor": {}, "auth": {}, "backpath": {}, "binding": {}, "bulkids": {}, "cache": {},
 	"captcha": {}, "casbin": {}, "crypto": {}, "database": {}, "datarule": {},
-	"enums": {}, "facing": {}, "i18n": {}, "jsonx": {}, "logger": {},
+	"enums": {}, "facing": {}, "i18n": {}, "jsonx": {}, "logger": {}, "sqlsplit": {},
 	"mailer": {}, "money": {}, "pagination": {}, "pathkit": {}, "queue": {},
 	"reqparams": {}, "response": {}, "rls": {}, "safepath": {}, "sitehttps": {},
 	"sitetz": {}, "ssrf": {}, "tree": {}, "upload": {}, "utils": {}, "validate": {},

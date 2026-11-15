@@ -37,6 +37,3 @@ COMMENT ON TABLE public.admin_side_effect_tasks IS 'admin 提交后副作用的�
 COMMENT ON COLUMN public.admin_side_effect_tasks.kind IS '副作用种类：policy_reload / revoke_session';
 
 COMMENT ON COLUMN public.admin_side_effect_tasks.payload IS '执行该副作用需要的业务事实（JSON）';
-
--- @phase data
-SELECT pg_catalog.setval('public.admin_side_effect_tasks_id_seq', 1, false);

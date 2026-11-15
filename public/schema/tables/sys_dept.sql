@@ -46,6 +46,3 @@ COMMENT ON COLUMN public.sys_dept.leader_id IS '部门负责人ID';
 COMMENT ON COLUMN public.sys_dept.create_time IS '审计 DB-018：由 timestamp 统一为 timestamptz；历史值按会话时区解释';
 
 COMMENT ON COLUMN public.sys_dept.update_time IS '审计 DB-018：由 timestamp 统一为 timestamptz；历史值按会话时区解释';
-
--- @phase data
-SELECT pg_catalog.setval('public.sys_dept_id_seq', 1, false);

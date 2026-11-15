@@ -18,7 +18,7 @@ import (
 	"go_wp/pkg/database"
 	"go_wp/pkg/i18n"
 	text "go_wp/pkg/view/jet"
-	"go_wp/public/migrations"
+	"go_wp/public/schema"
 	"go_wp/public/test/support"
 )
 
@@ -41,7 +41,7 @@ func newI18nPaginationEnv(t *testing.T) {
 	if db == nil {
 		return
 	}
-	if err := migrations.RunSeeds(db); err != nil {
+	if err := schema.Apply(db); err != nil {
 		t.Fatalf("seed 失败：%v", err)
 	}
 	name := db.Migrator().CurrentDatabase()

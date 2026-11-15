@@ -50,6 +50,3 @@ CREATE INDEX idx_mail_logs_to_email ON public.mail_logs USING btree (to_email);
 COMMENT ON COLUMN public.mail_logs.sent_at IS '审计 DB-018：由 timestamp 统一为 timestamptz；历史值按会话时区解释';
 
 COMMENT ON COLUMN public.mail_logs.create_time IS '审计 DB-018：由 timestamp 统一为 timestamptz；历史值按会话时区解释';
-
--- @phase data
-SELECT pg_catalog.setval('public.mail_logs_id_seq', 1, false);

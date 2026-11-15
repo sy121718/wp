@@ -49,6 +49,3 @@ COMMENT ON COLUMN public.order_items.cost_price IS '下单时刻的行成本快�
 COMMENT ON COLUMN public.order_items.create_time IS '审计 DB-018：由 timestamp 统一为 timestamptz；历史值按会话时区解释';
 
 COMMENT ON COLUMN public.order_items.warehouse_id IS '发货仓（下单时解析并固化；NULL = 存量行，发货时解析后回写）';
-
--- @phase data
-SELECT pg_catalog.setval('public.order_items_id_seq', 1, false);

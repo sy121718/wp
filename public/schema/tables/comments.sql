@@ -75,6 +75,3 @@ COMMENT ON COLUMN public.comments.author_ip_hash IS '来源 IP 的带盐哈希�
 COMMENT ON COLUMN public.comments.reviewed_by IS '审核人 = sys_admin.id；未审核为 NULL。审核队列的追责依据';
 
 COMMENT ON COLUMN public.comments.reviewed_at IS '审核时刻；未审核为 NULL';
-
--- @phase data
-SELECT pg_catalog.setval('public.comments_id_seq', 1, false);

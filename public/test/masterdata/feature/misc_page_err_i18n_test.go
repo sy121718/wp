@@ -3,7 +3,7 @@ package feature
 import (
 	"testing"
 
-	"go_wp/public/migrations"
+	"go_wp/public/schema"
 )
 
 var miscPageErrI18nKeys = []string{
@@ -59,10 +59,10 @@ func TestMiscPageErrI18nSeededAndIdempotent(t *testing.T) {
 		}
 	}
 
-	assertSeeded(t, "首次执行 RunSeeds 后")
+	assertSeeded(t, "首次执行 schema.Apply 后")
 
-	if err := migrations.RunSeeds(f.db); err != nil {
-		t.Fatalf("重复执行种子失败（408 不幂等）: %v", err)
+	if err := schema.Apply(f.db); err != nil {
+		t.Fatalf("重复载入 schema 失败（408 不幂等）: %v", err)
 	}
-	assertSeeded(t, "重复执行 RunSeeds 后")
+	assertSeeded(t, "重复执行 schema.Apply 后")
 }

@@ -20,7 +20,7 @@ import (
 	"go_wp/internal/templates"
 	pageview "go_wp/pkg/view"
 	text "go_wp/pkg/view/jet"
-	"go_wp/public/migrations"
+	"go_wp/public/schema"
 )
 
 func newPurchasePageEngine(t *testing.T) (*gin.Engine, *purchaseFixture) {
@@ -335,8 +335,8 @@ func TestPurchasePermissionsAndMenuSeeded(t *testing.T) {
 	if f == nil {
 		return
 	}
-	if err := migrations.RunSeeds(f.db); err != nil {
-		t.Fatalf("执行数据种子失败: %v", err)
+	if err := schema.Apply(f.db); err != nil {
+		t.Fatalf("载入 schema 失败: %v", err)
 	}
 	codes := []string{
 		"inventory:purchase_list", "inventory:purchase_get", "inventory:purchase_create",

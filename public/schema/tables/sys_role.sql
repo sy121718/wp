@@ -48,6 +48,3 @@ COMMENT ON COLUMN public.sys_role.is_system IS '是否系统内置：0否 1是';
 COMMENT ON COLUMN public.sys_role.create_time IS '审计 DB-018：由 timestamp 统一为 timestamptz；历史值按会话时区解释';
 
 COMMENT ON COLUMN public.sys_role.update_time IS '审计 DB-018：由 timestamp 统一为 timestamptz；历史值按会话时区解释';
-
--- @phase data
-SELECT pg_catalog.setval('public.sys_role_id_seq', 1, false);

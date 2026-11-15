@@ -19,7 +19,6 @@ import (
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/view"
 	text "go_wp/pkg/view/jet"
-	"go_wp/public/migrations"
 	"go_wp/public/test/support"
 	"golang.org/x/net/html"
 	"gorm.io/gorm"
@@ -30,13 +29,6 @@ func newDrawerEngine(t *testing.T, db *gorm.DB) *gin.Engine {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	initAdminPolicyTest(t, db)
-	for _, seed := range migrations.AllSeeds() {
-		if seed.Version == "058-i18n-seed-enums" || seed.Version == "228b-i18n-seed-role-permissions" {
-			if err := db.Exec(seed.SQL).Error; err != nil {
-				t.Fatal(err)
-			}
-		}
-	}
 	var words []struct{ ItemKey, Lang, ItemValue string }
 	if err := db.Table("sys_i18n").Where("status = ?", 1).Find(&words).Error; err != nil {
 		t.Fatal(err)
@@ -116,7 +108,8 @@ func TestAdminDrawerGetReturnsHTMLForms(t *testing.T) {
 	db := support.NewMigratedPGTestDB(t)
 	engine := newDrawerEngine(t, db)
 	role := &adminmodel.RoleEntity{RoleCode: "dr_role", RoleName: "抽屉角色", IsSystem: 0}
-	account := &adminmodel.AdminEntity{Username: "dr_admin", Password: "x", Status: adminmodel.AdminStatusActive, IsAdmin: 1}
+	// 系统数据已有超管；这里的账号只是抽屉的目标行，普通管理员即可。
+	account := &adminmodel.AdminEntity{Username: "dr_admin", Password: "x", Status: adminmodel.AdminStatusActive}
 	for _, entity := range []any{role, account} {
 		if err := db.Create(entity).Error; err != nil {
 			t.Fatal(err)

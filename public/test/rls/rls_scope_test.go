@@ -18,7 +18,7 @@ import (
 	blockmodel "go_wp/internal/module/block/model"
 	"go_wp/internal/partition"
 	"go_wp/pkg/rls"
-	"go_wp/public/migrations"
+	"go_wp/public/schema"
 	"go_wp/public/test/support"
 )
 
@@ -103,8 +103,8 @@ func rlsFixture(t *testing.T) (*gorm.DB, string) {
 		adminSQL.Close()
 	})
 
-	if err := migrations.Run(db); err != nil {
-		t.Fatalf("执行生产迁移失败: %v", err)
+	if err := schema.Apply(db); err != nil {
+		t.Fatalf("载入 schema 失败: %v", err)
 	}
 
 	if err := db.Exec("GRANT USAGE ON SCHEMA public TO " + role).Error; err != nil {

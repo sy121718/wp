@@ -15,7 +15,7 @@ import (
 
 	builtin "go_wp/internal/middleware/builtin"
 	"go_wp/pkg/casbin"
-	"go_wp/public/migrations"
+	"go_wp/public/schema"
 	"go_wp/public/test/support"
 )
 
@@ -69,7 +69,7 @@ func seedMaterializedBorrows(t *testing.T, db *gorm.DB) []mailDeclaredBorrow {
 
 func TestMailPageDeclaredBorrowsHaveEnabledPermissionRows(t *testing.T) {
 	db := support.NewMigratedPGTestDB(t)
-	if err := migrations.RunSeeds(db); err != nil {
+	if err := schema.Apply(db); err != nil {
 		t.Fatalf("跑种子数据失败：%v", err)
 	}
 
@@ -107,7 +107,7 @@ func TestMailPageDeclaredBorrowsHaveEnabledPermissionRows(t *testing.T) {
 
 func TestMailPageDeclaredBorrowPolicyAuthorizesPagePost(t *testing.T) {
 	db := support.NewMigratedPGTestDB(t)
-	if err := migrations.RunSeeds(db); err != nil {
+	if err := schema.Apply(db); err != nil {
 		t.Fatalf("跑种子数据失败：%v", err)
 	}
 	borrows := seedMaterializedBorrows(t, db)

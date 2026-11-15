@@ -122,7 +122,7 @@ if [ -s "$tmp_gap" ]; then
     echo "  受保护入口在注册处声明权限点；访客入口保留认证/CSRF 并在同一注册处显式声明豁免。"
     echo "  权限目录只在生产迁移/seed 与 admin 业务写入中变化，启动期只核对、不反写。"
     echo "  合法禁用不算缺口；上面的失败全部是「目录里根本没有这个码」。"
-    echo "  （历史样板见 public/migrations/079_content_collections_permission.sql 与 151。）"
+    echo "  （权限点常量见各模块 enums/permission_codes.go；系统数据在 public/schema/tables/sys_permission.sql）"
     exit 1
 fi
 

@@ -30,7 +30,7 @@ import (
 	pkgcasbin "go_wp/pkg/casbin"
 	mw "go_wp/pkg/middleware"
 	text "go_wp/pkg/view/jet"
-	"go_wp/public/migrations"
+	"go_wp/public/schema"
 	"go_wp/public/test/support"
 )
 
@@ -73,8 +73,8 @@ func newSEOAuditChain(t *testing.T) *seoAuditChain {
 		t.Fatalf("准备测试超管失败: %v", err)
 	}
 	plainID := seoAuditSeedPlainAdmin(t, db)
-	if err := migrations.RunSeeds(db); err != nil {
-		t.Fatalf("执行业务权限 seed 失败: %v", err)
+	if err := schema.Apply(db); err != nil {
+		t.Fatalf("载入 schema 失败: %v", err)
 	}
 	if err := pkgcasbin.InitCasbin(db); err != nil {
 		t.Fatalf("初始化 Casbin 失败: %v", err)

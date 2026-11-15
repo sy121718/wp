@@ -22,7 +22,7 @@ import (
 	productdto "go_wp/internal/module/product/dto"
 	projectdto "go_wp/internal/module/project/dto"
 
-	"go_wp/public/migrations"
+	"go_wp/public/schema"
 	"go_wp/public/test/support"
 )
 
@@ -182,7 +182,7 @@ var (
 	_ = productmodel.NewModel
 	_ = projectservice.NewService
 	_ = projectmodel.NewProjectModel
-	_ = migrations.Run
+	_ = schema.Apply
 	_ = support.NewPGTestDB
 	_ = projectdto.CreateReq{}
 )

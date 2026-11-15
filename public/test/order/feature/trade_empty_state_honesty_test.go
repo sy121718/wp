@@ -28,7 +28,7 @@ import (
 	"go_wp/pkg/i18n"
 	pageview "go_wp/pkg/view"
 	text "go_wp/pkg/view/jet"
-	"go_wp/public/migrations"
+	"go_wp/public/schema"
 	"go_wp/public/test/support"
 )
 
@@ -45,8 +45,8 @@ func newTradePageEnv(t *testing.T) *tradePageEnv {
 		return nil
 	}
 
-	if err := migrations.RunSeeds(db); err != nil {
-		t.Fatalf("执行生产数据种子失败: %v", err)
+	if err := schema.Apply(db); err != nil {
+		t.Fatalf("载入 schema 失败: %v", err)
 	}
 
 	projects := projectservice.NewService(projectmodel.NewProjectModel(db))
@@ -283,8 +283,8 @@ func TestTradePagesI18nValuesAreActuallyUpdated(t *testing.T) {
 	if db == nil {
 		return
 	}
-	if err := migrations.RunSeeds(db); err != nil {
-		t.Fatalf("执行生产数据种子失败: %v", err)
+	if err := schema.Apply(db); err != nil {
+		t.Fatalf("载入 schema 失败: %v", err)
 	}
 
 	assertI18nValueEquals(t, db, "admin.customers.list.empty_heading", "zh-CN", "还没有客户")

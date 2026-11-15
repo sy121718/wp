@@ -34,7 +34,7 @@ import (
 	purchaseservice "go_wp/internal/module/purchase/service"
 
 	"go_wp/pkg/i18n"
-	"go_wp/public/migrations"
+	"go_wp/public/schema"
 	"go_wp/public/test/support"
 )
 
@@ -53,8 +53,8 @@ type mdFixture struct {
 func newMDFixture(t *testing.T) *mdFixture {
 	t.Helper()
 	db := support.NewMigratedPGTestDB(t)
-	if err := migrations.RunSeeds(db); err != nil {
-		t.Fatalf("执行生产数据种子失败: %v", err)
+	if err := schema.Apply(db); err != nil {
+		t.Fatalf("载入 schema 失败: %v", err)
 	}
 	if db == nil {
 		return nil

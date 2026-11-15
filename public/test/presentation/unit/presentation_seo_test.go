@@ -25,7 +25,7 @@ import (
 
 	"go_wp/pkg/builder/core"
 	"go_wp/pkg/i18n"
-	"go_wp/public/migrations"
+	"go_wp/public/schema"
 	"go_wp/public/test/support"
 
 	masterdatamodel "go_wp/internal/module/masterdata/model"
@@ -259,8 +259,8 @@ func newSEOProductFixture(t *testing.T) *seoProductFixture {
 		t.Skipf("本地 PostgreSQL 不可用：%v", err)
 		return nil
 	}
-	if err := migrations.Run(db); err != nil {
-		t.Fatalf("执行生产迁移建表失败: %v", err)
+	if err := schema.Apply(db); err != nil {
+		t.Fatalf("载入 schema 失败: %v", err)
 	}
 	ctx := context.Background()
 	projects := projectservice.NewService(projectmodel.NewProjectModel(db))

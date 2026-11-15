@@ -48,6 +48,3 @@ COMMENT ON COLUMN public.membership_assignments.user_id IS '访客账号 id（us
 COMMENT ON COLUMN public.membership_assignments.source IS 'auto=日结按消费额重算；manual=后台手工指定。手工行不被自动重算覆盖，语义由原子 SQL 的 WHERE source <> ''manual'' 承载';
 
 COMMENT ON COLUMN public.membership_assignments.assigned_at IS '归属生效时刻（业务时刻，与 orders.paid_at 同族的 *_at 命名）；管理时间列另有 create_time / update_time';
-
--- @phase data
-SELECT pg_catalog.setval('public.membership_assignments_id_seq', 1, false);

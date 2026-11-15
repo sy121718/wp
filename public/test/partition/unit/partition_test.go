@@ -9,7 +9,7 @@ import (
 	"gorm.io/gorm"
 
 	"go_wp/internal/partition"
-	migrations "go_wp/public/migrations"
+	"go_wp/public/schema"
 	"go_wp/public/test/support"
 )
 
@@ -20,8 +20,8 @@ func newPartitionFixture(t *testing.T) *gorm.DB {
 		t.Skipf("本地 PostgreSQL 不可用：%v", err)
 		return nil
 	}
-	if err := migrations.Run(db); err != nil {
-		t.Fatalf("执行生产迁移失败: %v", err)
+	if err := schema.Apply(db); err != nil {
+		t.Fatalf("载入 schema 失败: %v", err)
 	}
 	return db
 }
@@ -187,73 +187,4 @@ func TestDefaultPartitionCatchesMissingWindow(t *testing.T) {
 	if landed != "page_views_default" {
 		t.Fatalf("无对应分区时应落 DEFAULT 分区，实际 %q", landed)
 	}
-}
-
-func TestMigrationMigratesLegacyData(t *testing.T) {
-	db := newPartitionFixture(t)
-	var sqlText string
-	for _, m := range migrations.All() {
-		if m.Version == "173-partition-append-only-tables" {
-			sqlText = m.SQL
-		}
-	}
-	if sqlText == "" {
-		t.Fatal("迁移 173 未注册")
-	}
-
-	if err := db.Exec("DROP TABLE IF EXISTS page_views_default").Error; err != nil {
-		t.Fatalf("删除 DEFAULT 分区失败: %v", err)
-	}
-	if err := db.Exec("DROP TABLE IF EXISTS page_views_2026_09").Error; err != nil {
-		t.Fatalf("删除月分区失败: %v", err)
-	}
-	if err := db.Exec("DROP TABLE IF EXISTS page_views").Error; err != nil {
-		t.Fatalf("删除分区父表失败: %v", err)
-	}
-	legacyDDL := "CREATE TABLE page_views (" +
-		" id bigserial PRIMARY KEY," +
-		" project_id uuid NOT NULL," +
-		" path text NOT NULL," +
-		" lang text NOT NULL DEFAULT ''," +
-		" session_id text NOT NULL DEFAULT ''," +
-		" visitor_hash text NOT NULL DEFAULT ''," +
-		" referrer_host text NOT NULL DEFAULT ''," +
-		" ua_class text NOT NULL DEFAULT ''," +
-		" ip_hash text NOT NULL DEFAULT ''," +
-		" viewed_at timestamptz NOT NULL DEFAULT now())"
-	if err := db.Exec(legacyDDL).Error; err != nil {
-		t.Fatalf("建改造前的表失败: %v", err)
-	}
-	for i, day := range []string{"2026-09-01", "2026-09-20", "2026-09-30"} {
-		if err := db.Exec("INSERT INTO page_views (project_id, path, viewed_at) VALUES (gen_random_uuid(), ?, ?)",
-			"/legacy-"+string(rune('a'+i)), day+" 10:00:00+00").Error; err != nil {
-			t.Fatalf("写既有数据失败: %v", err)
-		}
-	}
-
-	sqlText = strings.ReplaceAll(sqlText, "created_at", "create_time")
-	if err := db.Exec(sqlText).Error; err != nil {
-		t.Fatalf("执行迁移 173 失败: %v", err)
-	}
-
-	var total int64
-	if err := db.Raw("SELECT COUNT(*) FROM page_views WHERE path LIKE '/legacy-%'").Scan(&total).Error; err != nil {
-		t.Fatalf("统计迁移后数据失败: %v", err)
-	}
-	if total != 3 {
-		t.Fatalf("既有数据应完整迁移（3 行），实际 %d 行", total)
-	}
-
-	var landed int64
-	if err := db.Raw("SELECT COUNT(*) FROM page_views_default WHERE path LIKE '/legacy-%'").Scan(&landed).Error; err != nil {
-		t.Fatalf("统计分区数据失败: %v", err)
-	}
-	if landed != 3 {
-		t.Fatalf("既有数据应完整落进一个 partition，实际 %d 行", landed)
-	}
-
-	if kind := relkind(t, db, "page_views_legacy"); kind != "" {
-		t.Fatalf("旧表应已删除，实际仍存在（relkind=%q）", kind)
-	}
-	_ = db.Exec("DROP TABLE IF EXISTS page_views_2026_09_legacy").Error
 }

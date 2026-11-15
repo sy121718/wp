@@ -11,7 +11,7 @@ import (
 	usermodel "go_wp/internal/module/user/model"
 	userservice "go_wp/internal/module/user/service"
 	"go_wp/pkg/utils"
-	"go_wp/public/migrations"
+	"go_wp/public/schema"
 	"go_wp/public/test/support"
 )
 
@@ -22,8 +22,8 @@ func newCustomerFixture(t *testing.T) (*usermodel.UserModel, *userservice.Servic
 		t.Skipf("本地 PostgreSQL 不可用：%v", err)
 		return nil, nil
 	}
-	if err := migrations.Run(db); err != nil {
-		t.Fatalf("执行生产迁移建表失败: %v", err)
+	if err := schema.Apply(db); err != nil {
+		t.Fatalf("载入 schema 失败: %v", err)
 	}
 	m := usermodel.NewUserModel(db)
 
@@ -318,15 +318,15 @@ func TestCustomerAdminPermissionSeed(t *testing.T) {
 		t.Skipf("本地 PostgreSQL 不可用：%v", err)
 		return
 	}
-	if err := migrations.Run(db); err != nil {
-		t.Fatalf("执行生产迁移建表失败: %v", err)
+	if err := schema.Apply(db); err != nil {
+		t.Fatalf("载入 schema 失败: %v", err)
 	}
 
 	if err := support.SeedTestAdmin(t, db, "customer-seed-admin", "Test@123456"); err != nil {
 		t.Fatalf("准备测试超管失败: %v", err)
 	}
-	if err := migrations.RunSeeds(db); err != nil {
-		t.Fatalf("执行生产数据种子失败: %v", err)
+	if err := schema.Apply(db); err != nil {
+		t.Fatalf("载入 schema 失败: %v", err)
 	}
 
 	want := map[string][2]string{

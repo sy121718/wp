@@ -65,6 +65,3 @@ COMMENT ON COLUMN public.sys_file_category.update_by IS '更新人';
 COMMENT ON COLUMN public.sys_file_category.create_time IS '审计 DB-018：由 timestamp 统一为 timestamptz；历史值按会话时区解释';
 
 COMMENT ON COLUMN public.sys_file_category.update_time IS '审计 DB-018：由 timestamp 统一为 timestamptz；历史值按会话时区解释';
-
--- @phase data
-SELECT pg_catalog.setval('public.sys_file_category_id_seq', 1, false);

@@ -202,10 +202,12 @@ func TestPermListFilters(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
 
-	createPerm(t, e, "pl_mod_a:"+uniq(""), "/api/a")
-	createPerm(t, e, "pl_mod_b:"+uniq(""), "/api/b")
+	// 用独立模块名，避免系统数据里已有的 admin 权限干扰计数。
+	module := "plmod" + uniq("")
+	createPermInModule(t, e, "pl_mod_a:"+uniq(""), "/api/a", module)
+	createPermInModule(t, e, "pl_mod_b:"+uniq(""), "/api/b", module)
 
-	res, err := e.svc.PermList(ctx, &admindto.PermListReq{Module: "admin"})
+	res, err := e.svc.PermList(ctx, &admindto.PermListReq{Module: module})
 	wantErr(t, err, "")
 	if res.Total != 2 {
 		t.Fatalf("模块筛选不符: total=%d", res.Total)

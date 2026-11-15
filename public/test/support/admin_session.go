@@ -146,7 +146,7 @@ func SeedTestAdmin(t *testing.T, db *gorm.DB, username, password string) error {
 		return fmt.Errorf("检查 sys_admin 是否存在失败: %w", err)
 	}
 	if regclass == nil || *regclass == "" {
-		return fmt.Errorf("sys_admin 不存在：请先对测试库跑生产迁移（support.NewMigratedPGTestDB 或 migrations.Run）")
+		return fmt.Errorf("sys_admin 不存在：请先对测试库载入 schema（support.NewMigratedPGTestDB 或 schema.Apply）")
 	}
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.MinCost)
@@ -154,8 +154,25 @@ func SeedTestAdmin(t *testing.T, db *gorm.DB, username, password string) error {
 		return fmt.Errorf("生成测试密码哈希失败: %w", err)
 	}
 
+	// 系统数据里已有一个超管（id=1）。BeforeCreate 会拒绝第二个 is_admin=1，
+	// 测试库又需要已知口令的超管，因此优先把既有超管改成测试账号。
+	var super adminmodel.AdminEntity
+	err = db.Where("is_admin = 1").Order("id").First(&super).Error
+	if err == nil {
+		if err := db.Model(&super).Updates(map[string]any{
+			"username": username,
+			"password": string(hash),
+			"status":   adminmodel.AdminStatusActive,
+		}).Error; err != nil {
+			return fmt.Errorf("更新既有测试超管失败: %w", err)
+		}
+		return nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return fmt.Errorf("查询测试超管失败: %w", err)
+	}
+
 	entity := adminmodel.AdminEntity{
-		ID:       1,
 		Username: username,
 		Password: string(hash),
 		Status:   adminmodel.AdminStatusActive,

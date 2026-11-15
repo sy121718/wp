@@ -16,7 +16,7 @@ import (
 	aienums "go_wp/internal/module/ai/enums"
 	aimodel "go_wp/internal/module/ai/model"
 	aiservice "go_wp/internal/module/ai/service"
-	"go_wp/public/migrations"
+	"go_wp/public/schema"
 	"go_wp/public/test/support"
 )
 
@@ -30,7 +30,7 @@ const (
 func newChatTestService(t *testing.T) (*aiservice.Service, *gorm.DB) {
 	t.Helper()
 	db := support.NewMigratedPGTestDB(t)
-	if err := migrations.RunSeeds(db); err != nil {
+	if err := schema.Apply(db); err != nil {
 		t.Fatalf("执行生产种子失败：%v", err)
 	}
 	svc := aiservice.NewService(aimodel.NewAIModel(db))

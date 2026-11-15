@@ -67,6 +67,3 @@ COMMENT ON COLUMN public.ai_call_log.error_key IS '失败时的 i18n key（与 e
 COMMENT ON COLUMN public.ai_call_log.cached_tokens IS '输入里命中上游前缀缓存的 token 数（上游上报值，未报为 0）';
 
 COMMENT ON COLUMN public.ai_call_log.cached_reported IS '上游是否报告过缓存命中数（false 时 cached_tokens 的 0 无意义）';
-
--- @phase data
-SELECT pg_catalog.setval('public.ai_call_log_id_seq', 1, false);

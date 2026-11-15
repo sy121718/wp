@@ -17,6 +17,7 @@ import (
 	"golang.org/x/net/html"
 	"gorm.io/gorm"
 
+	"go_wp/internal/middleware/adminctx"
 	inventorydto "go_wp/internal/module/inventory/dto"
 	inventoryenums "go_wp/internal/module/inventory/enums"
 	inventoryhttp "go_wp/internal/module/inventory/inbound/http"
@@ -24,6 +25,7 @@ import (
 	purchasestock "go_wp/internal/module/inventory/outbound/purchasestock"
 	inventoryservice "go_wp/internal/module/inventory/service"
 	productdto "go_wp/internal/module/product/dto"
+	producthttp "go_wp/internal/module/product/inbound/http"
 	productmodel "go_wp/internal/module/product/model"
 	productservice "go_wp/internal/module/product/service"
 	projectdto "go_wp/internal/module/project/dto"
@@ -31,13 +33,11 @@ import (
 	projectservice "go_wp/internal/module/project/service"
 	purchasemodel "go_wp/internal/module/purchase/model"
 	purchaseservice "go_wp/internal/module/purchase/service"
-	"go_wp/internal/middleware/adminctx"
-	producthttp "go_wp/internal/module/product/inbound/http"
 	"go_wp/internal/templates"
 
 	masterdatamodel "go_wp/internal/module/masterdata/model"
 	masterdataservice "go_wp/internal/module/masterdata/service"
-	"go_wp/public/migrations"
+	"go_wp/public/schema"
 	"go_wp/public/test/support"
 )
 
@@ -80,8 +80,8 @@ func newInvFixture(t *testing.T) *invFixture {
 		return nil
 	}
 
-	if err := migrations.RunSeeds(db); err != nil {
-		t.Fatalf("执行生产数据种子失败: %v", err)
+	if err := schema.Apply(db); err != nil {
+		t.Fatalf("载入 schema 失败: %v", err)
 	}
 	// 失败区与结果片段只从词库取词：把本用例库里的词条灌进缓存，不读会漂移的全局库。
 	injectInventoryFeatureWords(t, db)
@@ -701,8 +701,8 @@ func TestInventoryPermissionsAndMenusSeeded(t *testing.T) {
 	if f == nil {
 		return
 	}
-	if err := migrations.RunSeeds(f.db); err != nil {
-		t.Fatalf("执行数据种子失败: %v", err)
+	if err := schema.Apply(f.db); err != nil {
+		t.Fatalf("载入 schema 失败: %v", err)
 	}
 	var n int64
 	if err := f.db.Raw("SELECT COUNT(*) FROM sys_permission WHERE module = 'inventory'").Scan(&n).Error; err != nil {

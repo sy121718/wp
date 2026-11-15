@@ -7,21 +7,17 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os"
 	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
-
 	"go_wp/internal/middleware/adminctx"
 	inventorydto "go_wp/internal/module/inventory/dto"
 	inventoryenums "go_wp/internal/module/inventory/enums"
 	inventoryhttp "go_wp/internal/module/inventory/inbound/http"
 	productdto "go_wp/internal/module/product/dto"
 	"go_wp/internal/templates"
-	"go_wp/public/test/support"
 )
 
 func stockTrack(t *testing.T, f *invFixture, variantID, warehouseID string) bool {
@@ -293,199 +289,6 @@ func splitMigrationSQL(t *testing.T, src string) []string {
 		stmts = append(stmts, s)
 	}
 	return stmts
-}
-
-func runMigrationFile(t *testing.T, db *gorm.DB, path string) error {
-	t.Helper()
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("读迁移文件 %s 失败: %v", path, err)
-	}
-	for _, stmt := range splitMigrationSQL(t, string(raw)) {
-		if err := db.Exec(stmt).Error; err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func oldInventorySchema(t *testing.T, db *gorm.DB) {
-	t.Helper()
-	stmts := []string{
-		`CREATE TABLE inventory_warehouses (
-			id text PRIMARY KEY,
-			code text NOT NULL,
-			name text NOT NULL
-		)`,
-		`CREATE TABLE inventory_stocks (
-			id text PRIMARY KEY,
-			project_id uuid NOT NULL,
-			warehouse_id text NOT NULL,
-			product_id text NOT NULL,
-			variant_id text NOT NULL,
-			sku_code text NOT NULL,
-			quantity integer NOT NULL DEFAULT 0,
-			create_time timestamptz NOT NULL DEFAULT now(),
-			update_time timestamptz NOT NULL DEFAULT now()
-		)`,
-	}
-	for _, s := range stmts {
-		if err := db.Exec(s).Error; err != nil {
-			t.Fatalf("建旧 schema 失败: %v", err)
-		}
-	}
-}
-
-func TestMigration261MarksExistingRowsTracked(t *testing.T) {
-	db, err := support.NewPGTestDB(t)
-	if err != nil {
-		t.Skipf("PG 不可用：%v", err)
-	}
-	oldInventorySchema(t, db)
-
-	const migrationPath = "../../../../public/migrations/261_inventory_stock_track_quantity.sql"
-	proj := "11111111-1111-1111-1111-111111111111"
-	if err := db.Exec(`INSERT INTO inventory_warehouses (id, code, name) VALUES ('w1', 'SZ', '苏州仓')`).Error; err != nil {
-		t.Fatalf("插入仓库失败: %v", err)
-	}
-
-	for _, row := range []struct {
-		id  string
-		qty int
-	}{
-		{"s1", 0},
-		{"s2", 5},
-	} {
-		if err := db.Exec(`INSERT INTO inventory_stocks
-			(id, project_id, warehouse_id, product_id, variant_id, sku_code, quantity)
-			VALUES (?, ?, 'w1', 'p1', 'v1', 'DRAWERSMOKE_001', ?)`,
-			row.id, proj, row.qty).Error; err != nil {
-			t.Fatalf("插入存量库存行失败: %v", err)
-		}
-	}
-
-	if err := runMigrationFile(t, db, migrationPath); err != nil {
-		t.Fatalf("执行迁移 261 失败: %v", err)
-	}
-
-	var isNullable, colDefault string
-	if err := db.Raw(`SELECT is_nullable, COALESCE(column_default, '') FROM information_schema.columns
-		WHERE table_schema = current_schema() AND table_name = 'inventory_stocks' AND column_name = 'track_quantity'`).
-		Row().Scan(&isNullable, &colDefault); err != nil {
-		t.Fatalf("读 track_quantity 列定义失败: %v", err)
-	}
-	if isNullable != "NO" {
-		t.Fatalf("track_quantity 应是 NOT NULL，实际 is_nullable=%s", isNullable)
-	}
-	if strings.TrimSpace(colDefault) != "false" {
-		t.Fatalf("track_quantity 的列默认必须是 false（新建行默认无限），实际 %q", colDefault)
-	}
-
-	var tracked int
-	if err := db.Raw(`SELECT COUNT(*) FROM inventory_stocks WHERE track_quantity`).Scan(&tracked).Error; err != nil {
-		t.Fatalf("统计 track_quantity 失败: %v", err)
-	}
-	if tracked != 2 {
-		t.Fatalf("存量行应一律 track_quantity = true，实际 %d/2", tracked)
-	}
-
-	if err := db.Exec(`UPDATE inventory_stocks SET quantity = 0, track_quantity = false WHERE id = 's1'`).Error; err != nil {
-		t.Fatalf("把 s1 改成无限失败: %v", err)
-	}
-	if err := db.Exec(`UPDATE inventory_stocks SET quantity = 7 WHERE id = 's1'`).Error; err == nil {
-		t.Fatalf("CHECK (track_quantity OR quantity = 0) 必须拒绝「不跟踪但有数字」")
-	}
-
-	if err := runMigrationFile(t, db, migrationPath); err != nil {
-		t.Fatalf("重跑迁移 261 失败（应幂等）：%v", err)
-	}
-	var s1Tracked bool
-	if err := db.Raw(`SELECT track_quantity FROM inventory_stocks WHERE id = 's1'`).Scan(&s1Tracked).Error; err != nil {
-		t.Fatalf("重跑后读 s1 失败: %v", err)
-	}
-	if s1Tracked {
-		t.Fatalf("重跑迁移 261 不该把运营手工改成无限的存量行掰回跟踪")
-	}
-}
-
-func TestMigration262StripsPrefixAndReportsCollisions(t *testing.T) {
-	db, err := support.NewPGTestDB(t)
-	if err != nil {
-		t.Skipf("PG 不可用：%v", err)
-	}
-	oldInventorySchema(t, db)
-
-	const migrationPath = "../../../../public/migrations/262_inventory_stock_sku_strip_warehouse_prefix.sql"
-	const proj = "22222222-2222-2222-2222-222222222222"
-	if err := db.Exec(`INSERT INTO inventory_warehouses (id, code, name) VALUES ('w1', 'SZ', '苏州仓')`).Error; err != nil {
-		t.Fatalf("插入仓库失败: %v", err)
-	}
-	insert := func(id, sku string, qty int, productID, variantID string) {
-		t.Helper()
-		if err := db.Exec(`INSERT INTO inventory_stocks
-			(id, project_id, warehouse_id, product_id, variant_id, sku_code, quantity)
-			VALUES (?, ?, 'w1', ?, ?, ?, ?)`, id, proj, productID, variantID, sku, qty).Error; err != nil {
-			t.Fatalf("插入库存行 %s 失败: %v", id, err)
-		}
-	}
-
-	insert("a1", "SZ_DRAWERSMOKE_001", 3, "p-a", "v-a")
-	insert("b1", "DRAWERSMOKE_001", 7, "p-b", "v-b")
-
-	err = runMigrationFile(t, db, migrationPath)
-	if err == nil {
-		t.Fatalf("剥前缀后同仓同码撞车时迁移必须显式失败（不合并、不改码）")
-	}
-	msg := err.Error()
-
-	for _, want := range []string{
-		"仓短码=SZ",
-		"DRAWERSMOKE_001",
-		"id=a1", "id=b1",
-		"product_id=p-a", "product_id=p-b",
-		"variant_id=v-a",
-		"原 sku_code='SZ_DRAWERSMOKE_001'",
-		"原 sku_code='DRAWERSMOKE_001'",
-		"数量=3", "数量=7",
-	} {
-		if !strings.Contains(msg, want) {
-			t.Fatalf("冲突明细里缺少可定位字段 %q，实际错误：%s", want, msg)
-		}
-	}
-
-	var aSKU, bSKU string
-	if err := db.Raw(`SELECT sku_code FROM inventory_stocks WHERE id = 'a1'`).Scan(&aSKU).Error; err != nil {
-		t.Fatalf("读 a1 失败: %v", err)
-	}
-	if err := db.Raw(`SELECT sku_code FROM inventory_stocks WHERE id = 'b1'`).Scan(&bSKU).Error; err != nil {
-		t.Fatalf("读 b1 失败: %v", err)
-	}
-	if aSKU != "SZ_DRAWERSMOKE_001" || bSKU != "DRAWERSMOKE_001" {
-		t.Fatalf("迁移失败时不该改动任何一行，实际 a1=%q b1=%q", aSKU, bSKU)
-	}
-
-	if err := db.Exec(`DELETE FROM inventory_stocks WHERE id = 'b1'`).Error; err != nil {
-		t.Fatalf("删除 b1 失败: %v", err)
-	}
-	if err := runMigrationFile(t, db, migrationPath); err != nil {
-		t.Fatalf("无冲突后迁移 262 应成功: %v", err)
-	}
-	if err := db.Raw(`SELECT sku_code FROM inventory_stocks WHERE id = 'a1'`).Scan(&aSKU).Error; err != nil {
-		t.Fatalf("重跑后读 a1 失败: %v", err)
-	}
-	if aSKU != "DRAWERSMOKE_001" {
-		t.Fatalf("带前缀的行应被剥成裸码，实际 %q", aSKU)
-	}
-
-	if err := runMigrationFile(t, db, migrationPath); err != nil {
-		t.Fatalf("重跑迁移 262 应幂等: %v", err)
-	}
-	if err := db.Raw(`SELECT sku_code FROM inventory_stocks WHERE id = 'a1'`).Scan(&aSKU).Error; err != nil {
-		t.Fatalf("幂等重跑后读 a1 失败: %v", err)
-	}
-	if aSKU != "DRAWERSMOKE_001" {
-		t.Fatalf("幂等重跑不该再改 sku_code，实际 %q", aSKU)
-	}
 }
 
 func TestWarehouseStocksByProductsAcrossWarehouses(t *testing.T) {

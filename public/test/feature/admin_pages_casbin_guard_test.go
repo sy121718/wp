@@ -15,7 +15,7 @@ import (
 	"go_wp/pkg/captcha"
 	pkgcasbin "go_wp/pkg/casbin"
 	mw "go_wp/pkg/middleware"
-	"go_wp/public/migrations"
+	"go_wp/public/schema"
 	"go_wp/public/test/support"
 
 	"github.com/gin-gonic/gin"
@@ -63,7 +63,7 @@ func newAdminPagesTestEnv(t *testing.T) *adminPagesTestEnv {
 		t.Fatalf("准备测试超管失败: %v", err)
 	}
 
-	if err := migrations.RunSeeds(db); err != nil {
+	if err := schema.Apply(db); err != nil {
 		t.Fatalf("执行业务权限 seed 失败: %v", err)
 	}
 

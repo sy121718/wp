@@ -39,9 +39,9 @@ ui.writeBase.registerResultHandler("admin.probe.alsoReal", function () {});
 ui.writeBase.registerPayloadBuilder('admin.probe.builderOnly', function () { return {}; });
 `)
 	// seed 侧：只给一条无关词条，四条能力标识都**不该**被视为词条。
-	writeGateFixture(t, filepath.Join(root, "public", "migrations", "x.sql"), `INSERT INTO sys_i18n (item_key, lang) VALUES
-('admin.unrelated.key', 'zh-CN'),
-('admin.unrelated.key', 'en-US');
+	writeGateFixture(t, filepath.Join(root, "public", "schema", "tables", "sys_i18n.sql"), `INSERT INTO public.sys_i18n VALUES
+(1, 'admin.unrelated.key', 'zh-CN', '无关', 0, 1, now(), now(), '', ''),
+(2, 'admin.unrelated.key', 'en-US', 'Unrelated', 0, 1, now(), now(), '', '');
 `)
 
 	listFile := filepath.Join(t.TempDir(), "missing.txt")

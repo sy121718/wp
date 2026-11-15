@@ -52,6 +52,3 @@ CREATE INDEX idx_page_views_project_time ON ONLY public.page_views USING btree (
 
 -- @phase comment
 COMMENT ON TABLE public.page_views IS '页面浏览明细（BIZ-8；按月分区，审计 DB-004）：分区按 viewed_at，DEFAULT 分区兜底缺窗口';
-
--- @phase data
-SELECT pg_catalog.setval('public.page_views_id_seq1', 1, false);

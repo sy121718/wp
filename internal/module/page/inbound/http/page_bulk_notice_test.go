@@ -68,7 +68,7 @@ func TestRedirectBulkDeleteResultBranches(t *testing.T) {
 func TestBulkIDsFacingTextIsControlled(t *testing.T) {
 	// 超限文案归词库：不注入时 BulkIDsFacingText 只能给归口文案，断言里的
 	// 「一次最多操作」就成了没来源的硬编码期望。注入值直接引用生产模板常量，
-	// 与 public/migrations/277_i18n_seed_shell_bulk_ids.sql 的 zh-CN 值一致。
+	// 与 public/schema/tables/sys_i18n.sql 里 shell.bulkIds 的 zh-CN 值一致。
 	i18n.InjectForTest(map[string]map[string]string{
 		bulkids.MsgTooMany: {"zh-CN": bulkids.TooManyTemplate},
 	}, nil)

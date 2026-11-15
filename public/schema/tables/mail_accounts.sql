@@ -50,6 +50,3 @@ COMMENT ON COLUMN public.mail_accounts.last_check_at IS '审计 DB-018：由 tim
 COMMENT ON COLUMN public.mail_accounts.create_time IS '审计 DB-018：由 timestamp 统一为 timestamptz；历史值按会话时区解释';
 
 COMMENT ON COLUMN public.mail_accounts.update_time IS '审计 DB-018：由 timestamp 统一为 timestamptz；历史值按会话时区解释';
-
--- @phase data
-SELECT pg_catalog.setval('public.mail_accounts_id_seq', 1, false);

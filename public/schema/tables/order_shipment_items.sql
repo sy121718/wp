@@ -35,6 +35,3 @@ CREATE INDEX idx_order_shipment_items_item ON public.order_shipment_items USING 
 -- @phase fk
 ALTER TABLE ONLY public.order_shipment_items
     ADD CONSTRAINT order_shipment_items_shipment_id_fkey FOREIGN KEY (shipment_id) REFERENCES public.order_shipments(id) ON DELETE CASCADE;
-
--- @phase data
-SELECT pg_catalog.setval('public.order_shipment_items_id_seq', 1, false);

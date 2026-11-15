@@ -599,7 +599,7 @@ func TestInventoryChangeHTTPAndAdminPage(t *testing.T) {
 	}
 	// 这里不断言「页面无裸 key」：测试模板库只跑结构迁移、不跑 seed（见
 	// public/test/support/pgtest.go 的 ensureTemplateDB），库存域的词条不在库里。
-	// 生产装配会跑 migrations.RunSeeds（internal/routers/assembly.go），所以线上不会出现裸 key。
+	// 生产装配由 schema.Apply 装入系统词条，所以线上不会出现裸 key。
 	if strings.Contains(body, "action=\"/admin/inventory/production\"") {
 		t.Fatalf("库存管理页不应再有内联的生产入库表单")
 	}

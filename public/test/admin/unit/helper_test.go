@@ -142,10 +142,15 @@ func createAdminDB(t *testing.T, db *gorm.DB, username, email string) uint64 {
 
 func createPerm(t *testing.T, e *env, code, path string) uint64 {
 	t.Helper()
+	return createPermInModule(t, e, code, path, "admin")
+}
+
+func createPermInModule(t *testing.T, e *env, code, path, module string) uint64 {
+	t.Helper()
 	res, err := e.svc.PermCreate(context.Background(), &admindto.PermCreateReq{
 		PermissionCode: code,
 		PermissionName: "测试权限 " + code,
-		Module:         "admin",
+		Module:         module,
 		APIPath:        path,
 		APIMethod:      "GET",
 		Status:         1,

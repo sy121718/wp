@@ -4,39 +4,26 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
 )
 
-const migrationsDir = "../../../../../public/migrations"
+const i18nSeedFile = "../../../../../public/schema/tables/sys_i18n.sql"
 
-func TestProjectWriteTextKeysAreRegisteredInMigrations(t *testing.T) {
-	entries, err := os.ReadDir(migrationsDir)
+func TestProjectWriteTextKeysAreRegisteredInSchema(t *testing.T) {
+	raw, err := os.ReadFile(i18nSeedFile)
 	if err != nil {
-		t.Fatalf("读取迁移目录失败（路径假设变了要同步改）: %v", err)
+		t.Fatalf("读取系统词条失败（路径假设变了要同步改）: %v", err)
 	}
-	var corpus strings.Builder
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".sql") {
-			continue
-		}
-		b, rerr := os.ReadFile(filepath.Join(migrationsDir, e.Name()))
-		if rerr != nil {
-			t.Fatalf("读 %s 失败: %v", e.Name(), rerr)
-		}
-		corpus.Write(b)
-		corpus.WriteString("\n")
-	}
-	all := corpus.String()
+	all := string(raw)
 	if len(all) == 0 {
-		t.Fatal("迁移语料为空：路径写错时这条测试会变成永远通过的空检查")
+		t.Fatal("词条语料为空：路径写错时这条测试会变成永远通过的空检查")
 	}
 	for _, key := range projectWriteTextKeys {
 		if !strings.Contains(all, "'"+key+"'") {
-			t.Errorf("文案 key %q 没有出现在任何迁移 SQL 里 —— 页面会直接显示这个裸 key（新增词条要写迁移）", key)
+			t.Errorf("文案 key %q 没有出现在 public/schema 的系统数据里 —— 页面会直接显示这个裸 key", key)
 		}
 	}
 }

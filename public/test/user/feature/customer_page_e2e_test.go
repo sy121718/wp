@@ -27,7 +27,7 @@ import (
 	userservice "go_wp/internal/module/user/service"
 	"go_wp/internal/templates"
 	text "go_wp/pkg/view/jet"
-	"go_wp/public/migrations"
+	"go_wp/public/schema"
 	"go_wp/public/test/support"
 )
 
@@ -42,8 +42,8 @@ type customerE2EEnv struct {
 func newCustomerE2EEnv(t *testing.T) *customerE2EEnv {
 	t.Helper()
 	db := support.NewMigratedPGTestDB(t)
-	if err := migrations.RunSeeds(db); err != nil {
-		t.Fatalf("执行生产数据种子失败: %v", err)
+	if err := schema.Apply(db); err != nil {
+		t.Fatalf("载入 schema 失败: %v", err)
 	}
 	if db == nil {
 		return nil

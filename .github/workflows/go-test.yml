@@ -41,7 +41,7 @@ jobs:
         # 现在按目录整体覆盖：新增包自动纳入，不需要记得回来改这里。
         run: |
           go test ./pkg/... ./internal/... ./cmd/... ./config/... \
-            ./public/migrations/... -count=1 -timeout 10m
+            ./public/schema/... -count=1 -timeout 10m
       - name: Race detector (concurrent-write domains)
         # 竞态既不会编译失败也不会让普通 go test 变红 —— 只能靠 -race 抓。
         #
@@ -51,7 +51,7 @@ jobs:
         #
         # 早先的 job 名写的是 "core five areas"，而实际包的清单已经扩过两次；
         # 名字不跟着改就会让人以为覆盖面比现实窄（或宽）。
-        run: make test-race
+        run: go test -race ./pkg/... ./internal/... -count=1 -timeout 20m
 
   integration:
     runs-on: ubuntu-latest
@@ -121,10 +121,9 @@ jobs:
         # config.yaml 里的 wp 库，因此该库必须先有完整结构。此前没有这一步，
         # 这些用例在 CI 上连的是空库，失败被 continue-on-error 吞掉了。
         run: go run ./cmd -migrate-only
-      - name: Schema snapshot drift
-        # 迁移改了结构但没更新 schema/CURRENT.sql → 红。
-        # 快照烂成一份误导人的文档比没有更糟：新人会以为它是对的。
-        run: bash scripts/schema-snapshot.sh --check
+      - name: Schema package self-check
+        # public/schema 是结构唯一来源：段序、order.txt 覆盖与摘要稳定性必须可复跑。
+        run: go test ./public/schema/ -count=1
       - name: Database-backed gates
         # 有路由、没有对应权限点 = 含超管在内全员 403（072/077/078/079/151 各踩过一次）。
         # 这条检查要连库比对「运行时装配出来的路由表」与 sys_permission，所以只能在有 PG 的

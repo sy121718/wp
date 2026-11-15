@@ -47,8 +47,8 @@ func TestEmailVerifiedLabelKeyAndFallback(t *testing.T) {
 }
 
 func TestLabelKeysExistInSeeds(t *testing.T) {
-	seedDir := filepath.Join("..", "..", "..", "..", "public", "migrations")
-	files, err := filepath.Glob(filepath.Join(seedDir, "*"))
+	seedDir := filepath.Join("..", "..", "..", "..", "public", "schema", "tables")
+	files, err := filepath.Glob(filepath.Join(seedDir, "*.sql"))
 	if err != nil || len(files) == 0 {
 		t.Fatalf("找不到 seed 目录 %s：%v", seedDir, err)
 	}

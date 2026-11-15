@@ -3,10 +3,12 @@ package schema
 import (
 	"strings"
 	"testing"
+
+	"go_wp/pkg/sqlsplit"
 )
 
 func TestSplitBaseSQL(t *testing.T) {
-	stmts := splitSQL(mustRead("base.sql"))
+	stmts := sqlsplit.Split(mustRead("base.sql"))
 	t.Logf("statements=%d", len(stmts))
 	for i, s := range stmts {
 		head := s

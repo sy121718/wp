@@ -3,8 +3,6 @@ package feature
 import (
 	"context"
 	"database/sql"
-	"os"
-	"strings"
 	"testing"
 
 	inventorydto "go_wp/internal/module/inventory/dto"
@@ -12,10 +10,7 @@ import (
 	purchasedto "go_wp/internal/module/purchase/dto"
 	purchaseenums "go_wp/internal/module/purchase/enums"
 	"go_wp/pkg/database"
-	"go_wp/public/migrations"
 )
-
-const costMigrationFile = "../../../migrations/244_inventory_stock_cost.sql"
 
 func stockCostIn(t *testing.T, f *invFixture, variantID, warehouseID string) *float64 {
 	t.Helper()
@@ -344,38 +339,6 @@ func TestInventoryStockWarehouseSkuUniqueRejectsDuplicate(t *testing.T) {
 	}
 }
 
-func TestInventoryStockCostMigrationShape(t *testing.T) {
-	f := newInvFixture(t)
-	if f == nil {
-		return
-	}
-	raw, err := os.ReadFile(costMigrationFile)
-	if err != nil {
-		t.Fatalf("读迁移 244 失败（%s）: %v", costMigrationFile, err)
-	}
-	sqlText := string(raw)
-
-	for _, want := range []string{
-		"ADD COLUMN IF NOT EXISTS cost_price",
-		"RAISE EXCEPTION",
-		"duplicate_object",
-		"uq_inventory_stocks_warehouse_sku",
-	} {
-		if !strings.Contains(sqlText, want) {
-			t.Fatalf("迁移 244 应包含 %q", want)
-		}
-	}
-	scan := strings.Index(sqlText, "RAISE EXCEPTION")
-	guard := strings.Index(sqlText, "ADD CONSTRAINT uq_inventory_stocks_warehouse_sku")
-	if scan < 0 || guard < 0 || scan > guard {
-		t.Fatalf("迁移 244 必须**先**扫存量重复（RAISE EXCEPTION）**再**建唯一约束：scan=%d guard=%d", scan, guard)
-	}
-
-	if !strings.Contains(sqlText, "sku_code") || !strings.Contains(sqlText, "warehouse_id") {
-		t.Fatalf("迁移 244 的重复报告必须带 warehouse_id / sku_code 样例")
-	}
-}
-
 func TestInventoryStockCostI18nSeeded(t *testing.T) {
 	f := newInvFixture(t)
 	if f == nil {
@@ -429,45 +392,5 @@ func TestInventoryWarehouseDefaultUndeletable(t *testing.T) {
 		ID: spare.ID, ProjectID: f.projectID,
 	}); gerr == nil {
 		t.Fatalf("非默认仓删除后应读不到")
-	}
-}
-
-func TestInventoryStockCostDuplicateScanRaises(t *testing.T) {
-	f := newInvFixture(t)
-	if f == nil {
-		return
-	}
-	wh := f.createWarehouse(t, "SZ", "苏州仓", true)
-	p1 := mustProduct(t, f, "Gamma")
-	p2 := mustProduct(t, f, "Delta")
-	v1 := f.firstVariant(t, p1.ID)
-	v2 := f.firstVariant(t, p2.ID)
-
-	if err := f.db.Exec("ALTER TABLE inventory_stocks DROP CONSTRAINT uq_inventory_stocks_warehouse_sku").Error; err != nil {
-		t.Fatalf("拆约束失败（模拟存量库）: %v", err)
-	}
-
-	dupSKU := bareSKU(v1.SKUCode, wh.Code)
-	if err := f.db.Exec("UPDATE inventory_stocks SET sku_code = ? WHERE variant_id = ? AND warehouse_id = ?",
-		dupSKU, v2.ID, wh.ID).Error; err != nil {
-		t.Fatalf("造重复行失败: %v", err)
-	}
-	if got := stockRowCount(t, f, wh.ID, dupSKU); got != 2 {
-		t.Fatalf("造重复应得到 2 行，实际 %d", got)
-	}
-
-	err := migrations.Run(f.db)
-	if err == nil {
-		t.Fatalf("存量重复时迁移必须失败，实际成功了（静默放过 = 之后建索引报一个看不懂的 23505）")
-	}
-	msg := err.Error()
-	for _, want := range []string{"同仓同 SKU 的多行", "warehouse_id=", "sku_code="} {
-		if !strings.Contains(msg, want) {
-			t.Fatalf("迁移报错应带定位信息 %q，实际: %v", want, err)
-		}
-	}
-
-	if got := stockRowCount(t, f, wh.ID, bareSKU(v1.SKUCode, wh.Code)); got != 2 {
-		t.Fatalf("报错不应改动数据，实际 %d 行", got)
 	}
 }

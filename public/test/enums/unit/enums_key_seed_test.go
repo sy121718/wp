@@ -21,10 +21,11 @@ func TestEnumsKeysHaveSeedEntries(t *testing.T) {
 	root := moduleTestRoot(t)
 
 	enumsRe := regexp.MustCompile(`(?m)^\s*(?:const\s+)?\w+\s*=\s*"([a-z][a-z0-9]*\.(?:msg|err|test)\.[A-Za-z0-9_.]+)"`)
-	seedRe := regexp.MustCompile(`(?m)^\s*\(\s*'([^']+)'`)
+	// public/schema 的位置参数 INSERT：行首是 (id, 'key', ...)。
+	seedRe := regexp.MustCompile(`(?m)^\s*\(\s*\d+\s*,\s*'([^']+)'`)
 
 	have := map[string]bool{}
-	seedFiles, err := filepath.Glob(filepath.Join(root, "public", "migrations", "*.sql"))
+	seedFiles, err := filepath.Glob(filepath.Join(root, "public", "schema", "tables", "*.sql"))
 	if err != nil {
 		t.Fatalf("枚举 seed 文件失败: %v", err)
 	}
@@ -38,7 +39,7 @@ func TestEnumsKeysHaveSeedEntries(t *testing.T) {
 		}
 	}
 	if len(have) == 0 {
-		t.Fatalf("全库 seed 里没扫到任何 key（共 %d 个 .sql）—— 判据或目录结构变了", len(seedFiles))
+		t.Fatalf("public/schema 里没扫到任何 key（共 %d 个 .sql）—— 判据或目录结构变了", len(seedFiles))
 	}
 
 	for module, enumsFile := range enumsFiles {

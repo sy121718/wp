@@ -19,7 +19,7 @@ import (
 	"go_wp/internal/templates"
 	text "go_wp/pkg/view/jet"
 
-	"go_wp/public/migrations"
+	"go_wp/public/schema"
 )
 
 func TestCategoryTreeHierarchySortSlugSEO(t *testing.T) {
@@ -392,8 +392,8 @@ func TestTaxonomyPermissionsAndMenusSeeded(t *testing.T) {
 	if f == nil {
 		return
 	}
-	if err := migrations.RunSeeds(f.db); err != nil {
-		t.Fatalf("执行数据种子失败: %v", err)
+	if err := schema.Apply(f.db); err != nil {
+		t.Fatalf("载入 schema 失败：%v", err)
 	}
 	var n int64
 	if err := f.db.Raw(`SELECT COUNT(*) FROM sys_permission

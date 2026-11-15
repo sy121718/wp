@@ -20,6 +20,9 @@ func TestSetGroupOptimisticLock(t *testing.T) {
 	}
 	ctx := context.Background()
 
+	if err := db.Exec("DELETE FROM sys_config").Error; err != nil {
+		t.Fatalf("清理 sys_config 初始行失败：%v", err)
+	}
 	if err := db.Exec(
 		"INSERT INTO sys_config (group_key, group_name, config_data, status, version, create_by, update_by) " +
 			"VALUES ('i18n', '国际化', '{\"default_lang\":\"zh-CN\"}'::jsonb, 1, 1, 0, 0)").Error; err != nil {

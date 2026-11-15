@@ -12,7 +12,7 @@ import (
 	"go_wp/pkg/i18n"
 )
 
-const groupFSeedFile = "../../public/migrations/193_i18n_seed_admin_system.sql"
+const groupFSeedFile = "../../public/schema/tables/sys_i18n.sql"
 
 var groupFTemplates = []string{
 	"admin/dashboard.html",
@@ -33,60 +33,11 @@ var groupFTemplates = []string{
 	"admin/analytics/analytics.html",
 }
 
-var groupFRetiredKeys = map[string]bool{
-
-	"admin.roles.perm.back": true,
-
-	"admin.i18n.pager.total_pre":  true,
-	"admin.i18n.pager.total_post": true,
-	"admin.i18n.pager.page_post":  true,
-	"admin.i18n.form.title":       true,
-
-	"admin.i18n.saved":   true,
-	"admin.i18n.unsaved": true,
-
-	"admin.masterdata.rows.headingClose":     true,
-	"admin.masterdata.entities.headingClose": true,
-
-	"admin.masterdata.filter.title":  true,
-	"admin.masterdata.current.title": true,
-
-	"admin.masterdata.rows.heading":     true,
-	"admin.masterdata.entities.heading": true,
-
-	"admin.dashboard.action.cancel": true, "admin.dashboard.action.delete": true, "admin.dashboard.action.edit": true,
-	"admin.dashboard.action.export": true, "admin.dashboard.action.new_admin": true, "admin.dashboard.action.save": true,
-	"admin.dashboard.badge.draft": true, "admin.dashboard.badge.pending_review": true, "admin.dashboard.badge.published": true,
-	"admin.dashboard.badge.rejected": true, "admin.dashboard.badges.title": true, "admin.dashboard.buttons.small": true,
-	"admin.dashboard.buttons.title": true, "admin.dashboard.checkbox.welcome_mail": true, "admin.dashboard.col.dept": true,
-	"admin.dashboard.col.last_login": true, "admin.dashboard.col.name": true, "admin.dashboard.col.role": true,
-	"admin.dashboard.col.username": true, "admin.dashboard.dept.content": true, "admin.dashboard.dept.market": true,
-	"admin.dashboard.dept.tech": true, "admin.dashboard.field.dept": true, "admin.dashboard.field.email": true,
-	"admin.dashboard.field.name": true, "admin.dashboard.field.remark": true, "admin.dashboard.field.role": true,
-	"admin.dashboard.field.status": true, "admin.dashboard.field.username": true, "admin.dashboard.form.required_hint": true,
-	"admin.dashboard.health.degraded": true, "admin.dashboard.health.down": true, "admin.dashboard.health.ok": true,
-	"admin.dashboard.health.unknown": true, "admin.dashboard.hint.username": true, "admin.dashboard.list.title": true,
-	"admin.dashboard.option.dept_placeholder": true, "admin.dashboard.option.role_placeholder": true, "admin.dashboard.pager.next": true,
-	"admin.dashboard.pager.prev": true, "admin.dashboard.pager.summary": true, "admin.dashboard.ph.name": true,
-	"admin.dashboard.ph.remark": true, "admin.dashboard.ph.username": true, "admin.dashboard.role.developer": true,
-	"admin.dashboard.role.editor": true, "admin.dashboard.role.super_admin": true, "admin.dashboard.role.viewer": true,
-	"admin.dashboard.row.name_li": true, "admin.dashboard.row.name_wang": true, "admin.dashboard.row.name_zhang": true,
-	"admin.dashboard.row.never_login": true, "admin.dashboard.stat.admins": true, "admin.dashboard.stat.admins_delta": true,
-	"admin.dashboard.stat.online": true, "admin.dashboard.stat.online_note": true, "admin.dashboard.stat.pending": true,
-	"admin.dashboard.stat.pending_note": true, "admin.dashboard.stat.published_note": true, "admin.dashboard.status.disabled": true,
-	"admin.dashboard.status.disabled_row": true, "admin.dashboard.status.enabled": true, "admin.dashboard.status.pending": true,
-	"admin.dashboard.subtitle": true,
-
-	"admin.dashboard.stat.published": true,
-	"admin.dashboard.col.status":     true,
-	"admin.dashboard.col.actions":    true,
-}
-
 // 三种真实取词形态都要认：全局 t(...)、数据键 .["t"](...)、别名 tr(...)。
 // 只认后两种会让改用全局 t 的模板被判成「词条与模板失去同步」。
 var groupFCallRe = regexp.MustCompile(`(?:\.\["t"\]|\bt(?:r|f|n)?)\("([^"]+)",\s*"((?:[^"\\]|\\.)*)"`)
 
-var groupFSeedRe = regexp.MustCompile(`\('([A-Za-z0-9_.]+)', '(zh-CN|en-US)'`)
+var groupFSeedRe = regexp.MustCompile(`'([A-Za-z0-9_.]+)', '(zh-CN|en-US)'`)
 
 func groupFTemplateKeys(t *testing.T) map[string]string {
 	t.Helper()
@@ -130,59 +81,18 @@ func groupFSeedLangs(t *testing.T, path string) map[string]map[string]bool {
 	return langs
 }
 
-func groupFAllSeedLangs(t *testing.T) map[string]map[string]bool {
-	t.Helper()
-	paths, err := filepath.Glob(filepath.FromSlash("../../public/migrations/*.sql"))
-	if err != nil {
-		t.Fatalf("列举迁移失败: %v", err)
-	}
-	if len(paths) == 0 {
-		t.Fatal("未找到任何迁移 SQL（相对路径过时）")
-	}
-	all := make(map[string]map[string]bool)
-	for _, path := range paths {
-		src, err := os.ReadFile(path)
-		if err != nil {
-			t.Fatalf("读取 %s 失败: %v", path, err)
-		}
-		for _, m := range groupFSeedRe.FindAllStringSubmatch(string(src), -1) {
-			key, lang := m[1], m[2]
-			if all[key] == nil {
-				all[key] = map[string]bool{}
-			}
-			all[key][lang] = true
-		}
-	}
-	return all
-}
-
 func TestGroupFI18nTemplateKeysMatchSeed(t *testing.T) {
 	keys := groupFTemplateKeys(t)
-	seededF := groupFSeedLangs(t, groupFSeedFile)
-	seededAll := groupFAllSeedLangs(t)
+	seeded := groupFSeedLangs(t, groupFSeedFile)
 
 	for key := range keys {
-		langs, inBatch := seededF[key]
-		src := filepath.Base(groupFSeedFile)
-		if !inBatch {
-			langs = seededAll[key]
-			src = "public/migrations（既有迁移）"
-		}
+		langs := seeded[key]
 		if langs == nil {
-			t.Errorf("模板取词 %q 在任何迁移中都没有 seed（英文界面会回落中文）", key)
+			t.Errorf("模板取词 %q 在 public/schema 里没有 seed（英文界面会回落中文）", key)
 			continue
 		}
 		if !langs["zh-CN"] || !langs["en-US"] {
-			t.Errorf("词条 %q（%s）语言不成对：zh-CN=%v en-US=%v", key, src, langs["zh-CN"], langs["en-US"])
-		}
-	}
-
-	for key := range seededF {
-		if groupFRetiredKeys[key] {
-			continue
-		}
-		if _, ok := keys[key]; !ok {
-			t.Errorf("本批 seed 词条 %q 未被本批模板使用（词条与模板失去同步）", key)
+			t.Errorf("词条 %q 语言不成对：zh-CN=%v en-US=%v", key, langs["zh-CN"], langs["en-US"])
 		}
 	}
 }

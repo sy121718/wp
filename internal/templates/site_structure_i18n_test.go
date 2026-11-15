@@ -396,7 +396,7 @@ func TestBlockRowLabelsComeFromSeededKeys(t *testing.T) {
 	for _, key := range rowKeys {
 		langs := seeded[key]
 		if langs == nil {
-			t.Errorf("block_row.html 用了 key %s，但迁移里没有这条词条", key)
+			t.Errorf("block_row.html 用了 key %s，但 public/schema 里没有这条词条", key)
 			continue
 		}
 		for _, lang := range []string{"zh-CN", "en-US"} {
@@ -441,23 +441,17 @@ func equalKeySets(a, b map[string]bool) bool {
 
 func seededI18nKeys(t *testing.T) map[string]map[string]bool {
 	t.Helper()
-	paths, err := filepath.Glob(filepath.Join("..", "..", "public", "migrations", "*.sql"))
-	if err != nil || len(paths) == 0 {
-		t.Fatalf("找不到迁移目录: %v（%d 个文件）", err, len(paths))
+	src, err := os.ReadFile(filepath.Join("..", "..", "public", "schema", "tables", "sys_i18n.sql"))
+	if err != nil {
+		t.Fatalf("读系统词条失败: %v", err)
 	}
-	seedRe := regexp.MustCompile(`\('([^']+)',\s*'(zh-CN|en-US)'`)
+	seedRe := regexp.MustCompile(`\(\s*\d+,\s*'([^']+)',\s*'(zh-CN|en-US)'`)
 	seeded := map[string]map[string]bool{}
-	for _, p := range paths {
-		src, err := os.ReadFile(p)
-		if err != nil {
-			t.Fatalf("读迁移 %s 失败: %v", p, err)
+	for _, m := range seedRe.FindAllStringSubmatch(string(src), -1) {
+		if seeded[m[1]] == nil {
+			seeded[m[1]] = map[string]bool{}
 		}
-		for _, m := range seedRe.FindAllStringSubmatch(string(src), -1) {
-			if seeded[m[1]] == nil {
-				seeded[m[1]] = map[string]bool{}
-			}
-			seeded[m[1]][m[2]] = true
-		}
+		seeded[m[1]][m[2]] = true
 	}
 	return seeded
 }

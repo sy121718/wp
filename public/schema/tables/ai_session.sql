@@ -67,6 +67,3 @@ COMMENT ON COLUMN public.ai_session.version IS '乐观锁版本号：会话级�
 COMMENT ON COLUMN public.ai_session.create_by IS '创建人 ID（与 sys_* 家族同口径）';
 
 COMMENT ON COLUMN public.ai_session.update_by IS '最后修改人 ID';
-
--- @phase data
-SELECT pg_catalog.setval('public.ai_session_id_seq', 1, false);

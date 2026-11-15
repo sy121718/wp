@@ -43,6 +43,3 @@ COMMENT ON COLUMN public.product_outbox_events.entity_revision IS '该实体第�
 COMMENT ON COLUMN public.product_outbox_events.dependency_kind IS '依赖源类型：direct_content = 直接引用该实体（详情页），content_collection = 集合成员变化（列表页）';
 
 COMMENT ON COLUMN public.product_outbox_events.claimed_time IS '最近一次被消费者领取的时刻；超过租约即视为消费者已崩溃，可被重新领取';
-
--- @phase data
-SELECT pg_catalog.setval('public.product_outbox_events_id_seq', 1, false);

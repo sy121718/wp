@@ -80,6 +80,3 @@ COMMENT ON COLUMN public.users.create_time IS '审计 DB-018：由 timestamp 统
 COMMENT ON COLUMN public.users.update_time IS '审计 DB-018：由 timestamp 统一为 timestamptz；历史值按会话时区解释';
 
 COMMENT ON COLUMN public.users.deleted_at IS '审计 DB-018：由 timestamp 统一为 timestamptz；历史值按会话时区解释';
-
--- @phase data
-SELECT pg_catalog.setval('public.users_id_seq', 1, false);

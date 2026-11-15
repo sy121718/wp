@@ -34,6 +34,3 @@ CREATE INDEX idx_order_status_logs_order ON public.order_status_logs USING btree
 
 -- @phase comment
 COMMENT ON COLUMN public.order_status_logs.create_time IS '审计 DB-018：由 timestamp 统一为 timestamptz；历史值按会话时区解释';
-
--- @phase data
-SELECT pg_catalog.setval('public.order_status_logs_id_seq', 1, false);

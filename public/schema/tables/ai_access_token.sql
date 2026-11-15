@@ -59,6 +59,3 @@ COMMENT ON COLUMN public.ai_access_token.expires_at IS '过期时刻；NULL = �
 COMMENT ON COLUMN public.ai_access_token.last_used_time IS '最近一次成功使用时刻；NULL = 从未使用（列表里用来识别「发了没用」的令牌）';
 
 COMMENT ON COLUMN public.ai_access_token.revoked_time IS '撤销时刻；与 status 一起写';
-
--- @phase data
-SELECT pg_catalog.setval('public.ai_access_token_id_seq', 1, false);

@@ -1,9 +1,9 @@
 package i18npage
 
 import (
-	pageview "go_wp/pkg/view"
 	"context"
 	"fmt"
+	pageview "go_wp/pkg/view"
 	"math/rand"
 	"net/http"
 	"net/http/httptest"
@@ -12,8 +12,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/spf13/viper"
-	"gorm.io/driver/postgres"
-	"gorm.io/gorm"
 	maildto "go_wp/internal/module/mail/dto"
 	mailhttp "go_wp/internal/module/mail/inbound/http"
 	mailmodel "go_wp/internal/module/mail/model"
@@ -21,8 +19,10 @@ import (
 	"go_wp/internal/templates"
 	"go_wp/pkg/database"
 	"go_wp/pkg/i18n"
-	"go_wp/public/migrations"
+	"go_wp/public/schema"
 	"go_wp/public/test/support"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 )
 
 func newMailI18nEnv(t *testing.T) (*gin.Engine, *mailservice.Service, *gorm.DB) {
@@ -75,11 +75,8 @@ func newMailI18nEnv(t *testing.T) (*gin.Engine, *mailservice.Service, *gorm.DB) 
 	if err != nil {
 		t.Fatalf("获取数据库实例失败：%v", err)
 	}
-	if err := migrations.Run(db); err != nil {
-		t.Fatalf("结构迁移失败：%v", err)
-	}
-	if err := migrations.RunSeeds(db); err != nil {
-		t.Fatalf("seed 失败：%v", err)
+	if err := schema.Apply(db); err != nil {
+		t.Fatalf("载入 schema 失败：%v", err)
 	}
 
 	if err := i18n.Init(cfg); err != nil {

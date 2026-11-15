@@ -36,6 +36,3 @@ COMMENT ON TABLE public.ai_tool_idempotency IS '写工具幂等台账：同一�
 COMMENT ON COLUMN public.ai_tool_idempotency.idem_key IS '调用方给的幂等键（同一次意图复用同一个值）';
 
 COMMENT ON COLUMN public.ai_tool_idempotency.actor IS '调用者 id（B02 迁移 678）：幂等键的作用域是 (tool_name, actor, idem_key)。0 = 无主体的系统调用或迁移前的存量行';
-
--- @phase data
-SELECT pg_catalog.setval('public.ai_tool_idempotency_id_seq', 1, false);

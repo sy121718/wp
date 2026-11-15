@@ -16,7 +16,6 @@ import (
 	buildmodel "go_wp/internal/module/build/model"
 	buildservice "go_wp/internal/module/build/service"
 	"go_wp/pkg/rls"
-	"go_wp/public/migrations"
 	"go_wp/public/test/support"
 )
 
@@ -662,98 +661,6 @@ func TestLegacyProjectBackfillJoinNeedsExplicitCast(t *testing.T) {
 				t.Fatalf("menu_stale 行不该被 295 的回填改动，实际 project_id=%v", r.ProjectID)
 			}
 		}
-	}
-}
-
-func (f *menuFixture) checkVersion(t *testing.T, version, stage string) {
-	t.Helper()
-	var target migrations.Migration
-	for _, m := range migrations.All() {
-		if m.Version == version {
-			target = m
-			break
-		}
-	}
-	if target.Version == "" {
-		t.Fatalf("迁移 %s 未注册", version)
-	}
-	var n int64
-
-	var checkArgs []any
-	if strings.Contains(target.CheckSQL, "$1") || strings.Contains(target.CheckSQL, "?") {
-		checkArgs = append(checkArgs, target.TableName)
-	}
-	if err := f.db.Raw(target.CheckSQL, checkArgs...).Scan(&n).Error; err != nil {
-		t.Fatalf("%s：执行 %s 的 CheckSQL 失败: %v", stage, version, err)
-	}
-	if n != 1 {
-		t.Fatalf("%s：%s 的判定应为「已应用」，实际 %d", stage, version, n)
-	}
-}
-
-func migrationSQL(t *testing.T, version string) string {
-	t.Helper()
-	for _, m := range migrations.All() {
-		if m.Version == version {
-			return m.SQL
-		}
-	}
-	t.Fatalf("迁移 %s 未注册", version)
-	return ""
-}
-
-func (f *menuFixture) replay(t *testing.T, version string) {
-	t.Helper()
-	for _, stmt := range migrations.SplitStatements(migrationSQL(t, version)) {
-		if stmt == "" {
-			continue
-		}
-		if err := f.db.Exec(stmt).Error; err != nil {
-			t.Fatalf("重放迁移 %s 失败（不幂等）: %v / SQL: %s", version, err, stmt)
-		}
-	}
-}
-
-func TestLegacyMigration295ReplaysAfter698(t *testing.T) {
-	f := newMenuFixture(t)
-	if f == nil {
-		return
-	}
-	pageID := f.seedSourceRow(t, buildmodel.SourceTypePage)
-
-	if err := f.db.Exec(`INSERT INTO build_jobs (source_type, source_id, project_id, lang, intent,
-		draft_version, build_input_hash, status, attempt, create_time)
-		VALUES ('page', ?, NULL, '', 'dependency', 0, 'replay-backfill', 'pending', 0, now())`,
-		pageID).Error; err != nil {
-		t.Fatalf("构造待回填的旧任务失败: %v", err)
-	}
-
-	f.checkVersion(t, "698-navigation-menu-stale-sequence", "重放前")
-	f.checkVersion(t, "295-build-jobs-lease", "重放前")
-
-	var sourceIDType string
-	if err := f.db.Raw(`SELECT data_type FROM information_schema.columns
-		WHERE table_schema = current_schema() AND table_name = 'build_jobs'
-		  AND column_name = 'source_id'`).Scan(&sourceIDType).Error; err != nil {
-		t.Fatalf("读取 source_id 列型失败: %v", err)
-	}
-	if sourceIDType != "text" {
-		t.Fatalf("698 之后 source_id 应为 text，实际 %q", sourceIDType)
-	}
-
-	f.replay(t, "698-navigation-menu-stale-sequence")
-	f.replay(t, "295-build-jobs-lease")
-
-	f.checkVersion(t, "698-navigation-menu-stale-sequence", "重放后")
-	f.checkVersion(t, "295-build-jobs-lease", "重放后")
-
-	var projectID *string
-	if err := f.db.Raw("SELECT project_id FROM build_jobs WHERE build_input_hash = 'replay-backfill'").
-		Scan(&projectID).Error; err != nil {
-		t.Fatalf("读取回填结果失败: %v", err)
-	}
-	if projectID == nil || *projectID != f.projectID {
-		t.Fatalf("295 的回填应把旧行的 project_id 填成本工程，实际 %v（NULL = 回填没跑到或被跳过）", projectID)
 	}
 }
 

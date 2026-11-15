@@ -2,7 +2,7 @@
 # backup.sh — 数据库与站点资产的备份。
 #
 # 为什么需要它：发布路径有产物级回滚（Publisher.Rollback），但**数据库没有**。迁移一旦
-# 出错（public/migrations 里 486 个 SQL 文件、575 条语句），唯一出路就是外部备份。
+# 出错（public/schema 里一表一文件的建表与系统数据），唯一出路就是外部备份。
 # 产物级回滚救不了「schema 改错了」。
 #
 # 备份什么（缺一项就是残缺的备份）：
@@ -117,12 +117,10 @@ say "生成清单 ..."
   echo "db_host=$DB_HOST:$DB_PORT"
   echo "artifact_root=$ARTIFACT_ROOT"
   echo "storage_dir=$STORAGE_DIR"
-  # 迁移版本：恢复后必须知道这份备份对应到哪个 schema 版本。
-  # 台账表是 sys_migration_marker（不是 schema_migrations —— 猜名字会得到 unknown，
-  # 而 unknown 会让「这份备份能不能回滚到上一版」无法回答）。
-  echo "migration_head=$(PGPASSWORD="${DB_PASSWORD:-${GOWP_DB_PASSWORD:-}}" psql \
+  # 结构版本：恢复后必须知道这份备份对应到哪个 schema 摘要（sys_baseline 由 schema.Apply 写入）。
+  echo "schema_head=$(PGPASSWORD="${DB_PASSWORD:-${GOWP_DB_PASSWORD:-}}" psql \
     -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -tAc \
-    "SELECT coalesce(max(version), 'none') FROM sys_migration_marker" 2>/dev/null || echo unknown)"
+    "SELECT coalesce(max(version), 'none') FROM sys_baseline" 2>/dev/null || echo unknown)"
 } > "$OUT/manifest.env"
 
 ( cd "$OUT" && find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS )

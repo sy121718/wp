@@ -13,7 +13,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
-	mw "go_wp/pkg/middleware"
 	analyticscontract "go_wp/internal/module/analytics/contract"
 	analyticsdto "go_wp/internal/module/analytics/dto"
 	analyticsenums "go_wp/internal/module/analytics/enums"
@@ -23,7 +22,8 @@ import (
 	pkgcasbin "go_wp/pkg/casbin"
 	"go_wp/pkg/facing"
 	"go_wp/pkg/i18n"
-	"go_wp/public/migrations"
+	mw "go_wp/pkg/middleware"
+	"go_wp/public/schema"
 	"go_wp/public/test/support"
 )
 
@@ -58,11 +58,11 @@ func (authzAnalytics) Summary(_ context.Context, _ *analyticsdto.SummaryReq) (*a
 	return &analyticscontract.SummaryResp{}, nil
 }
 
-// loadProductionGlossary 把 RunSeeds 之后真的落进 sys_i18n 的词条装进 i18n，
+// loadProductionGlossary 把系统数据装载后真的落进 sys_i18n 的词条装进 i18n，
 // 让错误出口按**生产词库**取词。
 //
-// 为什么要单独一步：RunSeeds 只是把词条写进库，并不等于词库已加载 —— 进程启动时
-// 由 i18n 组件从库读入内存。只跑 RunSeeds 而不装载，出口会退成归口文案，
+// 为什么要单独一步：schema.Apply 只是把词条写进库，并不等于词库已加载 —— 进程启动时
+// 由 i18n 组件从库读入内存。只装库而不装载，出口会退成归口文案，
 // 那样断言「声明 key 的译文上屏」是假绿。
 func loadProductionGlossary(t *testing.T, db *gorm.DB) {
 	t.Helper()
@@ -96,9 +96,9 @@ func newAnalyticsAuthzEnv(t *testing.T) *gorm.DB {
 	if db == nil {
 		t.Fatal("NewMigratedPGTestDB 返回 nil：没有拿到真实 PostgreSQL 库")
 	}
-	// 生产链路里 schema 与 seed 都跑（cmd/main.go 与 routers 装配两处都调 RunSeeds）；
-	// 只跑 Run 会让权限点/菜单词条缺失，403 的判定就不是生产事实。
-	if err := migrations.RunSeeds(db); err != nil {
+	// 生产链路里结构与系统数据一起载入（cmd/main.go 与 routers 装配两处都会载入）；
+	// 只建结构会让权限点/菜单词条缺失，403 的判定就不是生产事实。
+	if err := schema.Apply(db); err != nil {
 		t.Fatalf("执行业务 seed 失败: %v", err)
 	}
 	loadProductionGlossary(t, db)

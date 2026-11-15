@@ -66,6 +66,3 @@ COMMENT ON COLUMN public.ai_provider.version IS '乐观锁版本号：整组读-
 COMMENT ON COLUMN public.ai_provider.create_by IS '创建人 ID（与 sys_* 家族同口径）';
 
 COMMENT ON COLUMN public.ai_provider.update_by IS '最后修改人 ID';
-
--- @phase data
-SELECT pg_catalog.setval('public.ai_provider_id_seq', 1, false);

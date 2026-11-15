@@ -134,6 +134,3 @@ COMMENT ON COLUMN public.orders.fx_rate IS '下单时刻汇率（1 订单币 = f
 COMMENT ON COLUMN public.orders.fx_base_code IS '汇率快照的基准币种（fx_rate 的分母）；空串 = 未固化';
 
 COMMENT ON COLUMN public.orders.fulfillment_status IS '履约状态（货的语义，独立于 status 的钱的语义；B7 迁移 652）';
-
--- @phase data
-SELECT pg_catalog.setval('public.orders_id_seq', 1, false);

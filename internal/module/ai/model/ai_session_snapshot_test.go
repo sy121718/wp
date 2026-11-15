@@ -7,7 +7,7 @@ import (
 	"gorm.io/gorm"
 
 	aimodel "go_wp/internal/module/ai/model"
-	"go_wp/public/migrations"
+	"go_wp/public/schema"
 	"go_wp/public/test/support"
 )
 
@@ -23,7 +23,7 @@ import (
 // 「在给定 tx 里跑一遍」这类入口（那会让测试跑的前提与生产真实路径不一致）。
 func TestSessionUsageOfStaysOnOneSnapshotAcrossConcurrentWrite(t *testing.T) {
 	db := support.NewMigratedPGTestDB(t)
-	if err := migrations.RunSeeds(db); err != nil {
+	if err := schema.Apply(db); err != nil {
 		t.Fatalf("执行生产种子失败：%v", err)
 	}
 	m := aimodel.NewSessionModel(db)

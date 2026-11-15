@@ -33,10 +33,7 @@ const (
 )
 
 // workbenchFacingKeys 是本测试关心的错误 key 清单（顺序即词条应覆盖的顺序）。
-// 以前这里是一张 `map[key]中文兜底` 的副本，靠 enums.FallbackFor 取值；取词收口后
-// enums 只声明 key + 状态码，成品句归词库，所以「期望文案」改为**从词条真源读**
-// —— 迁移 292 就是这个域的唯一真源，TestWorkbenchFacingFallbacksMatchMigration292
-// 早就把它当对照表在用。
+// enums 只声明 key + 状态码，成品句归词库；期望文案从 public/schema 的系统数据现读。
 var workbenchFacingKeys = []string{
 	workbenchenums.ErrStructureTemplateFieldBinding,
 	workbenchenums.ErrPreviewFieldBindingUnsupported,
@@ -48,37 +45,25 @@ var workbenchFacingKeys = []string{
 	workbenchenums.ErrInstanceSaveRejected,
 }
 
-// workbenchFacingSeedFiles 是 workbench.err.* 词条的 seed 真源清单，按查找顺序排列。
-// 这个域的 facing 词条按批次分散在多条迁移里（292 是首屏预览/编译的一组，695 是
-// 跳转目标可用性的一条），所以按 key 逐个文件找，谁先命中就取谁。
-// 新增带 workbench.err.* 词条的迁移时，把它加进这份列表 —— 漏加的表现是
-// seededFacingText 报「找过这些文件都没有该词条」。
-var workbenchFacingSeedFiles = []string{
-	"292_workbench_facing_i18n.sql",
-	"695_workbench_action_target_availability_i18n.sql",
-}
-
 // seededFacingText 取某个 key 的 zh-CN 译文，作为对外文案的期望值。
 func seededFacingText(t *testing.T, key string) string {
 	t.Helper()
-	for _, file := range workbenchFacingSeedFiles {
-		for _, m := range facingRowRe.FindAllStringSubmatch(readWorkbenchFacingSeed(t, file), -1) {
-			if m[1] == key && m[2] == "zh-CN" {
-				return m[3]
-			}
+	for _, m := range facingRowRe.FindAllStringSubmatch(readWorkbenchFacingSeed(t), -1) {
+		if m[1] == key && m[2] == "zh-CN" {
+			return m[3]
 		}
 	}
-	t.Fatalf("%s 的 zh-CN 词条不在任何 seed 里（找过：%s）", key, strings.Join(workbenchFacingSeedFiles, "、"))
+	t.Fatalf("%s 的 zh-CN 词条不在 public/schema 的系统数据里", key)
 	return ""
 }
 
-// readWorkbenchFacingSeed 读单条迁移的 SQL 原文。
-func readWorkbenchFacingSeed(t *testing.T, file string) string {
+// readWorkbenchFacingSeed 读系统词条真源。
+func readWorkbenchFacingSeed(t *testing.T) string {
 	t.Helper()
-	sqlPath := filepath.Join("..", "..", "..", "..", "..", "public", "migrations", file)
+	sqlPath := filepath.Join("..", "..", "..", "..", "..", "public", "schema", "tables", "sys_i18n.sql")
 	raw, err := os.ReadFile(sqlPath)
 	if err != nil {
-		t.Fatalf("读迁移 %s 失败（路径或文件名变了？）：%v", file, err)
+		t.Fatalf("读系统词条失败（路径变了？）：%v", err)
 	}
 	return string(raw)
 }
@@ -196,21 +181,20 @@ func TestInstanceSaveFacingKey(t *testing.T) {
 	}
 }
 
-var facingRowRe = regexp.MustCompile(`\('(workbench\.err\.[A-Za-z]+)', '(zh-CN|en-US)', '([^']*)',`)
+var facingRowRe = regexp.MustCompile(`\(\s*\d+,\s*'(workbench\.err\.[A-Za-z]+)',\s*'(zh-CN|en-US)',\s*'([^']*)'`)
 
-func TestWorkbenchFacingFallbacksMatchMigration292(t *testing.T) {
-	text := readWorkbenchFacingSeed(t, "292_workbench_facing_i18n.sql")
-
-	if !strings.HasSuffix(strings.TrimSpace(text), "DO NOTHING") {
-		t.Fatalf("迁移 292 应以 ON CONFLICT ... DO NOTHING 结尾且不带分号，实际结尾：%q",
-			tailOf(strings.TrimSpace(text), 40))
+func TestWorkbenchFacingFallbacksMatchSchema(t *testing.T) {
+	text := readWorkbenchFacingSeed(t)
+	wanted := map[string]bool{}
+	for _, key := range workbenchFacingKeys {
+		wanted[key] = true
 	}
 
 	zh, en := map[string]string{}, map[string]string{}
 	for _, m := range facingRowRe.FindAllStringSubmatch(text, -1) {
 		key, lang, value := m[1], m[2], m[3]
-		if strings.ContainsAny(value, ";") {
-			t.Fatalf("词条 %s/%s 的值含半角分号（会被 SplitStatements 当成语句边界）：%q", key, lang, value)
+		if !wanted[key] {
+			continue
 		}
 		switch lang {
 		case "zh-CN":
@@ -220,12 +204,9 @@ func TestWorkbenchFacingFallbacksMatchMigration292(t *testing.T) {
 		}
 	}
 
-	if len(zh) != len(workbenchFacingKeys) {
-		t.Fatalf("迁移 292 的 zh-CN key 数 %d 与期望 key 数 %d 不等", len(zh), len(workbenchFacingKeys))
-	}
 	for _, key := range workbenchFacingKeys {
-		if got := zh[key]; strings.TrimSpace(got) == "" {
-			t.Fatalf("%s 在迁移 292 里没有 zh-CN 词条（缺词条时用户会看到裸 key）", key)
+		if strings.TrimSpace(zh[key]) == "" {
+			t.Fatalf("%s 在 public/schema 里没有 zh-CN 词条（缺词条时用户会看到裸 key）", key)
 		}
 		if strings.TrimSpace(en[key]) == "" {
 			t.Fatalf("%s 缺 en-US 词条（英文站点会回落中文，且不会有任何报错）", key)
@@ -237,20 +218,16 @@ func TestWorkbenchFacingFallbacksMatchMigration292(t *testing.T) {
 }
 
 func TestWorkbenchFacingFallbacksCoverExpectedKeys(t *testing.T) {
-	text := readWorkbenchFacingSeed(t, "292_workbench_facing_i18n.sql")
+	text := readWorkbenchFacingSeed(t)
 	seeded := map[string]bool{}
 	for _, m := range facingRowRe.FindAllStringSubmatch(text, -1) {
 		if m[2] == "zh-CN" {
 			seeded[m[1]] = true
 		}
 	}
-	if len(seeded) != len(workbenchFacingKeys) {
-		t.Fatalf("迁移 292 的词条数 %d 与本测试期望的 key 数 %d 不等（新增 / 删除 key 时同步这里）",
-			len(seeded), len(workbenchFacingKeys))
-	}
 	for _, key := range workbenchFacingKeys {
 		if !seeded[key] {
-			t.Fatalf("%s 在迁移 292 里没有 zh-CN 词条（缺词条时用户会看到裸 key）", key)
+			t.Fatalf("%s 在 public/schema 里没有 zh-CN 词条（缺词条时用户会看到裸 key）", key)
 		}
 	}
 }

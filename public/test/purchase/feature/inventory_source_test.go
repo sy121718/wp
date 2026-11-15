@@ -22,7 +22,7 @@ import (
 	"go_wp/pkg/response"
 	pageview "go_wp/pkg/view"
 	text "go_wp/pkg/view/jet"
-	"go_wp/public/migrations"
+	"go_wp/public/schema"
 )
 
 func createSource(t *testing.T, f *purchaseFixture, req *purchasedto.CreateSourceReq) *purchasedto.SourceResp {
@@ -665,8 +665,8 @@ func TestSourcePermissionsAndMenuSeeded(t *testing.T) {
 	if f == nil {
 		return
 	}
-	if err := migrations.RunSeeds(f.db); err != nil {
-		t.Fatalf("执行数据种子失败: %v", err)
+	if err := schema.Apply(f.db); err != nil {
+		t.Fatalf("载入 schema 失败: %v", err)
 	}
 	codes := []string{
 		"inventory:source_list", "inventory:source_get", "inventory:source_create",

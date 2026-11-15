@@ -37,6 +37,3 @@ CREATE INDEX idx_mail_campaign_events_time ON public.mail_campaign_events USING 
 
 -- @phase comment
 COMMENT ON COLUMN public.mail_campaign_events.create_time IS '审计 DB-018：由 timestamp 统一为 timestamptz；历史值按会话时区解释';
-
--- @phase data
-SELECT pg_catalog.setval('public.mail_campaign_events_id_seq', 1, false);

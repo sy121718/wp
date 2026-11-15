@@ -553,15 +553,7 @@ func TestAdminListExcludesSuperAdmin(t *testing.T) {
 	createAdminDB(t, e.db, u1, u1+"@example.com")
 	createAdminDB(t, e.db, u2, u2+"@example.com")
 
-	hashed, _ := bcrypt.GenerateFromPassword([]byte("x12345678"), bcrypt.DefaultCost)
-	superEmail := uniq("super") + "@example.com"
-	if err := e.db.Create(&adminmodel.AdminEntity{
-		Username: uniq("superu"), Password: string(hashed), Email: &superEmail,
-		Status: adminmodel.AdminStatusActive, IsAdmin: 1,
-	}).Error; err != nil {
-		t.Fatalf("创建超管失败: %v", err)
-	}
-
+	// 系统数据已有一个超管（admin），列表必须排除它。
 	res, err := e.svc.AdminList(ctx, &admindto.AdminListReq{})
 	wantErr(t, err, "")
 	if res.Total != 2 {
@@ -619,9 +611,7 @@ func TestAdminModelSuperAdminUnique(t *testing.T) {
 			Status: adminmodel.AdminStatusActive, IsAdmin: 1,
 		}
 	}
-	if err := e.db.WithContext(ctx).Create(mk(uniq("sa1"), uniq("sa1")+"@example.com")).Error; err != nil {
-		t.Fatalf("创建第一个超管失败: %v", err)
-	}
+	// 系统数据里的 admin 已是第一个超管；再建一个必须被拒绝。
 	err := e.db.WithContext(ctx).Create(mk(uniq("sa2"), uniq("sa2")+"@example.com")).Error
 	wantErr(t, err, adminenums.ErrSuperAdminExists)
 }

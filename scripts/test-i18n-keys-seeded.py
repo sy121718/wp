@@ -14,10 +14,10 @@ class ShortKeyGateTest(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix='wp-short-key-gate-') as temp:
             root = Path(temp)
             (root / 'internal/templates').mkdir(parents=True)
-            (root / 'public/migrations').mkdir(parents=True)
+            (root / 'public/schema/tables').mkdir(parents=True)
             (root / 'internal/templates/probe.html').write_text(source, encoding='utf-8')
-            (root / 'public/migrations/001_probe.sql').write_text(sql, encoding='utf-8')
-            (root / 'public/migrations/register_probe.go').write_text(registration, encoding='utf-8')
+            (root / 'public/schema/tables/sys_i18n.sql').write_text(sql, encoding='utf-8')
+            (root / 'public/schema/tables/register_probe.go').write_text(registration, encoding='utf-8')
             (root / 'baseline').write_text('0\n', encoding='utf-8')
             result = subprocess.run(['bash', str(SCRIPT)], env={
                 **os.environ, 'GOWP_ROOT': str(root),
@@ -50,6 +50,13 @@ class ShortKeyGateTest(unittest.TestCase):
                 code, output = self.run_gate('{{.[' + quote + 't' + quote + '](' + quote + 'shortReady' + quote + ', "可用")}}',
                                              "INSERT INTO sys_i18n (item_key, lang, item_value) VALUES ('shortReady', 'zh-CN', '可用'), ('shortReady', 'en-US', 'Ready');")
                 self.assertEqual(code, 0, output)
+
+    def test_positional_terminal_rows_are_seed(self):
+        sql = ("INSERT INTO public.sys_i18n VALUES\n"
+               "(1, 'positionalReady', 'zh-CN', '可用', 0, 1, now(), now(), '', ''),\n"
+               "(2, 'positionalReady', 'en-US', 'Ready', 0, 1, now(), now(), '', '');\n")
+        code, output = self.run_gate('{{t("positionalReady", "可用")}}', sql)
+        self.assertEqual(code, 0, output)
 
     def test_insert_select_values_is_seed_but_mapping_is_not(self):
         sql = """WITH keys(old_key, new_key, retire) AS (VALUES ('oldKey', 'newKey', true))

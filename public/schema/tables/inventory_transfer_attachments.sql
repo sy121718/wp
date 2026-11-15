@@ -35,6 +35,3 @@ ALTER TABLE ONLY public.inventory_transfer_attachments
 
 -- @phase comment
 COMMENT ON TABLE public.inventory_transfer_attachments IS '调拨单凭证：出货与签收各需至少一张（service 强制），申请凭证可选';
-
--- @phase data
-SELECT pg_catalog.setval('public.inventory_transfer_attachments_id_seq', 1, false);

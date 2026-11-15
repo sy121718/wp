@@ -9,7 +9,7 @@ import (
 	inventoryenums "go_wp/internal/module/inventory/enums"
 	productdto "go_wp/internal/module/product/dto"
 
-	"go_wp/public/migrations"
+	"go_wp/public/schema"
 )
 
 func movementUnitCostOfBatch(t *testing.T, f *invFixture, batchID string) *float64 {
@@ -144,8 +144,8 @@ func TestCostSnapshotMigrationAppliesIdempotently(t *testing.T) {
 		return
 	}
 
-	if err := migrations.Run(f.db); err != nil {
-		t.Fatalf("迁移重跑失败（幂等性被破坏）: %v", err)
+	if err := schema.Apply(f.db); err != nil {
+		t.Fatalf("载入 schema 失败（幂等性被破坏）: %v", err)
 	}
 	var nullable string
 	var hasDefault bool

@@ -107,6 +107,3 @@ COMMENT ON INDEX public.idx_att_cat_time_alive IS '媒体库按分类分页列�
 COMMENT ON INDEX public.idx_att_file_path_alive IS '构建期按 file_path 反查启用附件（media_ref.go attachmentIDByURL），部分索引 status = 1';
 
 COMMENT ON INDEX public.sys_attachment_pkey IS '附件主键（稳定引用标识，URL 形如 /storage/<id>.<ext>）';
-
--- @phase data
-SELECT pg_catalog.setval('public.sys_attachment_id_seq', 1, false);

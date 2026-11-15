@@ -69,6 +69,3 @@ COMMENT ON COLUMN public.sys_media_variant.create_time IS '审计 DB-018：由 t
 COMMENT ON COLUMN public.sys_media_variant.update_time IS '审计 DB-018：由 timestamp 统一为 timestamptz；历史值按会话时区解释';
 
 COMMENT ON INDEX public.idx_mva_file_path IS '构建期按 file_path 反查媒体变体（media_variant_model.go GetByFilePath）';
-
--- @phase data
-SELECT pg_catalog.setval('public.sys_media_variant_id_seq', 1, false);

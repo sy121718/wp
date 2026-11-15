@@ -11,7 +11,7 @@ import (
 	sysconfigenums "go_wp/internal/module/sysconfig/enums"
 	sysconfigmodel "go_wp/internal/module/sysconfig/model"
 	sysconfigservice "go_wp/internal/module/sysconfig/service"
-	"go_wp/public/migrations"
+	"go_wp/public/schema"
 	"go_wp/public/test/support"
 )
 
@@ -28,10 +28,11 @@ func TestMcpToggleKeepsOtherKeysAndRejectsStaleVersion(t *testing.T) {
 	ctx := context.Background()
 
 	// AI 配置组是 548 的 **seed**（`mcp_enabled = false`，version = 1）。
-	// 迁移模板库只跑 migrations.Run，不跑 RunSeeds —— 生产启动是两者都跑（cmd/main.go 与
-	// internal/routers/assembly.go），所以这里必须补一次，否则库内根本没有 ai 组，
-	// 首次开启会撞 ErrGroupNotFound 而不是本用例要验的读-改-写。
-	if err := migrations.RunSeeds(db); err != nil {
+	// 模板库按 schema.Apply 建好并写了水位，这里再调一次是幂等兜底：水位一致直接跳过，
+	// 只有结构在、系统数据缺的库才会补种。生产启动同样是结构与系统数据一起载入
+	// （cmd/main.go 与 internal/routers/assembly.go）；没有 ai 组时首次开启会撞
+	// ErrGroupNotFound 而不是本用例要验的读-改-写。
+	if err := schema.Apply(db); err != nil {
 		t.Fatalf("补种生产 seed 失败（ai 配置组由 548 种下）：%v", err)
 	}
 

@@ -32,6 +32,3 @@ ALTER TABLE ONLY public.webhook_endpoints
 CREATE INDEX idx_webhook_endpoints_event_type ON public.webhook_endpoints USING btree (event_type);
 
 CREATE INDEX idx_webhook_endpoints_status ON public.webhook_endpoints USING btree (status);
-
--- @phase data
-SELECT pg_catalog.setval('public.webhook_endpoints_id_seq', 1, false);

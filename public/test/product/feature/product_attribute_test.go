@@ -19,7 +19,7 @@ import (
 	masterdatamodel "go_wp/internal/module/masterdata/model"
 	masterdataservice "go_wp/internal/module/masterdata/service"
 	"go_wp/pkg/i18n"
-	"go_wp/public/migrations"
+	"go_wp/public/schema"
 	"go_wp/public/test/support"
 )
 
@@ -64,8 +64,8 @@ func newAttrFixture(t *testing.T) *attrFixture {
 		return nil
 	}
 	// 迁移只建表，seed 得单独跑：sys_i18n 的词条就是 seed 写进去的。
-	if err := migrations.RunSeeds(db); err != nil {
-		t.Fatalf("执行种子数据失败：%v", err)
+	if err := schema.Apply(db); err != nil {
+		t.Fatalf("载入 schema 失败：%v", err)
 	}
 	loadFeatureWords(t, db)
 	projects := projectservice.NewService(projectmodel.NewProjectModel(db))

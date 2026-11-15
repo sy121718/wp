@@ -21,7 +21,7 @@
 # 口径与 shell-migration-allow.txt 一致：计数单位是**出现次数**，不是文件数或行数；
 # 跳过整行注释（注释里解释 key 是正常的），行尾注释照计（宁可多计一行让人看一眼）。
 #
-# 名字空间表：来自 `public/migrations/*.sql` 里 item_key 的首段（实测统计）。**新增名字空间时
+# 名字空间表：来自 `public/schema/tables/sys_i18n.sql` 里 item_key 的首段（实测统计）。**新增名字空间时
 # 同步这张表** —— 不加会让新名字空间的字面量从判据里漏掉（假绿），加了能让它现形。
 #
 # 自带负向自检：树干净时把探针条目的基线**临时收紧到实测值**再人为 +1 比一次，判据必须报违规，
@@ -43,7 +43,7 @@ import collections, os, re, sys
 
 root, allow_path = sys.argv[1], sys.argv[2]
 
-# i18n 词条名字空间（首段）：来自 public/migrations/*.sql 的 item_key 实测首段统计。
+# i18n 词条名字空间（首段）：来自 public/schema/tables/sys_i18n.sql 的 item_key 实测首段统计。
 NAMESPACES = (
     "admin", "site", "workbench", "user", "mail", "order", "ai", "shell", "cart",
     "webhook", "membership", "product", "comment", "page", "inventory", "navigation",

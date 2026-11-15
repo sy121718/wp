@@ -9,7 +9,7 @@ import (
 
 	"go_wp/pkg/database"
 	"go_wp/pkg/i18n"
-	"go_wp/public/migrations"
+	"go_wp/public/schema"
 	"go_wp/public/test/support"
 
 	"gorm.io/driver/postgres"
@@ -59,8 +59,8 @@ func TestSysTranslationMigrationIdempotency(t *testing.T) {
 	}
 
 	for round := 1; round <= 2; round++ {
-		if err := migrations.Run(db); err != nil {
-			t.Fatalf("第 %d 轮迁移失败: %v", round, err)
+		if err := schema.Apply(db); err != nil {
+			t.Fatalf("第 %d 轮载入 schema 失败: %v", round, err)
 		}
 	}
 
@@ -131,8 +131,8 @@ func TestContentBatchQuerySingleSQL(t *testing.T) {
 		support.FailIfRequiredPG(t, err)
 		t.Skipf("跳过：本地 PostgreSQL 不可用: %v", err)
 	}
-	if err := migrations.Run(db); err != nil {
-		t.Fatalf("迁移失败: %v", err)
+	if err := schema.Apply(db); err != nil {
+		t.Fatalf("载入 schema 失败: %v", err)
 	}
 
 	insertTranslation(t, db, "了解更多", "core.button.text", "en-US", "Learn more", "manual")
@@ -187,8 +187,8 @@ func TestContentTranslateHitFallbackAndSkipRule(t *testing.T) {
 		support.FailIfRequiredPG(t, err)
 		t.Skipf("跳过：本地 PostgreSQL 不可用: %v", err)
 	}
-	if err := migrations.Run(db); err != nil {
-		t.Fatalf("迁移失败: %v", err)
+	if err := schema.Apply(db); err != nil {
+		t.Fatalf("载入 schema 失败: %v", err)
 	}
 
 	insertTranslation(t, db, "了解更多", "core.button.text", "en-US", "Learn more", "manual")
@@ -266,8 +266,8 @@ func TestContentHashChangeInvalidatesOldTranslation(t *testing.T) {
 		support.FailIfRequiredPG(t, err)
 		t.Skipf("跳过：本地 PostgreSQL 不可用: %v", err)
 	}
-	if err := migrations.Run(db); err != nil {
-		t.Fatalf("迁移失败: %v", err)
+	if err := schema.Apply(db); err != nil {
+		t.Fatalf("载入 schema 失败: %v", err)
 	}
 
 	insertTranslation(t, db, "了解更多", "core.button.text", "en-US", "Learn more", "manual")
@@ -328,8 +328,8 @@ func TestContentDefaultStoreAgainstGlobalDB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("获取数据库实例失败: %v", err)
 	}
-	if err := migrations.Run(db); err != nil {
-		t.Fatalf("迁移失败: %v", err)
+	if err := schema.Apply(db); err != nil {
+		t.Fatalf("载入 schema 失败: %v", err)
 	}
 
 	insertTranslation(t, db, "了解更多", "core.button.text", "en-US", "Learn more", "manual")
@@ -388,8 +388,8 @@ func TestContentRevisionTracksWrites(t *testing.T) {
 	if err != nil {
 		t.Fatalf("获取数据库实例失败: %v", err)
 	}
-	if err := migrations.Run(db); err != nil {
-		t.Fatalf("迁移失败: %v", err)
+	if err := schema.Apply(db); err != nil {
+		t.Fatalf("载入 schema 失败: %v", err)
 	}
 
 	if got := i18n.ContentRevision(); got != "" {

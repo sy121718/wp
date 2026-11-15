@@ -6,7 +6,7 @@ import (
 
 	sysconfigmodel "go_wp/internal/module/sysconfig/model"
 	sysconfigservice "go_wp/internal/module/sysconfig/service"
-	"go_wp/public/migrations"
+	"go_wp/public/schema"
 	"go_wp/public/test/support"
 )
 
@@ -15,7 +15,7 @@ func TestDictOptionsMatchEnabledRows(t *testing.T) {
 	if db == nil {
 		t.Skip("本地 PostgreSQL 不可用，跳过")
 	}
-	if err := migrations.RunSeeds(db); err != nil {
+	if err := schema.Apply(db); err != nil {
 		t.Fatalf("执行种子数据失败: %v", err)
 	}
 	svc := sysconfigservice.NewService(sysconfigmodel.NewSysConfigModel(db), nil)
@@ -57,7 +57,7 @@ func TestCountryLabelPicksLanguageAndFallsBack(t *testing.T) {
 	if db == nil {
 		t.Skip("本地 PostgreSQL 不可用，跳过")
 	}
-	if err := migrations.RunSeeds(db); err != nil {
+	if err := schema.Apply(db); err != nil {
 		t.Fatalf("执行种子数据失败: %v", err)
 	}
 	svc := sysconfigservice.NewService(sysconfigmodel.NewSysConfigModel(db), nil)

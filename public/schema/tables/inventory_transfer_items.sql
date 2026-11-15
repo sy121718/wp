@@ -32,6 +32,3 @@ ALTER TABLE ONLY public.inventory_transfer_items
 -- @phase fk
 ALTER TABLE ONLY public.inventory_transfer_items
     ADD CONSTRAINT inventory_transfer_items_transfer_id_fkey FOREIGN KEY (transfer_id) REFERENCES public.inventory_transfers(id) ON DELETE CASCADE;
-
--- @phase data
-SELECT pg_catalog.setval('public.inventory_transfer_items_id_seq', 1, false);

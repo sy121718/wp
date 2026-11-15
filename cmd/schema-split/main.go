@@ -6,9 +6,11 @@
 //	public/schema/tables/<表>.sql   该表的序列、建表、索引、触发器、策略、外键与系统数据
 //	public/schema/order.txt         系统数据的装载顺序（父表先于子表）
 //
-// 每个表文件用 -- @phase pre|ddl|fk|data 分段；运行器按段执行：
-// 全部 pre（序列）→ 全部 ddl（建表/索引/触发器/策略）→ 全部 fk（外键）→ 按 order 装载数据。
-// 生成器只用于首次切分与漂移核对，日常改结构直接改表文件。
+// 每个表文件用 -- @phase pre|ddl|constr|idx|fk|comment|data 分段；运行器按段执行：
+// 全部 pre（序列）→ 全部 ddl（建表）→ constr（约束/触发器/策略）→ idx（索引）→
+// fk（外键）→ comment（注释）→ 按 order 装载系统数据。
+// 生成器只用于首次切分与漂移核对，日常改结构直接改表文件；源库必须是空库载入
+// public/schema 后的结果，不能指向业务库（会把业务数据与自定义译文带进结构文件）。
 package main
 
 import (
@@ -24,8 +26,6 @@ import (
 
 var monthlyPartition = regexp.MustCompile("_[0-9]{4}_[0-9]{2}$")
 
-var copyOrderRe = regexp.MustCompile("(?m)^COPY public\\.([A-Za-z0-9_]+) ")
-
 type opts struct {
 	host, port, user, db, out string
 }
@@ -34,10 +34,14 @@ func main() {
 	host := flag.String("host", envOr("PGHOST", "127.0.0.1"), "数据库主机")
 	port := flag.String("port", envOr("PGPORT", "5432"), "数据库端口")
 	user := flag.String("user", envOr("PGUSER", "sky"), "数据库用户")
-	db := flag.String("db", envOr("GOWP_DATABASE_DBNAME", "wp"), "终态源库")
+	db := flag.String("db", "", "终态源库（必填：空库载入 public/schema 后的库，不要指向业务库）")
 	out := flag.String("out", "public/schema", "输出目录")
 	flag.Parse()
 
+	if *db == "" {
+		fmt.Fprintln(os.Stderr, "✗ 必须显式指定 -db：源库应是空库载入 public/schema 后的结果，不能默认业务库")
+		os.Exit(1)
+	}
 	o := opts{host: *host, port: *port, user: *user, db: *db, out: *out}
 	if err := os.MkdirAll(filepath.Join(o.out, "tables"), 0o755); err != nil {
 		fail("创建输出目录失败", err)
@@ -335,11 +339,9 @@ func loadOrder(o opts, tables []string, withData map[string]bool) []string {
 		}
 	}
 
-	if raw, err := os.ReadFile("schema/baseline/system_data.sql"); err == nil {
-		for _, m := range copyOrderRe.FindAllStringSubmatch(string(raw), -1) {
-			add(m[1])
-		}
-	} else if raw, err := os.ReadFile(filepath.Join(o.out, "order.txt")); err == nil {
+	// 已有 order.txt 是唯一装载顺序来源：切分器重跑时必须保持它，
+	// 否则父表/子表或触发器写入顺序会在无提示的情况下改变。
+	if raw, err := os.ReadFile(filepath.Join(o.out, "order.txt")); err == nil {
 		for _, line := range strings.Split(string(raw), "\n") {
 			add(strings.TrimSpace(line))
 		}

@@ -247,14 +247,14 @@ func TestContentListFilterI18nKeysSeeded(t *testing.T) {
 		"admin.navigations.filter_empty",
 	}
 
-	sqlPath := filepath.Join("..", "..", "public", "migrations", "413_i18n_content_list_filter.sql")
+	sqlPath := filepath.Join("..", "..", "public", "schema", "tables", "sys_i18n.sql")
 	src, err := os.ReadFile(sqlPath)
 	if err != nil {
-		t.Fatalf("读 413 迁移失败: %v", err)
+		t.Fatalf("读系统词条失败: %v", err)
 	}
 	sqlText := string(src)
 
-	seedRe := regexp.MustCompile(`\('([^']+)',\s*'(zh-CN|en-US)'`)
+	seedRe := regexp.MustCompile(`\(\s*\d+,\s*'([^']+)',\s*'(zh-CN|en-US)'`)
 	langs := map[string]map[string]bool{}
 	for _, m := range seedRe.FindAllStringSubmatch(sqlText, -1) {
 		if langs[m[1]] == nil {
@@ -266,7 +266,7 @@ func TestContentListFilterI18nKeysSeeded(t *testing.T) {
 	for _, key := range wantKeys {
 		got := langs[key]
 		if got == nil {
-			t.Errorf("词条 %q 不在 413 迁移里：英文界面上会一直显示中文", key)
+			t.Errorf("词条 %q 不在 public/schema 里：英文界面上会一直显示中文", key)
 			continue
 		}
 		if !got["zh-CN"] || !got["en-US"] {

@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	usermodel "go_wp/internal/module/user/model"
-	"go_wp/public/migrations"
+	"go_wp/public/schema"
 	"go_wp/public/test/support"
 )
 
@@ -16,8 +16,8 @@ func newModel(t *testing.T) *usermodel.UserModel {
 		t.Skipf("本地 PostgreSQL 不可用：%v", err)
 		return nil
 	}
-	if err := migrations.Run(db); err != nil {
-		t.Fatalf("执行生产迁移建表失败: %v", err)
+	if err := schema.Apply(db); err != nil {
+		t.Fatalf("载入 schema 失败: %v", err)
 	}
 	return usermodel.NewUserModel(db)
 }

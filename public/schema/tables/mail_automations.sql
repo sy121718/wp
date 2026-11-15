@@ -40,6 +40,3 @@ CREATE INDEX idx_mail_automations_status ON public.mail_automations USING btree 
 COMMENT ON COLUMN public.mail_automations.create_time IS '审计 DB-018：由 timestamp 统一为 timestamptz；历史值按会话时区解释';
 
 COMMENT ON COLUMN public.mail_automations.update_time IS '审计 DB-018：由 timestamp 统一为 timestamptz；历史值按会话时区解释';
-
--- @phase data
-SELECT pg_catalog.setval('public.mail_automations_id_seq', 1, false);

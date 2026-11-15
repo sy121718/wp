@@ -79,7 +79,7 @@ if [ -s "$tmp_dead" ]; then
     echo "  修法二选一："
     echo "    · 菜单指的是页面 → 把 path 改成真实存在的页面路由；"
     echo "    · 菜单只是某个能力的承载节点（没有页面入口）→ 把 path 清空，"
-    echo "      并在迁移里写明它承载哪条权限码（样板：public/migrations/588_menu_dead_path_clear.sql）。"
+    echo "      并在 public/schema/tables/sys_menus.sql 的 data 段写明它承载哪条权限码。"
     exit 1
 fi
 

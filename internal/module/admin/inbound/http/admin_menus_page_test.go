@@ -18,7 +18,7 @@ import (
 	"go_wp/internal/templates"
 	"go_wp/pkg/view"
 	text "go_wp/pkg/view/jet"
-	"go_wp/public/migrations"
+	"go_wp/public/schema"
 	"go_wp/public/test/support"
 )
 
@@ -28,7 +28,7 @@ func newMenusPageEnv(t *testing.T) (*adminhttp.AdminPagesHandle, *gorm.DB) {
 	if db == nil {
 		t.Skip("本地 PostgreSQL 不可用，跳过")
 	}
-	if err := migrations.RunSeeds(db); err != nil {
+	if err := schema.Apply(db); err != nil {
 		t.Fatalf("执行种子数据失败: %v", err)
 	}
 	svc := adminservice.NewService(db)

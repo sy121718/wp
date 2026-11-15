@@ -32,7 +32,7 @@ import (
 
 	masterdatamodel "go_wp/internal/module/masterdata/model"
 	masterdataservice "go_wp/internal/module/masterdata/service"
-	"go_wp/public/migrations"
+	"go_wp/public/schema"
 	"go_wp/public/test/support"
 )
 
@@ -90,7 +90,7 @@ func newCartFixture(t *testing.T) *cartFixture {
 func newCartFixtureWithGateway(t *testing.T, gateway cartcontract.PaymentGateway) *cartFixture {
 	t.Helper()
 	db := support.NewMigratedPGTestDB(t)
-	if err := migrations.RunSeeds(db); err != nil {
+	if err := schema.Apply(db); err != nil {
 		t.Fatalf("执行生产数据种子失败: %v", err)
 	}
 	if db == nil {
